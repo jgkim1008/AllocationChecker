@@ -25,7 +25,7 @@ interface Props {
   open: boolean;
   onClose: () => void;
   accounts: Account[];
-  onAdd: (name: string, type: AccountType) => Promise<void>;
+  onAdd: (name: string, type: AccountType) => Promise<unknown>;
   onDelete: (id: string) => Promise<void>;
 }
 
