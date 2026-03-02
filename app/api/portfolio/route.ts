@@ -4,11 +4,14 @@ import { detectMarket, getCurrency, getFrequencyMultiplier } from '@/lib/utils/m
 import { resolveStockName } from '@/lib/api/stock-info';
 import { getOrFetchDividends } from '@/lib/cache/dividend-cache';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const { searchParams } = new URL(request.url);
+    const accountId = searchParams.get('accountId');
+
     const supabase = await createServiceClient();
 
-    const { data, error } = await supabase
+    let query = supabase
       .from('portfolio_holdings')
       .select(`
         *,
@@ -24,6 +27,16 @@ export async function GET() {
         )
       `)
       .order('created_at', { ascending: false });
+
+    if (accountId && accountId !== 'all') {
+      if (accountId === 'unassigned') {
+        query = query.is('account_id', null);
+      } else {
+        query = query.eq('account_id', accountId);
+      }
+    }
+
+    const { data, error } = await query;
 
     if (error) throw error;
 
@@ -56,7 +69,7 @@ export async function GET() {
       await Promise.allSettled(missingSymbols.map((s) => getOrFetchDividends(s)));
 
       // 배당 저장 후 다시 조회
-      const { data: refreshed } = await supabase
+      let refreshQuery = supabase
         .from('portfolio_holdings')
         .select(`
           *,
@@ -72,6 +85,16 @@ export async function GET() {
           )
         `)
         .order('created_at', { ascending: false });
+
+      if (accountId && accountId !== 'all') {
+        if (accountId === 'unassigned') {
+          refreshQuery = refreshQuery.is('account_id', null);
+        } else {
+          refreshQuery = refreshQuery.eq('account_id', accountId);
+        }
+      }
+
+      const { data: refreshed } = await refreshQuery;
 
       return NextResponse.json(enrichHoldings(refreshed ?? []));
     }
@@ -143,7 +166,7 @@ function enrichHoldings(data: Record<string, unknown>[]) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { symbol, shares, average_cost } = body;
+    const { symbol, shares, average_cost, account_id } = body;
 
     if (!symbol || !shares || shares <= 0) {
       return NextResponse.json({ error: 'symbol and shares are required' }, { status: 400 });
@@ -176,6 +199,7 @@ export async function POST(request: NextRequest) {
         stock_id: stock.id,
         shares: Number(shares),
         average_cost: average_cost ? Number(average_cost) : null,
+        account_id: account_id ?? null,
         user_id: null,
       })
       .select(`*, stock:stocks(*)`)

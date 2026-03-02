@@ -21,7 +21,7 @@ export function calculateMonthlyBreakdown(
     const date = addMonths(startOfMonth(startDate), i);
     const month = date.getMonth() + 1;
     const year = date.getFullYear();
-    const label = format(date, 'MMM yyyy');
+    const label = format(date, 'yyyy.MM');
 
     const holdingAmounts = holdings
       .filter(h => h.latestDividend && h.estimatedAnnualDividend)

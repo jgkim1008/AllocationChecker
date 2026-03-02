@@ -33,16 +33,19 @@ export async function PUT(
 
   try {
     const body = await request.json();
-    const { shares, average_cost } = body;
+    const { shares, average_cost, account_id } = body;
+
+    const updateData: Record<string, unknown> = {
+      updated_at: new Date().toISOString(),
+    };
+    if (shares !== undefined) updateData.shares = Number(shares);
+    if (average_cost !== undefined) updateData.average_cost = Number(average_cost);
+    if ('account_id' in body) updateData.account_id = account_id ?? null;
 
     const supabase = await createServiceClient();
     const { data, error } = await supabase
       .from('portfolio_holdings')
-      .update({
-        shares: shares !== undefined ? Number(shares) : undefined,
-        average_cost: average_cost !== undefined ? Number(average_cost) : undefined,
-        updated_at: new Date().toISOString(),
-      })
+      .update(updateData)
       .eq('id', id)
       .select(`*, stock:stocks(*)`)
       .single();

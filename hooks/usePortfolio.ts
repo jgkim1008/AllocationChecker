@@ -23,11 +23,11 @@ export function usePortfolio() {
     }
   }, []);
 
-  const addHolding = useCallback(async (symbol: string, shares: number, averageCost?: number) => {
+  const addHolding = useCallback(async (symbol: string, shares: number, averageCost?: number, accountId?: string | null) => {
     const res = await fetch('/api/portfolio', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ symbol, shares, average_cost: averageCost }),
+      body: JSON.stringify({ symbol, shares, average_cost: averageCost, account_id: accountId ?? null }),
     });
     if (!res.ok) {
       const err = await res.json();
@@ -36,11 +36,11 @@ export function usePortfolio() {
     await fetchHoldings();
   }, [fetchHoldings]);
 
-  const updateHolding = useCallback(async (id: string, shares: number, averageCost?: number) => {
+  const updateHolding = useCallback(async (id: string, shares: number, averageCost?: number, accountId?: string | null) => {
     const res = await fetch(`/api/portfolio/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ shares, average_cost: averageCost }),
+      body: JSON.stringify({ shares, average_cost: averageCost, account_id: accountId }),
     });
     if (!res.ok) {
       const err = await res.json();
@@ -59,5 +59,18 @@ export function usePortfolio() {
     fetchHoldings();
   }, [fetchHoldings]);
 
-  return { holdings, loading, error, fetchHoldings, addHolding, updateHolding, deleteHolding };
+  const moveHoldingToAccount = useCallback(async (id: string, accountId: string | null) => {
+    const res = await fetch(`/api/portfolio/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ account_id: accountId }),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error ?? 'Failed to move holding');
+    }
+    await fetchHoldings();
+  }, [fetchHoldings]);
+
+  return { holdings, loading, error, fetchHoldings, addHolding, updateHolding, deleteHolding, moveHoldingToAccount };
 }

@@ -1,10 +1,21 @@
 import type { Stock } from './stock';
 import type { NormalizedDividend } from './dividend';
 
+export type AccountType = 'ISA' | '연금저축' | '퇴직연금' | '일반' | '기타';
+
+export interface Account {
+  id: string;
+  name: string;
+  type: AccountType;
+  user_id: string | null;
+  created_at: string;
+}
+
 export interface PortfolioHolding {
   id: string;
   stock_id: string;
   user_id: string | null;
+  account_id: string | null;
   shares: number;
   average_cost: number | null;
   created_at: string;
@@ -13,6 +24,7 @@ export interface PortfolioHolding {
 
 export interface PortfolioHoldingWithStock extends PortfolioHolding {
   stock: Stock;
+  account?: Account;
   latestDividend?: NormalizedDividend | null;
   annualDividendPerShare?: number;
   estimatedAnnualDividend?: number;

@@ -100,10 +100,30 @@ CREATE POLICY "portfolio_public_delete" ON portfolio_holdings
   FOR DELETE USING (true);
 
 -- ============================================================
+-- accounts
+-- ============================================================
+CREATE TABLE IF NOT EXISTS accounts (
+  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name       TEXT NOT NULL,
+  type       TEXT NOT NULL CHECK (type IN ('ISA','연금저축','퇴직연금','일반','기타')),
+  user_id    UUID REFERENCES auth.users(id),
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+ALTER TABLE accounts ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "open" ON accounts USING (true) WITH CHECK (true);
+
+-- account_id 컬럼 추가 (이미 테이블이 있는 경우 ALTER TABLE로 실행)
+ALTER TABLE portfolio_holdings
+  ADD COLUMN IF NOT EXISTS account_id UUID REFERENCES accounts(id) ON DELETE SET NULL;
+
+-- ============================================================
 -- Indexes
 -- ============================================================
 CREATE INDEX IF NOT EXISTS idx_dividends_stock_id ON dividends(stock_id);
 CREATE INDEX IF NOT EXISTS idx_dividends_ex_date ON dividends(ex_dividend_date);
 CREATE INDEX IF NOT EXISTS idx_portfolio_stock_id ON portfolio_holdings(stock_id);
+CREATE INDEX IF NOT EXISTS idx_portfolio_account_id ON portfolio_holdings(account_id);
 CREATE INDEX IF NOT EXISTS idx_api_cache_key ON api_cache(cache_key);
 CREATE INDEX IF NOT EXISTS idx_api_cache_expires ON api_cache(expires_at);
