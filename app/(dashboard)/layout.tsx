@@ -1,6 +1,12 @@
+'use client';
+
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { CalendarDays, BarChart3 } from 'lucide-react';
+import { CalendarDays, BarChart3, LogOut } from 'lucide-react';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { useAuth } from '@/components/AuthProvider';
+import { Button } from '@/components/ui/button';
 
 const navItems = [
   { href: '/calendar', label: '배당 캘린더', icon: CalendarDays },
@@ -8,6 +14,24 @@ const navItems = [
 ];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated, logout } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      router.replace('/login');
+    }
+  }, [isAuthenticated, router]);
+
+  const handleLogout = () => {
+    logout();
+    router.replace('/login');
+  };
+
+  if (!isAuthenticated) {
+    return null;
+  }
+
   return (
     <div className="flex min-h-screen bg-background text-foreground">
       {/* Sidebar */}
@@ -32,8 +56,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           ))}
         </nav>
 
-        <div className="p-3 border-t border-border space-y-1">
+        <div className="p-3 border-t border-border space-y-2">
           <ThemeToggle />
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleLogout}
+            className="w-full justify-start gap-2 text-muted-foreground hover:text-foreground"
+          >
+            <LogOut className="h-4 w-4" />
+            로그아웃
+          </Button>
           <p className="text-xs text-muted-foreground px-2">데이터: FMP · Yahoo Finance</p>
         </div>
       </aside>
