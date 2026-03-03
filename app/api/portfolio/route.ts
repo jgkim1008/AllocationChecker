@@ -4,6 +4,57 @@ import { detectMarket, getCurrency, getFrequencyMultiplier } from '@/lib/utils/m
 import { resolveStockName } from '@/lib/api/stock-info';
 import { getOrFetchDividends } from '@/lib/cache/dividend-cache';
 
+type DividendRow = {
+  ex_dividend_date: string;
+  payment_date: string | null;
+  dividend_amount: number;
+  frequency: string | null;
+  source: string;
+};
+
+type RawHolding = Record<string, unknown> & {
+  stock?: Record<string, unknown> & { dividends?: DividendRow[]; symbol?: string };
+};
+
+function getSymbol(h: RawHolding): string | undefined {
+  return h.stock?.symbol as string | undefined;
+}
+
+function getDivs(h: RawHolding): DividendRow[] {
+  return h.stock?.dividends ?? [];
+}
+
+function buildQuery(
+  supabase: ReturnType<typeof createServiceClient> extends Promise<infer T> ? T : never,
+  accountId: string | null
+) {
+  let q = supabase
+    .from('portfolio_holdings')
+    .select(`
+      *,
+      stock:stocks(
+        *,
+        dividends(
+          ex_dividend_date,
+          payment_date,
+          dividend_amount,
+          frequency,
+          source
+        )
+      )
+    `)
+    .order('created_at', { ascending: false });
+
+  if (accountId && accountId !== 'all') {
+    if (accountId === 'unassigned') {
+      q = q.is('account_id', null);
+    } else {
+      q = q.eq('account_id', accountId);
+    }
+  }
+  return q;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -11,92 +62,36 @@ export async function GET(request: NextRequest) {
 
     const supabase = await createServiceClient();
 
-    let query = supabase
-      .from('portfolio_holdings')
-      .select(`
-        *,
-        stock:stocks(
-          *,
-          dividends(
-            ex_dividend_date,
-            payment_date,
-            dividend_amount,
-            frequency,
-            source
-          )
-        )
-      `)
-      .order('created_at', { ascending: false });
-
-    if (accountId && accountId !== 'all') {
-      if (accountId === 'unassigned') {
-        query = query.is('account_id', null);
-      } else {
-        query = query.eq('account_id', accountId);
-      }
-    }
-
-    const { data, error } = await query;
-
+    const { data, error } = await buildQuery(supabase, accountId);
     if (error) throw error;
 
-    const holdings = data ?? [];
+    const holdings = (data ?? []) as RawHolding[];
 
-    // 배당 데이터가 없는 종목 목록 추출 → 자동 fetch
-    type DividendRow = {
-      ex_dividend_date: string;
-      payment_date: string | null;
-      dividend_amount: number;
-      frequency: string | null;
-      source: string;
-    };
+    // 1) 배당 데이터가 아예 없는 종목 → 일반 fetch
+    const noDataSymbols = new Set(
+      holdings.filter((h) => getDivs(h).length === 0).map(getSymbol).filter(Boolean) as string[]
+    );
 
-    const missingSymbols = [
-      ...new Set(
-        holdings
-          .filter((h) => {
-            const divs = (h.stock as Record<string, unknown> & { dividends?: DividendRow[] })
-              ?.dividends ?? [];
-            return divs.length === 0;
-          })
-          .map((h) => (h.stock as Record<string, unknown> & { symbol: string })?.symbol)
-          .filter(Boolean)
-      ),
-    ] as string[];
+    // 2) 배당은 있지만 frequency가 전부 null인 종목 → 강제 re-fetch (새 detectFrequency 적용)
+    const staleSymbols = new Set(
+      holdings
+        .filter((h) => {
+          const divs = getDivs(h);
+          return divs.length > 0 && divs.every((d) => !d.frequency);
+        })
+        .map(getSymbol)
+        .filter(Boolean) as string[]
+    );
 
-    // 배당 없는 종목은 외부 API에서 가져와 DB에 저장
-    if (missingSymbols.length > 0) {
-      await Promise.allSettled(missingSymbols.map((s) => getOrFetchDividends(s)));
+    const symbolsToFetch = [...new Set([...noDataSymbols, ...staleSymbols])];
 
-      // 배당 저장 후 다시 조회
-      let refreshQuery = supabase
-        .from('portfolio_holdings')
-        .select(`
-          *,
-          stock:stocks(
-            *,
-            dividends(
-              ex_dividend_date,
-              payment_date,
-              dividend_amount,
-              frequency,
-              source
-            )
-          )
-        `)
-        .order('created_at', { ascending: false });
+    if (symbolsToFetch.length > 0) {
+      await Promise.allSettled(
+        symbolsToFetch.map((s) => getOrFetchDividends(s, staleSymbols.has(s)))
+      );
 
-      if (accountId && accountId !== 'all') {
-        if (accountId === 'unassigned') {
-          refreshQuery = refreshQuery.is('account_id', null);
-        } else {
-          refreshQuery = refreshQuery.eq('account_id', accountId);
-        }
-      }
-
-      const { data: refreshed } = await refreshQuery;
-
-      return NextResponse.json(enrichHoldings(refreshed ?? []));
+      const { data: refreshed } = await buildQuery(supabase, accountId);
+      return NextResponse.json(enrichHoldings((refreshed ?? []) as RawHolding[]));
     }
 
     return NextResponse.json(enrichHoldings(holdings));
@@ -106,31 +101,22 @@ export async function GET(request: NextRequest) {
   }
 }
 
-function enrichHoldings(data: Record<string, unknown>[]) {
-  type DividendRow = {
-    ex_dividend_date: string;
-    payment_date: string | null;
-    dividend_amount: number;
-    frequency: string | null;
-    source: string;
-  };
-
+function enrichHoldings(data: RawHolding[]) {
   return data.map((h) => {
-    const stock = h.stock as Record<string, unknown> & { dividends?: DividendRow[] };
-
-    const dividends = (stock?.dividends ?? []).sort(
+    const dividends = [...getDivs(h)].sort(
       (a, b) => b.ex_dividend_date.localeCompare(a.ex_dividend_date)
     );
 
     const latestRaw = dividends[0] ?? null;
 
-    // frequency가 DB에 null로 저장된 경우 배당 날짜 간격으로 자동 감지
+    // frequency가 DB에 null로 저장된 경우 배당 날짜 간격으로 자동 감지 (인메모리 fallback)
     let frequency: string | null = latestRaw?.frequency ?? null;
     if (!frequency && dividends.length >= 2) {
-      const dates = dividends.map((d) => d.ex_dividend_date);
       const gaps: number[] = [];
-      for (let i = 0; i < Math.min(dates.length - 1, 4); i++) {
-        const diff = new Date(dates[i]).getTime() - new Date(dates[i + 1]).getTime();
+      for (let i = 0; i < Math.min(dividends.length - 1, 4); i++) {
+        const diff =
+          new Date(dividends[i].ex_dividend_date).getTime() -
+          new Date(dividends[i + 1].ex_dividend_date).getTime();
         gaps.push(diff / (1000 * 60 * 60 * 24));
       }
       const avg = gaps.reduce((a, b) => a + b, 0) / gaps.length;
@@ -155,10 +141,10 @@ function enrichHoldings(data: Record<string, unknown>[]) {
       )
       .reduce((sum, d) => sum + Number(h.shares) * Number(d.dividend_amount), 0);
 
-    const { dividends: _div, ...stockWithoutDividends } = stock ?? {};
+    const { dividends: _div, ...stockWithoutDividends } = h.stock ?? {};
     void _div;
 
-    // DB snake_case → camelCase로 정규화 (감지된 frequency 사용)
+    // DB snake_case → camelCase 정규화 (감지된 frequency 사용)
     const latestDividend = latestRaw
       ? {
           exDividendDate: latestRaw.ex_dividend_date,
@@ -195,7 +181,7 @@ export async function POST(request: NextRequest) {
     // 종목명 + 배당 데이터 병렬 조회
     const [stockName] = await Promise.all([
       resolveStockName(symbol),
-      getOrFetchDividends(symbol), // 배당 데이터 미리 캐싱
+      getOrFetchDividends(symbol),
     ]);
 
     const { data: stock, error: stockError } = await supabase

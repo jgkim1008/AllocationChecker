@@ -36,10 +36,14 @@ async function touchCache(key: string, ttlSeconds: number): Promise<void> {
     .upsert({ cache_key: key, expires_at: expiresAt }, { onConflict: 'cache_key' });
 }
 
-export async function getOrFetchDividends(symbol: string): Promise<NormalizedDividend[]> {
+/**
+ * @param force true 시 캐시를 무시하고 외부 API에서 강제 재조회합니다.
+ *              frequency=null로 저장된 기존 종목 재정비에 사용합니다.
+ */
+export async function getOrFetchDividends(symbol: string, force = false): Promise<NormalizedDividend[]> {
   const supabase = await createServiceClient();
   const key = cacheKey('dividends', symbol.toUpperCase());
-  const valid = await isCacheValid(key);
+  const valid = !force && await isCacheValid(key);
 
   if (valid) {
     // Return from DB cache
@@ -98,7 +102,7 @@ export async function getOrFetchDividends(symbol: string): Promise<NormalizedDiv
     .single();
 
   if (stock) {
-    // Upsert dividends
+    // Upsert dividends — frequency도 함께 갱신 (force 시 기존 null → 감지값으로 업데이트)
     const rows = dividends.map((d) => ({
       stock_id: stock.id,
       ex_dividend_date: d.exDividendDate,
