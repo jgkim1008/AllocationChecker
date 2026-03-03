@@ -123,7 +123,23 @@ function enrichHoldings(data: Record<string, unknown>[]) {
     );
 
     const latestRaw = dividends[0] ?? null;
-    const frequency = latestRaw?.frequency ?? null;
+
+    // frequency가 DB에 null로 저장된 경우 배당 날짜 간격으로 자동 감지
+    let frequency: string | null = latestRaw?.frequency ?? null;
+    if (!frequency && dividends.length >= 2) {
+      const dates = dividends.map((d) => d.ex_dividend_date);
+      const gaps: number[] = [];
+      for (let i = 0; i < Math.min(dates.length - 1, 4); i++) {
+        const diff = new Date(dates[i]).getTime() - new Date(dates[i + 1]).getTime();
+        gaps.push(diff / (1000 * 60 * 60 * 24));
+      }
+      const avg = gaps.reduce((a, b) => a + b, 0) / gaps.length;
+      if (avg <= 35) frequency = 'monthly';
+      else if (avg <= 100) frequency = 'quarterly';
+      else if (avg <= 200) frequency = 'semi-annual';
+      else frequency = 'annual';
+    }
+
     const multiplier = getFrequencyMultiplier(frequency);
     const estimatedAnnualDividend = latestRaw
       ? Number(h.shares) * Number(latestRaw.dividend_amount) * multiplier
@@ -142,13 +158,13 @@ function enrichHoldings(data: Record<string, unknown>[]) {
     const { dividends: _div, ...stockWithoutDividends } = stock ?? {};
     void _div;
 
-    // DB snake_case → camelCase로 정규화
+    // DB snake_case → camelCase로 정규화 (감지된 frequency 사용)
     const latestDividend = latestRaw
       ? {
           exDividendDate: latestRaw.ex_dividend_date,
           paymentDate: latestRaw.payment_date,
           dividendAmount: Number(latestRaw.dividend_amount),
-          frequency: latestRaw.frequency as import('@/types/dividend').DividendFrequency,
+          frequency: frequency as import('@/types/dividend').DividendFrequency,
           source: latestRaw.source as import('@/types/dividend').DividendSource,
         }
       : null;

@@ -19,6 +19,22 @@ function parseFrequency(freq: string | undefined): DividendFrequency {
   return null;
 }
 
+/** 배당 날짜 간격으로 지급 빈도를 추정합니다 (FMP가 frequency를 미제공할 때 사용). */
+function detectFrequency(dates: string[]): DividendFrequency {
+  if (dates.length < 2) return null;
+  const sorted = [...dates].sort((a, b) => b.localeCompare(a));
+  const gaps: number[] = [];
+  for (let i = 0; i < Math.min(sorted.length - 1, 4); i++) {
+    const diffMs = new Date(sorted[i]).getTime() - new Date(sorted[i + 1]).getTime();
+    gaps.push(diffMs / (1000 * 60 * 60 * 24));
+  }
+  const avg = gaps.reduce((a, b) => a + b, 0) / gaps.length;
+  if (avg <= 35) return 'monthly';
+  if (avg <= 100) return 'quarterly';
+  if (avg <= 200) return 'semi-annual';
+  return 'annual';
+}
+
 export async function searchStocks(query: string): Promise<StockSearchResult[]> {
   const url = `${BASE_URL}/stable/search-symbol?query=${encodeURIComponent(query)}&limit=10&apikey=${getApiKey()}`;
   const res = await fetch(url, { next: { revalidate: 3600 } });
@@ -79,13 +95,18 @@ export async function getDividendHistory(symbol: string): Promise<NormalizedDivi
   const data = await res.json();
   if (!Array.isArray(data)) return [];
 
+  // FMP stable/dividends 가 frequency 필드를 미제공하는 경우 날짜 간격으로 감지
+  const parsedFrequency = parseFrequency(data[0]?.frequency as string | undefined);
+  const frequency: DividendFrequency =
+    parsedFrequency ?? detectFrequency(data.map((d: Record<string, unknown>) => d.date as string));
+
   return data.map((item: Record<string, unknown>) => ({
     symbol,
     market: 'US' as const,
     exDividendDate: item.date as string,
     paymentDate: (item.paymentDate as string) ?? null,
     dividendAmount: Number(item.adjDividend ?? item.dividend) || 0,
-    frequency: parseFrequency(item.frequency as string),
+    frequency,
     currency: 'USD' as const,
     source: 'fmp' as const,
   }));
