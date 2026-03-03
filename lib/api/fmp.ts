@@ -38,6 +38,39 @@ export async function searchStocks(query: string): Promise<StockSearchResult[]> 
     }));
 }
 
+export interface StockQuote {
+  symbol: string;
+  price: number;
+  changePercent: number;
+}
+
+export async function getQuotes(symbols: string[]): Promise<StockQuote[]> {
+  if (symbols.length === 0) return [];
+
+  // Free plan does not support bulk (comma-separated) symbol queries.
+  // Fetch each symbol individually and merge results.
+  const results = await Promise.allSettled(
+    symbols.map(async (symbol) => {
+      const url = `${BASE_URL}/stable/quote?symbol=${encodeURIComponent(symbol)}&apikey=${getApiKey()}`;
+      const res = await fetch(url, { next: { revalidate: 300 } });
+      if (!res.ok) return null;
+      const data = await res.json();
+      if (!Array.isArray(data) || data.length === 0) return null;
+      const item = data[0] as Record<string, unknown>;
+      return {
+        symbol: item.symbol as string,
+        price: Number(item.price ?? 0),
+        // FMP stable/quote returns "changePercentage" (not "changesPercentage")
+        changePercent: Number(item.changePercentage ?? 0),
+      };
+    })
+  );
+
+  return results
+    .filter((r): r is PromiseFulfilledResult<StockQuote> => r.status === 'fulfilled' && r.value !== null)
+    .map((r) => r.value);
+}
+
 export async function getDividendHistory(symbol: string): Promise<NormalizedDividend[]> {
   const url = `${BASE_URL}/stable/dividends?symbol=${encodeURIComponent(symbol)}&apikey=${getApiKey()}`;
   const res = await fetch(url, { next: { revalidate: 86400 } });

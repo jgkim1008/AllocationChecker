@@ -62,6 +62,54 @@ export async function searchKoreanStocks(query: string): Promise<StockSearchResu
   }
 }
 
+export interface StockQuote {
+  symbol: string;
+  price: number;
+  changePercent: number;
+}
+
+// v7/finance/quote is now Unauthorized on free Yahoo accounts.
+// Use v8/finance/chart (1d range) which is still publicly accessible
+// and returns regularMarketPrice + chartPreviousClose for change %.
+export async function getQuotes(symbols: string[]): Promise<StockQuote[]> {
+  if (symbols.length === 0) return [];
+
+  const results = await Promise.allSettled(
+    symbols.map(async (symbol) => {
+      const ticker = ensureSuffix(symbol);
+      const url = `${QUERY_URL}/v8/finance/chart/${encodeURIComponent(ticker)}?range=1d&interval=1d`;
+      try {
+        const res = await fetch(url, {
+          headers: { 'User-Agent': 'Mozilla/5.0' },
+          next: { revalidate: 300 },
+        });
+        if (!res.ok) return null;
+        const data = await res.json();
+        const meta = data?.chart?.result?.[0]?.meta;
+        if (!meta) return null;
+
+        const currentPrice: number = meta.regularMarketPrice ?? 0;
+        const prevClose: number = meta.chartPreviousClose ?? meta.previousClose ?? currentPrice;
+        const changePercent = prevClose !== 0
+          ? ((currentPrice - prevClose) / prevClose) * 100
+          : 0;
+
+        return {
+          symbol: ticker,  // return with .KS/.KQ suffix so caller can match
+          price: currentPrice,
+          changePercent: Math.round(changePercent * 100) / 100,
+        } satisfies StockQuote;
+      } catch {
+        return null;
+      }
+    })
+  );
+
+  return results
+    .filter((r): r is PromiseFulfilledResult<StockQuote> => r.status === 'fulfilled' && r.value !== null)
+    .map((r) => r.value);
+}
+
 export async function getDividendHistory(symbol: string): Promise<NormalizedDividend[]> {
   const ticker = ensureSuffix(symbol);
   const url = `${QUERY_URL}/v8/finance/chart/${encodeURIComponent(ticker)}?events=div&range=2y&interval=1d`;
@@ -133,20 +181,20 @@ export async function getStockInfo(symbol: string): Promise<{ name: string; curr
     }
   } catch { /* fallthrough */ }
 
-  // 2차: quoteSummary price 모듈
+  // 2차: v8 chart meta (name fields)
   try {
-    const url = `${QUERY_URL}/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=price`;
+    const url = `${QUERY_URL}/v8/finance/chart/${encodeURIComponent(ticker)}?range=1d&interval=1d`;
     const res = await fetch(url, {
       headers: { 'User-Agent': 'Mozilla/5.0' },
       next: { revalidate: 604800 },
     });
     if (res.ok) {
       const data = await res.json();
-      const price = data?.quoteSummary?.result?.[0]?.price;
-      if (price?.longName || price?.shortName) {
+      const meta = data?.chart?.result?.[0]?.meta;
+      if (meta?.longName || meta?.shortName) {
         return {
-          name: (price.longName ?? price.shortName) as string,
-          currency: price.currency ?? 'KRW',
+          name: (meta.longName ?? meta.shortName) as string,
+          currency: meta.currency ?? 'KRW',
         };
       }
     }

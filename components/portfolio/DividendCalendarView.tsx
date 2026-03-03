@@ -1,0 +1,248 @@
+'use client';
+
+import { useState, useMemo } from 'react';
+import { ChevronLeft, ChevronRight, X } from 'lucide-react';
+import {
+  startOfMonth,
+  getDaysInMonth,
+  getDay,
+  addMonths,
+  subMonths,
+  format,
+} from 'date-fns';
+import type { PortfolioHoldingWithStock } from '@/types/portfolio';
+import { formatCurrency } from '@/lib/utils/dividend-calculator';
+import { buildMonthPayments, type DayPayment } from '@/lib/utils/dividend-calendar';
+
+interface Props {
+  holdings: PortfolioHoldingWithStock[];
+  onClose: () => void;
+}
+
+function formatCompact(amount: number, currency: 'USD' | 'KRW'): string {
+  if (currency === 'KRW') {
+    if (amount >= 10_000_000) return `${Math.round(amount / 1_000_000)}백만`;
+    if (amount >= 10_000) return `${Math.round(amount / 10_000)}만`;
+    return `${Math.round(amount).toLocaleString()}`;
+  }
+  if (amount >= 1_000) return `$${(amount / 1_000).toFixed(1)}k`;
+  return `$${amount.toFixed(0)}`;
+}
+
+function StockAvatar({ symbol, market }: { symbol: string; market: string }) {
+  const letter = symbol.replace(/\.[A-Z]+$/, '')[0]?.toUpperCase() ?? '?';
+  const bg = market === 'US' ? '#1A2940' : '#0D2B1E';
+  const color = market === 'US' ? '#3B82F6' : '#00D085';
+  return (
+    <div
+      className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold shrink-0"
+      style={{ backgroundColor: bg, color }}
+    >
+      {letter}
+    </div>
+  );
+}
+
+export function DividendCalendarView({ holdings, onClose }: Props) {
+  const [viewDate, setViewDate] = useState(() => startOfMonth(new Date()));
+
+  const year = viewDate.getFullYear();
+  const month = viewDate.getMonth() + 1;
+
+  const paymentsByDay = useMemo(
+    () => buildMonthPayments(holdings, year, month),
+    [holdings, year, month]
+  );
+
+  const monthTotals = useMemo(() => {
+    let usd = 0;
+    let krw = 0;
+    paymentsByDay.forEach((payments) => {
+      for (const p of payments) {
+        if (p.currency === 'USD') usd += p.total;
+        else krw += p.total;
+      }
+    });
+    return { usd, krw };
+  }, [paymentsByDay]);
+
+  const daysInMonth = getDaysInMonth(viewDate);
+  const firstWeekday = getDay(viewDate);
+  const totalCells = Math.ceil((firstWeekday + daysInMonth) / 7) * 7;
+
+  const paymentDays = useMemo(
+    () => [...paymentsByDay.keys()].sort((a, b) => a - b),
+    [paymentsByDay]
+  );
+
+  const today = new Date();
+  const isCurrentMonth = today.getFullYear() === year && today.getMonth() + 1 === month;
+
+  return (
+    <div className="fixed inset-0 bg-[#14151A] z-50 overflow-y-auto">
+      {/* Header */}
+      <div className="sticky top-0 bg-[#14151A] border-b border-[#2A2B35] px-4 py-3 flex items-center justify-between z-10">
+        <h2 className="text-base font-bold text-white">배당 캘린더</h2>
+        <button
+          onClick={onClose}
+          className="p-2 rounded-full text-[#8B8FA8] hover:text-white hover:bg-[#1E1F26] transition-colors"
+        >
+          <X className="h-5 w-5" />
+        </button>
+      </div>
+
+      <div className="max-w-6xl mx-auto px-4 py-6">
+        <div className="grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-6 items-start">
+
+          {/* Left: Calendar grid */}
+          <div>
+            <div className="flex items-center justify-between mb-5">
+              <button
+                onClick={() => setViewDate(subMonths(viewDate, 1))}
+                className="p-1.5 rounded-lg text-[#8B8FA8] hover:text-white hover:bg-[#1E1F26] transition-colors"
+              >
+                <ChevronLeft className="h-5 w-5" />
+              </button>
+              <p className="text-lg font-bold text-white">{format(viewDate, 'yyyy.MM')}</p>
+              <button
+                onClick={() => setViewDate(addMonths(viewDate, 1))}
+                className="p-1.5 rounded-lg text-[#8B8FA8] hover:text-white hover:bg-[#1E1F26] transition-colors"
+              >
+                <ChevronRight className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-7 mb-1">
+              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
+                <div key={d} className="text-center text-xs font-semibold text-[#8B8FA8] py-1">
+                  {d}
+                </div>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-7">
+              {Array.from({ length: totalCells }).map((_, i) => {
+                const dayNum = i - firstWeekday + 1;
+                const isValid = dayNum >= 1 && dayNum <= daysInMonth;
+                const payments = isValid ? paymentsByDay.get(dayNum) : undefined;
+                const hasPayment = !!payments?.length;
+                const isToday = isCurrentMonth && dayNum === today.getDate();
+
+                const dayTotal = payments?.reduce(
+                  (s, p) => ({
+                    usd: s.usd + (p.currency === 'USD' ? p.total : 0),
+                    krw: s.krw + (p.currency === 'KRW' ? p.total : 0),
+                  }),
+                  { usd: 0, krw: 0 }
+                ) ?? { usd: 0, krw: 0 };
+
+                return (
+                  <div key={i} className="min-h-[64px] flex flex-col items-center pt-1 pb-2">
+                    {isValid && (
+                      <>
+                        <div
+                          className={`w-7 h-7 flex items-center justify-center rounded-full text-sm font-semibold ${
+                            isToday
+                              ? 'bg-[#F0B429] text-[#14151A]'
+                              : hasPayment
+                              ? 'text-white'
+                              : 'text-[#8B8FA8]'
+                          }`}
+                        >
+                          {dayNum}
+                        </div>
+                        {hasPayment && (
+                          <div className="flex flex-col items-center mt-0.5 gap-0.5">
+                            <div className="w-1.5 h-1.5 rounded-full bg-[#F0B429]" />
+                            <p className="text-[9px] text-[#F0B429] font-semibold leading-none text-center">
+                              {dayTotal.krw > 0 && formatCompact(dayTotal.krw, 'KRW')}
+                              {dayTotal.usd > 0 && formatCompact(dayTotal.usd, 'USD')}
+                            </p>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Right: Payment list */}
+          <div>
+            <div className="flex items-center justify-between mb-5">
+              <div className="flex items-center gap-2 flex-wrap">
+                <p className="text-sm font-semibold text-white">{month}월 예상 배당금</p>
+                <span className="text-xs bg-[#F0B429]/20 text-[#F0B429] font-semibold px-2 py-0.5 rounded-full">
+                  세금 15% 미적용
+                </span>
+              </div>
+              <div className="text-right">
+                {monthTotals.krw > 0 && (
+                  <p className="text-base font-bold text-white">
+                    {formatCurrency(monthTotals.krw, 'KRW')}
+                  </p>
+                )}
+                {monthTotals.usd > 0 && (
+                  <p className={`font-bold text-white ${monthTotals.krw > 0 ? 'text-sm text-[#8B8FA8]' : 'text-base'}`}>
+                    {formatCurrency(monthTotals.usd, 'USD')}
+                  </p>
+                )}
+                {monthTotals.krw === 0 && monthTotals.usd === 0 && (
+                  <p className="text-sm text-[#8B8FA8]">이달 배당 없음</p>
+                )}
+              </div>
+            </div>
+
+            {paymentDays.length === 0 ? (
+              <div className="py-16 text-center">
+                <p className="text-[#8B8FA8] text-sm">이달 예정된 배당이 없습니다</p>
+                <p className="text-[#8B8FA8] text-xs mt-1 opacity-60">
+                  포트폴리오에 종목을 추가하거나 다른 달을 확인해보세요
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {paymentDays.map((day) => {
+                  const payments = paymentsByDay.get(day)!;
+                  return (
+                    <div key={day}>
+                      <div className="flex items-center gap-2 mb-3">
+                        <span className="text-sm font-bold text-white">{day}일</span>
+                        <span className="text-[10px] font-semibold bg-[#F0B429] text-[#14151A] px-1.5 py-0.5 rounded">
+                          확정
+                        </span>
+                      </div>
+                      <div className="space-y-2">
+                        {payments.map((p) => (
+                          <PaymentRow key={p.symbol} payment={p} />
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PaymentRow({ payment: p }: { payment: DayPayment }) {
+  return (
+    <div className="flex items-center gap-3 bg-[#1E1F26] rounded-xl px-4 py-3">
+      <StockAvatar symbol={p.symbol} market={p.market} />
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-bold text-white truncate">{p.name}</p>
+        <p className="text-xs text-[#8B8FA8] mt-0.5">
+          {p.shares.toLocaleString()}주 보유 · 주당 {formatCurrency(p.dps, p.currency)}
+        </p>
+      </div>
+      <p className="text-sm font-bold text-white shrink-0">
+        {formatCurrency(p.total, p.currency)}
+      </p>
+    </div>
+  );
+}
