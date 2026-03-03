@@ -12,11 +12,12 @@ const CHART_COLORS = [
 
 interface Props {
   holdings: PortfolioHoldingWithStock[];
+  usdKrw?: number | null;
 }
 
 type ChartMode = 'asset' | 'dividend';
 
-export function AnalyticsSummary({ holdings: hs }: Props) {
+export function AnalyticsSummary({ holdings: hs, usdKrw }: Props) {
   const [chartMode, setChartMode] = useState<ChartMode>('asset');
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
 
@@ -33,17 +34,28 @@ export function AnalyticsSummary({ holdings: hs }: Props) {
   const annualUSD = usd.reduce((s, h) => s + (h.estimatedAnnualDividend ?? 0), 0);
   const annualKRW = krw.reduce((s, h) => s + (h.estimatedAnnualDividend ?? 0), 0);
 
-  const yieldUSD = totalCostUSD > 0 ? (annualUSD / totalCostUSD) * 100 : 0;
-  const yieldKRW = totalCostKRW > 0 ? (annualKRW / totalCostKRW) * 100 : 0;
-  const hasBothCurrencies = totalCostUSD > 0 && totalCostKRW > 0;
+  // 원화 통합 (환율 있을 때)
+  const convertedUsdToKrw = usdKrw && totalCostUSD > 0 ? totalCostUSD * usdKrw : 0;
+  const totalKRWUnified = totalCostKRW + convertedUsdToKrw;
+  const showUnified = !!usdKrw && totalCostUSD > 0;
 
-  const displayYield = hasBothCurrencies
-    ? `${yieldUSD.toFixed(2)}% / ${yieldKRW.toFixed(2)}%`
-    : totalCostUSD > 0
-    ? `${yieldUSD.toFixed(2)}%`
-    : totalCostKRW > 0
-    ? `${yieldKRW.toFixed(2)}%`
-    : '-';
+  // 투자배당률 — 통합 모드에서는 원화 환산 합산
+  let displayYield: string;
+  if (showUnified && totalKRWUnified > 0) {
+    const annualConverted = annualKRW + annualUSD * usdKrw!;
+    displayYield = `${((annualConverted / totalKRWUnified) * 100).toFixed(2)}%`;
+  } else {
+    const yieldUSD = totalCostUSD > 0 ? (annualUSD / totalCostUSD) * 100 : 0;
+    const yieldKRW = totalCostKRW > 0 ? (annualKRW / totalCostKRW) * 100 : 0;
+    const hasBoth = totalCostUSD > 0 && totalCostKRW > 0;
+    displayYield = hasBoth
+      ? `${yieldUSD.toFixed(2)}% / ${yieldKRW.toFixed(2)}%`
+      : totalCostUSD > 0
+      ? `${yieldUSD.toFixed(2)}%`
+      : totalCostKRW > 0
+      ? `${yieldKRW.toFixed(2)}%`
+      : '-';
+  }
 
   // Chart data — asset composition
   const assetData = hs
@@ -71,10 +83,13 @@ export function AnalyticsSummary({ holdings: hs }: Props) {
   const total = chartData.reduce((s, d) => s + d.value, 0);
   const active = activeIndex !== null ? chartData[activeIndex] : null;
 
-  // For center total display: only show formatted value if single currency
   const chartDataCurrencies = [...new Set(chartData.map((d) => d.currency))];
   const showCenterTotal = chartDataCurrencies.length === 1;
   const centerCurrency = showCenterTotal ? (chartDataCurrencies[0] as 'USD' | 'KRW') : 'USD';
+
+  // 월 평균 배당 (통합)
+  const monthlyUSD = annualUSD / 12;
+  const monthlyKRW = annualKRW / 12;
 
   return (
     <div className="space-y-4">
@@ -84,24 +99,36 @@ export function AnalyticsSummary({ holdings: hs }: Props) {
 
         {/* Hero numbers */}
         <div className="mb-3">
-          {totalCostUSD > 0 && (
-            <p className={`font-bold text-white leading-tight ${!hasBothCurrencies ? 'text-3xl' : 'text-2xl'}`}>
-              {formatCurrency(totalCostUSD, 'USD')}
-            </p>
-          )}
-          {totalCostKRW > 0 && (
-            <p
-              className={`font-bold leading-tight ${
-                hasBothCurrencies && totalCostUSD > 0
-                  ? 'text-lg text-[#8B8FA8] mt-1'
-                  : 'text-3xl text-white'
-              }`}
-            >
-              {formatCurrency(totalCostKRW, 'KRW')}
-            </p>
-          )}
-          {totalCostUSD === 0 && totalCostKRW === 0 && (
-            <p className="text-3xl font-bold text-white leading-tight">-</p>
+          {showUnified ? (
+            // 환율 있을 때: 원화 통합 금액 단일 표시
+            <>
+              <p className="text-3xl font-bold text-white leading-tight">
+                {formatCurrency(totalKRWUnified, 'KRW')}
+              </p>
+              <p className="text-xs text-[#8B8FA8] mt-1">
+                ₩{formatCurrency(totalCostKRW, 'KRW').replace(/[₩$,]/g, '').trim()} +{' '}
+                ${totalCostUSD.toFixed(0)} × {Math.round(usdKrw!).toLocaleString()}원
+              </p>
+            </>
+          ) : (
+            // 환율 없거나 US만/KR만
+            <>
+              {totalCostUSD > 0 && (
+                <p className={`font-bold text-white leading-tight ${totalCostKRW > 0 ? 'text-2xl' : 'text-3xl'}`}>
+                  {formatCurrency(totalCostUSD, 'USD')}
+                </p>
+              )}
+              {totalCostKRW > 0 && (
+                <p className={`font-bold leading-tight ${
+                  totalCostUSD > 0 ? 'text-lg text-[#8B8FA8] mt-1' : 'text-3xl text-white'
+                }`}>
+                  {formatCurrency(totalCostKRW, 'KRW')}
+                </p>
+              )}
+              {totalCostUSD === 0 && totalCostKRW === 0 && (
+                <p className="text-3xl font-bold text-white leading-tight">-</p>
+              )}
+            </>
           )}
         </div>
 
@@ -109,18 +136,26 @@ export function AnalyticsSummary({ holdings: hs }: Props) {
         {(annualUSD > 0 || annualKRW > 0) && (
           <div className="flex items-center gap-1.5 mb-4 flex-wrap">
             <span className="text-xs text-[#8B8FA8]">연간 예상 배당</span>
-            {annualUSD > 0 && (
+            {showUnified ? (
               <span className="text-sm font-semibold text-[#00D085]">
-                {formatCurrency(annualUSD, 'USD')}
+                {formatCurrency(annualKRW + annualUSD * usdKrw!, 'KRW')}
               </span>
-            )}
-            {annualUSD > 0 && annualKRW > 0 && (
-              <span className="text-[#2A2B35] text-xs">·</span>
-            )}
-            {annualKRW > 0 && (
-              <span className="text-sm font-semibold text-[#00D085]">
-                {formatCurrency(annualKRW, 'KRW')}
-              </span>
+            ) : (
+              <>
+                {annualUSD > 0 && (
+                  <span className="text-sm font-semibold text-[#00D085]">
+                    {formatCurrency(annualUSD, 'USD')}
+                  </span>
+                )}
+                {annualUSD > 0 && annualKRW > 0 && (
+                  <span className="text-[#2A2B35] text-xs">·</span>
+                )}
+                {annualKRW > 0 && (
+                  <span className="text-sm font-semibold text-[#00D085]">
+                    {formatCurrency(annualKRW, 'KRW')}
+                  </span>
+                )}
+              </>
             )}
           </div>
         )}
@@ -134,18 +169,26 @@ export function AnalyticsSummary({ holdings: hs }: Props) {
           <div>
             <p className="text-[10px] text-[#8B8FA8] mb-1.5">월 평균 배당</p>
             <div>
-              {annualUSD > 0 && (
-                <p className={`font-bold text-white leading-tight ${annualKRW > 0 ? 'text-xs' : 'text-sm'}`}>
-                  {formatCurrency(annualUSD / 12, 'USD')}
+              {showUnified && (annualUSD > 0 || annualKRW > 0) ? (
+                <p className="text-sm font-bold text-white leading-tight">
+                  {formatCurrency((annualKRW + annualUSD * usdKrw!) / 12, 'KRW')}
                 </p>
-              )}
-              {annualKRW > 0 && (
-                <p className={`font-bold text-white leading-tight ${annualUSD > 0 ? 'text-xs mt-0.5' : 'text-sm'}`}>
-                  {formatCurrency(annualKRW / 12, 'KRW')}
-                </p>
-              )}
-              {annualUSD === 0 && annualKRW === 0 && (
-                <p className="text-sm font-bold text-[#8B8FA8]">-</p>
+              ) : (
+                <>
+                  {annualUSD > 0 && (
+                    <p className={`font-bold text-white leading-tight ${monthlyKRW > 0 ? 'text-xs' : 'text-sm'}`}>
+                      {formatCurrency(monthlyUSD, 'USD')}
+                    </p>
+                  )}
+                  {annualKRW > 0 && (
+                    <p className={`font-bold text-white leading-tight ${monthlyUSD > 0 ? 'text-xs mt-0.5' : 'text-sm'}`}>
+                      {formatCurrency(monthlyKRW, 'KRW')}
+                    </p>
+                  )}
+                  {annualUSD === 0 && annualKRW === 0 && (
+                    <p className="text-sm font-bold text-[#8B8FA8]">-</p>
+                  )}
+                </>
               )}
             </div>
           </div>
@@ -156,7 +199,7 @@ export function AnalyticsSummary({ holdings: hs }: Props) {
         </div>
       </div>
 
-      {/* Chart card: asset / dividend tabs + donut */}
+      {/* Chart card */}
       {chartData.length > 0 && (
         <div className="bg-[#1E1F26] rounded-2xl p-5">
           {/* Tab toggle */}
@@ -231,7 +274,7 @@ export function AnalyticsSummary({ holdings: hs }: Props) {
               </div>
             </div>
 
-            {/* Legend list */}
+            {/* Legend */}
             <div className="flex-1 grid grid-cols-1 gap-y-2 min-w-0">
               {chartData.slice(0, 6).map((d, i) => (
                 <div

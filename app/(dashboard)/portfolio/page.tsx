@@ -12,6 +12,7 @@ import { DividendProjectionChart } from '@/components/portfolio/DividendProjecti
 import { DividendCalendarView } from '@/components/portfolio/DividendCalendarView';
 import { DividendYearView } from '@/components/portfolio/DividendYearView';
 import { useCurrentPrices } from '@/hooks/useCurrentPrices';
+import { useExchangeRate } from '@/hooks/useExchangeRate';
 import type { PortfolioHoldingWithStock } from '@/types/portfolio';
 
 type PageTab = 'asset' | 'dividend';
@@ -44,6 +45,9 @@ export default function PortfolioPage() {
   // Current price data
   const allSymbols = useMemo(() => holdings.map((h) => h.stock.symbol), [holdings]);
   const { prices: currentPrices, loading: pricesLoading } = useCurrentPrices(allSymbols);
+
+  // USD/KRW exchange rate (daily cache)
+  const { usdKrw } = useExchangeRate();
 
   const defaultAccountIdForAdd =
     selectedAccountId === 'all' || selectedAccountId === 'unassigned' ? null : selectedAccountId;
@@ -136,7 +140,7 @@ export default function PortfolioPage() {
 
             {/* 좌측 패널 */}
             <div className="space-y-4">
-              <AnalyticsSummary holdings={filteredHoldings} />
+              <AnalyticsSummary holdings={filteredHoldings} usdKrw={usdKrw} />
               {hasDividendData && (
                 <DividendProjectionChart
                   holdings={filteredHoldings}
