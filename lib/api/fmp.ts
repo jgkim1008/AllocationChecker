@@ -89,25 +89,30 @@ export async function getQuotes(symbols: string[]): Promise<StockQuote[]> {
 
 export async function getDividendHistory(symbol: string): Promise<NormalizedDividend[]> {
   const url = `${BASE_URL}/stable/dividends?symbol=${encodeURIComponent(symbol)}&apikey=${getApiKey()}`;
-  const res = await fetch(url, { next: { revalidate: 86400 } });
-  if (!res.ok) return [];
+  // cache: 'no-store' — Supabase api_cache 테이블에서 직접 캐싱하므로 Next.js fetch 캐시 비활성화
+  try {
+    const res = await fetch(url, { cache: 'no-store' });
+    if (!res.ok) return [];
 
-  const data = await res.json();
-  if (!Array.isArray(data)) return [];
+    const data = await res.json();
+    if (!Array.isArray(data)) return []; // FMP 무료 플랜 미지원 심볼은 텍스트 에러 반환
 
-  // FMP stable/dividends 가 frequency 필드를 미제공하는 경우 날짜 간격으로 감지
-  const parsedFrequency = parseFrequency(data[0]?.frequency as string | undefined);
-  const frequency: DividendFrequency =
-    parsedFrequency ?? detectFrequency(data.map((d: Record<string, unknown>) => d.date as string));
+    // FMP stable/dividends 가 frequency 필드를 미제공하는 경우 날짜 간격으로 감지
+    const parsedFrequency = parseFrequency(data[0]?.frequency as string | undefined);
+    const frequency: DividendFrequency =
+      parsedFrequency ?? detectFrequency(data.map((d: Record<string, unknown>) => d.date as string));
 
-  return data.map((item: Record<string, unknown>) => ({
-    symbol,
-    market: 'US' as const,
-    exDividendDate: item.date as string,
-    paymentDate: (item.paymentDate as string) ?? null,
-    dividendAmount: Number(item.adjDividend ?? item.dividend) || 0,
-    frequency,
-    currency: 'USD' as const,
-    source: 'fmp' as const,
-  }));
+    return data.map((item: Record<string, unknown>) => ({
+      symbol,
+      market: 'US' as const,
+      exDividendDate: item.date as string,
+      paymentDate: (item.paymentDate as string) ?? null,
+      dividendAmount: Number(item.adjDividend ?? item.dividend) || 0,
+      frequency,
+      currency: 'USD' as const,
+      source: 'fmp' as const,
+    }));
+  } catch {
+    return [];
+  }
 }

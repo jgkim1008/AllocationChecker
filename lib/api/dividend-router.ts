@@ -28,7 +28,12 @@ export async function getDividendHistory(symbol: string): Promise<NormalizedDivi
   const market = detectMarket(symbol);
 
   if (market === 'KR') {
-    return yahoo.getDividendHistory(symbol);
+    return yahoo.getDividendHistory(symbol, 'KR');
   }
-  return fmp.getDividendHistory(symbol);
+
+  // US: FMP 우선 시도, 실패(무료 플랜 미지원 심볼 등)하면 Yahoo Finance로 fallback
+  const fmpResult = await fmp.getDividendHistory(symbol);
+  if (fmpResult.length > 0) return fmpResult;
+
+  return yahoo.getDividendHistory(symbol, 'US');
 }

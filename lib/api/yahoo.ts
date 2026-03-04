@@ -110,14 +110,24 @@ export async function getQuotes(symbols: string[]): Promise<StockQuote[]> {
     .map((r) => r.value);
 }
 
-export async function getDividendHistory(symbol: string): Promise<NormalizedDividend[]> {
-  const ticker = ensureSuffix(symbol);
+// Some US ADR tickers use a dot in their symbol (e.g. PBR.A) but Yahoo Finance
+// expects a dash instead (e.g. PBR-A). Convert when fetching US dividends.
+function toYahooUSTicker(symbol: string): string {
+  return symbol.toUpperCase().replace(/\./g, '-');
+}
+
+export async function getDividendHistory(
+  symbol: string,
+  market: 'US' | 'KR' = 'KR'
+): Promise<NormalizedDividend[]> {
+  const ticker = market === 'KR' ? ensureSuffix(symbol) : toYahooUSTicker(symbol);
   const url = `${QUERY_URL}/v8/finance/chart/${encodeURIComponent(ticker)}?events=div&range=2y&interval=1d`;
 
   try {
+    // cache: 'no-store' — Supabase api_cache 테이블에서 직접 캐싱하므로 Next.js fetch 캐시 비활성화
     const res = await fetch(url, {
       headers: { 'User-Agent': 'Mozilla/5.0' },
-      next: { revalidate: 86400 },
+      cache: 'no-store',
     });
     if (!res.ok) return [];
 
@@ -131,12 +141,12 @@ export async function getDividendHistory(symbol: string): Promise<NormalizedDivi
 
     return dividends.map((div) => ({
       symbol: ticker,
-      market: 'KR' as const,
+      market,
       exDividendDate: new Date(div.date * 1000).toISOString().split('T')[0],
       paymentDate: null,
       dividendAmount: div.amount,
       frequency,
-      currency: 'KRW' as const,
+      currency: market === 'KR' ? ('KRW' as const) : ('USD' as const),
       source: 'yahoo' as const,
     }));
   } catch {
