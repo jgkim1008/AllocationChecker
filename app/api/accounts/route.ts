@@ -1,12 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
+import { getSessionUser } from '@/lib/supabase/auth-helper';
 
 export async function GET() {
   try {
+    const user = await getSessionUser();
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
     const supabase = await createServiceClient();
     const { data, error } = await supabase
       .from('accounts')
       .select('*')
+      .eq('user_id', user.id)
       .order('created_at', { ascending: true });
 
     if (error) throw error;
@@ -19,6 +24,9 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
+    const user = await getSessionUser();
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
     const body = await request.json();
     const { name, type } = body;
 
@@ -34,7 +42,7 @@ export async function POST(request: NextRequest) {
     const supabase = await createServiceClient();
     const { data, error } = await supabase
       .from('accounts')
-      .insert({ name, type, user_id: null })
+      .insert({ name, type, user_id: user.id })
       .select()
       .single();
 

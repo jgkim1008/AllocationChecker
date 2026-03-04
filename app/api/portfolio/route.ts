@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
+import { getSessionUser } from '@/lib/supabase/auth-helper';
 import { detectMarket, getCurrency, getFrequencyMultiplier } from '@/lib/utils/market';
 import { resolveStockName } from '@/lib/api/stock-info';
 import { getOrFetchDividends } from '@/lib/cache/dividend-cache';
@@ -26,6 +27,7 @@ function getDivs(h: RawHolding): DividendRow[] {
 
 function buildQuery(
   supabase: ReturnType<typeof createServiceClient> extends Promise<infer T> ? T : never,
+  userId: string,
   accountId: string | null
 ) {
   let q = supabase
@@ -43,6 +45,7 @@ function buildQuery(
         )
       )
     `)
+    .eq('user_id', userId)
     .order('created_at', { ascending: false });
 
   if (accountId && accountId !== 'all') {
@@ -57,12 +60,15 @@ function buildQuery(
 
 export async function GET(request: NextRequest) {
   try {
+    const user = await getSessionUser();
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
     const { searchParams } = new URL(request.url);
     const accountId = searchParams.get('accountId');
 
     const supabase = await createServiceClient();
 
-    const { data, error } = await buildQuery(supabase, accountId);
+    const { data, error } = await buildQuery(supabase, user.id, accountId);
     if (error) throw error;
 
     const holdings = (data ?? []) as RawHolding[];
@@ -90,7 +96,7 @@ export async function GET(request: NextRequest) {
         symbolsToFetch.map((s) => getOrFetchDividends(s, staleSymbols.has(s)))
       );
 
-      const { data: refreshed } = await buildQuery(supabase, accountId);
+      const { data: refreshed } = await buildQuery(supabase, user.id, accountId);
       return NextResponse.json(enrichHoldings((refreshed ?? []) as RawHolding[]));
     }
 
@@ -167,6 +173,9 @@ function enrichHoldings(data: RawHolding[]) {
 
 export async function POST(request: NextRequest) {
   try {
+    const user = await getSessionUser();
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
     const body = await request.json();
     const { symbol, shares, average_cost, account_id } = body;
 
@@ -202,7 +211,7 @@ export async function POST(request: NextRequest) {
         shares: Number(shares),
         average_cost: average_cost ? Number(average_cost) : null,
         account_id: account_id ?? null,
-        user_id: null,
+        user_id: user.id,
       })
       .select(`*, stock:stocks(*)`)
       .single();

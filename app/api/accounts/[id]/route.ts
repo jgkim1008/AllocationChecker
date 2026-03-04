@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
+import { getSessionUser } from '@/lib/supabase/auth-helper';
 
 export async function PUT(
   request: NextRequest,
@@ -8,6 +9,9 @@ export async function PUT(
   const { id } = await params;
 
   try {
+    const user = await getSessionUser();
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
     const body = await request.json();
     const { name, type } = body;
 
@@ -24,6 +28,7 @@ export async function PUT(
       .from('accounts')
       .update(updates)
       .eq('id', id)
+      .eq('user_id', user.id)
       .select()
       .single();
 
@@ -42,8 +47,15 @@ export async function DELETE(
   const { id } = await params;
 
   try {
+    const user = await getSessionUser();
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
     const supabase = await createServiceClient();
-    const { error } = await supabase.from('accounts').delete().eq('id', id);
+    const { error } = await supabase
+      .from('accounts')
+      .delete()
+      .eq('id', id)
+      .eq('user_id', user.id);
 
     if (error) throw error;
     return new NextResponse(null, { status: 204 });

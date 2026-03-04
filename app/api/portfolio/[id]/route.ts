@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
+import { getSessionUser } from '@/lib/supabase/auth-helper';
 
 export async function GET(
   _request: NextRequest,
@@ -8,11 +9,15 @@ export async function GET(
   const { id } = await params;
 
   try {
+    const user = await getSessionUser();
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
     const supabase = await createServiceClient();
     const { data, error } = await supabase
       .from('portfolio_holdings')
       .select(`*, stock:stocks(*)`)
       .eq('id', id)
+      .eq('user_id', user.id)
       .single();
 
     if (error) throw error;
@@ -32,6 +37,9 @@ export async function PUT(
   const { id } = await params;
 
   try {
+    const user = await getSessionUser();
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
     const body = await request.json();
     const { shares, average_cost, account_id } = body;
 
@@ -47,6 +55,7 @@ export async function PUT(
       .from('portfolio_holdings')
       .update(updateData)
       .eq('id', id)
+      .eq('user_id', user.id)
       .select(`*, stock:stocks(*)`)
       .single();
 
@@ -66,11 +75,15 @@ export async function DELETE(
   const { id } = await params;
 
   try {
+    const user = await getSessionUser();
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
     const supabase = await createServiceClient();
     const { error } = await supabase
       .from('portfolio_holdings')
       .delete()
-      .eq('id', id);
+      .eq('id', id)
+      .eq('user_id', user.id);
 
     if (error) throw error;
 
