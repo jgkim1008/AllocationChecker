@@ -30,6 +30,22 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  // FMP fallback: US symbols not returned by FMP (e.g. ADRs like PBR.A) → try Yahoo Finance
+  // Yahoo uses dash notation: PBR.A → PBR-A
+  const missingUsSymbols = usSymbols.filter((s) => !prices[s]);
+  if (missingUsSymbols.length > 0) {
+    const yahooTickers = missingUsSymbols.map((s) => s.toUpperCase().replace(/\./g, '-'));
+    const fallbackResult = await yahoo.getQuotes(yahooTickers).catch(() => []);
+    for (let i = 0; i < missingUsSymbols.length; i++) {
+      const original = missingUsSymbols[i];
+      const yahooTicker = yahooTickers[i];
+      const found = fallbackResult.find((q) => q.symbol === yahooTicker);
+      if (found) {
+        prices[original] = { price: found.price, changePercent: found.changePercent };
+      }
+    }
+  }
+
   if (krResult.status === 'fulfilled') {
     for (const q of krResult.value) {
       // Normalize key: strip .KS/.KQ suffix to match original symbol if needed
