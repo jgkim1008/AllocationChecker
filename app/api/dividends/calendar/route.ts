@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
+import { getSessionUser } from '@/lib/supabase/auth-helper';
 import { getDividendHistory } from '@/lib/api/dividend-router';
 import { detectMarket } from '@/lib/utils/market';
 import type { DividendCalendarEvent } from '@/types/dividend';
@@ -22,12 +23,16 @@ export async function GET(request: NextRequest) {
   const toDate = new Date(to);
 
   try {
+    const user = await getSessionUser();
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
     const supabase = await createServiceClient();
 
-    // 보유 종목 + 수량 + 종목명 함께 조회
+    // 보유 종목 + 수량 + 종목명 함께 조회 (로그인한 유저의 종목만)
     const { data: holdings } = await supabase
       .from('portfolio_holdings')
-      .select('shares, stock:stocks(symbol, name, market)');
+      .select('shares, stock:stocks(symbol, name, market)')
+      .eq('user_id', user.id);
 
     if (!holdings || holdings.length === 0) {
       return NextResponse.json([]);
