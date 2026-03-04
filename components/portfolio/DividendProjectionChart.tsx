@@ -84,21 +84,21 @@ export function DividendProjectionChart({ holdings, onOpenCalendar }: Props) {
   if (!hasData && holdings.length === 0) return null;
 
   return (
-    <div className="bg-[#1E1F26] rounded-2xl p-5">
+    <div className="bg-white rounded-2xl p-5 border border-gray-200">
       {/* Header */}
       <div className="flex items-start justify-between mb-1">
         <div className="flex items-center gap-2 flex-wrap">
-          <p className="text-sm font-bold text-white">
+          <p className="text-sm font-bold text-gray-900">
             예상 배당금 (단위: {currencyLabel})
           </p>
-          <button className="flex items-center gap-1 text-xs font-semibold bg-[#F0B429]/20 text-[#F0B429] px-2 py-0.5 rounded-full hover:bg-[#F0B429]/30 transition-colors">
+          <button className="flex items-center gap-1 text-xs font-semibold bg-green-50 text-green-600 px-2 py-0.5 rounded-full hover:bg-green-100 transition-colors">
             세금 15% 미적용
-            <span className="text-[#F0B429]">›</span>
+            <span>›</span>
           </button>
         </div>
         <button
           onClick={onOpenCalendar}
-          className="p-1.5 rounded-lg text-[#8B8FA8] hover:text-[#F0B429] hover:bg-[#2A2B35] transition-colors shrink-0"
+          className="p-1.5 rounded-lg text-gray-500 hover:text-green-600 hover:bg-gray-100 transition-colors shrink-0"
           title="배당 캘린더"
         >
           <CalendarDays className="h-4.5 w-4.5" style={{ width: 18, height: 18 }} />
@@ -111,7 +111,7 @@ export function DividendProjectionChart({ holdings, onOpenCalendar }: Props) {
           <BarChart data={barData} margin={{ top: 26, right: 4, left: 4, bottom: 0 }}>
             <XAxis
               dataKey="label"
-              tick={{ fontSize: 11, fill: '#8B8FA8' }}
+              tick={{ fontSize: 11, fill: '#9CA3AF' }}
               axisLine={false}
               tickLine={false}
             />
@@ -121,12 +121,12 @@ export function DividendProjectionChart({ holdings, onOpenCalendar }: Props) {
                 position="top"
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 formatter={(v: any) => formatBarLabel(Number(v ?? 0), dominantCurrency)}
-                style={{ fill: '#8B8FA8', fontSize: '9px', fontWeight: 600 }}
+                style={{ fill: '#9CA3AF', fontSize: '9px', fontWeight: 600 }}
               />
               {barData.map((entry, i) => (
                 <Cell
                   key={i}
-                  fill={entry.isCurrentMonth ? '#F0B429' : '#2A3A4A'}
+                  fill={entry.isCurrentMonth ? '#16a34a' : '#E5E7EB'}
                 />
               ))}
             </Bar>
@@ -136,8 +136,8 @@ export function DividendProjectionChart({ holdings, onOpenCalendar }: Props) {
 
       {/* Market composition */}
       {marketItems.length > 0 && (
-        <div className="mt-5 pt-4 border-t border-[#2A2B35]">
-          <p className="text-sm font-bold text-white mb-3">시장별 비중</p>
+        <div className="mt-5 pt-4 border-t border-gray-200">
+          <p className="text-sm font-bold text-gray-900 mb-3">시장별 비중</p>
 
           {/* Stacked bar */}
           <div className="flex h-3 rounded-full overflow-hidden mb-3">
@@ -157,7 +157,7 @@ export function DividendProjectionChart({ holdings, onOpenCalendar }: Props) {
                   className="w-2.5 h-2.5 rounded-sm shrink-0"
                   style={{ backgroundColor: item.color }}
                 />
-                <span className="text-xs text-[#8B8FA8]">
+                <span className="text-xs text-gray-500">
                   {item.label} {item.pct.toFixed(2)}%
                 </span>
               </div>

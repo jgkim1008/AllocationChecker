@@ -160,26 +160,26 @@ export function AddHoldingDialog({ open, onClose, onAdd, onUpdate, accounts = []
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-md bg-[#1E1F26] border-[#2A2B35] text-white">
+      <DialogContent className="max-w-md bg-white border-gray-200">
         <DialogHeader>
-          <DialogTitle className="text-white">{isEditMode ? '종목 수정' : '종목 추가'}</DialogTitle>
+          <DialogTitle className="text-gray-900">{isEditMode ? '종목 수정' : '종목 추가'}</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">
           {/* 수정 모드: 종목 읽기 전용 */}
           {isEditMode ? (
-            <div className="flex items-center justify-between p-3 bg-[#14151A] rounded-xl border border-[#2A2B35]">
+            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-200">
               <div>
-                <span className="font-semibold text-white">{editingHolding.stock.symbol}</span>
+                <span className="font-semibold text-gray-900">{editingHolding.stock.symbol}</span>
                 {editingHolding.stock.name !== editingHolding.stock.symbol && (
-                  <span className="text-sm text-[#8B8FA8] ml-2">{editingHolding.stock.name}</span>
+                  <span className="text-sm text-gray-500 ml-2">{editingHolding.stock.name}</span>
                 )}
               </div>
               <Badge
                 variant={editingHolding.stock.market === 'US' ? 'default' : 'secondary'}
                 className={editingHolding.stock.market === 'US'
-                  ? 'bg-[#1A2940] text-[#3B82F6] border-0'
-                  : 'bg-[#0D2B1E] text-[#00D085] border-0'}
+                  ? 'bg-blue-50 text-blue-600 border-0'
+                  : 'bg-green-50 text-green-600 border-0'}
               >
                 {editingHolding.stock.market}
               </Badge>
@@ -188,35 +188,35 @@ export function AddHoldingDialog({ open, onClose, onAdd, onUpdate, accounts = []
             /* 추가 모드: 종목 검색 */
             <div className="relative">
               <div className="relative">
-                <Search className="absolute left-3 top-2.5 h-4 w-4 text-[#8B8FA8]" />
+                <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
                 <Input
                   placeholder="종목 검색 (예: AAPL, 005930.KS)"
                   value={query}
                   onChange={(e) => handleQueryChange(e.target.value)}
-                  className="pl-9 bg-[#14151A] border-[#2A2B35] text-white placeholder:text-[#8B8FA8] focus-visible:ring-[#F0B429]"
+                  className="pl-9 bg-white border-gray-200 text-gray-900 placeholder:text-gray-400 focus-visible:ring-green-600"
                   disabled={!!selected}
                 />
               </div>
 
               {results.length > 0 && !selected && (
-                <div className="absolute z-50 mt-1 w-full bg-[#1E1F26] rounded-xl border border-[#2A2B35] shadow-xl max-h-60 overflow-auto">
-                  {loading && <div className="p-2"><Skeleton className="h-8 w-full bg-[#2A2B35]" /></div>}
+                <div className="absolute z-50 mt-1 w-full bg-white rounded-xl border border-gray-200 shadow-lg max-h-60 overflow-auto">
+                  {loading && <div className="p-2"><Skeleton className="h-8 w-full bg-gray-200" /></div>}
                   {results.map((stock) => (
                     <button
                       key={stock.symbol}
-                      className="w-full text-left px-4 py-2.5 hover:bg-white/5 flex items-center justify-between transition-colors"
+                      className="w-full text-left px-4 py-2.5 hover:bg-gray-50 flex items-center justify-between transition-colors"
                       onClick={() => handleSelect(stock)}
                     >
                       <div className="min-w-0">
-                        <span className="font-semibold text-white text-sm">{stock.symbol}</span>
-                        <span className="text-xs text-[#8B8FA8] ml-2 truncate">{stock.name}</span>
+                        <span className="font-semibold text-gray-900 text-sm">{stock.symbol}</span>
+                        <span className="text-xs text-gray-500 ml-2 truncate">{stock.name}</span>
                       </div>
                       <Badge
                         variant={stock.market === 'US' ? 'default' : 'secondary'}
                         className={`ml-2 shrink-0 border-0 text-xs ${
                           stock.market === 'US'
-                            ? 'bg-[#1A2940] text-[#3B82F6]'
-                            : 'bg-[#0D2B1E] text-[#00D085]'
+                            ? 'bg-blue-50 text-blue-600'
+                            : 'bg-green-50 text-green-600'
                         }`}
                       >
                         {stock.market}
@@ -230,16 +230,16 @@ export function AddHoldingDialog({ open, onClose, onAdd, onUpdate, accounts = []
 
           {/* 선택된 종목 + 현재가 */}
           {selected && !isEditMode && (
-            <div className="p-3 bg-[#14151A] rounded-xl border border-[#2A2B35] space-y-2">
+            <div className="p-3 bg-gray-50 rounded-xl border border-gray-200 space-y-2">
               <div className="flex items-center justify-between">
                 <div className="min-w-0">
-                  <span className="font-semibold text-white text-sm">{selected.symbol}</span>
+                  <span className="font-semibold text-gray-900 text-sm">{selected.symbol}</span>
                   {selected.name !== selected.symbol && (
-                    <span className="text-xs text-[#8B8FA8] ml-2">{selected.name}</span>
+                    <span className="text-xs text-gray-500 ml-2">{selected.name}</span>
                   )}
                 </div>
                 <button
-                  className="text-xs text-[#8B8FA8] hover:text-white transition-colors shrink-0 ml-2"
+                  className="text-xs text-gray-500 hover:text-gray-900 transition-colors shrink-0 ml-2"
                   onClick={() => { setSelected(null); setQuery(''); setCurrentPrice(null); }}
                 >
                   변경
@@ -249,22 +249,22 @@ export function AddHoldingDialog({ open, onClose, onAdd, onUpdate, accounts = []
               {/* 현재가 */}
               {priceLoading ? (
                 <div className="flex items-center gap-2">
-                  <TrendingUp className="h-3.5 w-3.5 text-[#8B8FA8]" />
-                  <Skeleton className="h-3 w-24 bg-[#2A2B35]" />
+                  <TrendingUp className="h-3.5 w-3.5 text-gray-400" />
+                  <Skeleton className="h-3 w-24 bg-gray-200" />
                 </div>
               ) : currentPrice !== null && selectedCurrency ? (
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <TrendingUp className="h-3.5 w-3.5 text-[#00D085]" />
-                    <span className="text-xs text-[#8B8FA8]">현재가</span>
-                    <span className="text-sm font-semibold text-white">
+                    <TrendingUp className="h-3.5 w-3.5 text-green-600" />
+                    <span className="text-xs text-gray-500">현재가</span>
+                    <span className="text-sm font-semibold text-gray-900">
                       {formatCurrency(currentPrice, selectedCurrency)}
                     </span>
                   </div>
                   <button
                     type="button"
                     onClick={handleFillCurrentPrice}
-                    className="text-xs font-semibold text-[#F0B429] hover:text-[#D4A017] transition-colors"
+                    className="text-xs font-semibold text-green-600 hover:text-green-700 transition-colors"
                   >
                     평균 단가에 채우기
                   </button>
@@ -275,20 +275,20 @@ export function AddHoldingDialog({ open, onClose, onAdd, onUpdate, accounts = []
 
           {/* 보유 수량 */}
           <div>
-            <label className="text-sm font-medium text-[#8B8FA8]">보유 수량 *</label>
+            <label className="text-sm font-medium text-gray-600">보유 수량 *</label>
             <Input
               type="number"
               min="1"
               placeholder="100"
               value={shares}
               onChange={(e) => setShares(e.target.value)}
-              className="mt-1 bg-[#14151A] border-[#2A2B35] text-white placeholder:text-[#8B8FA8] focus-visible:ring-[#F0B429]"
+              className="mt-1 bg-white border-gray-200 text-gray-900 placeholder:text-gray-400 focus-visible:ring-green-600"
             />
           </div>
 
           {/* 평균 단가 */}
           <div>
-            <label className="text-sm font-medium text-[#8B8FA8]">평균 단가 (선택)</label>
+            <label className="text-sm font-medium text-gray-600">평균 단가 (선택)</label>
             <Input
               type="number"
               min="0"
@@ -296,24 +296,24 @@ export function AddHoldingDialog({ open, onClose, onAdd, onUpdate, accounts = []
               placeholder="0.00"
               value={averageCost}
               onChange={(e) => setAverageCost(e.target.value)}
-              className="mt-1 bg-[#14151A] border-[#2A2B35] text-white placeholder:text-[#8B8FA8] focus-visible:ring-[#F0B429]"
+              className="mt-1 bg-white border-gray-200 text-gray-900 placeholder:text-gray-400 focus-visible:ring-green-600"
             />
           </div>
 
           {/* 계좌 선택 */}
           {accounts.length > 0 && (
             <div>
-              <label className="text-sm font-medium text-[#8B8FA8]">계좌 (선택)</label>
+              <label className="text-sm font-medium text-gray-600">계좌 (선택)</label>
               <Select value={accountId} onValueChange={setAccountId}>
-                <SelectTrigger className="mt-1 bg-[#14151A] border-[#2A2B35] text-white focus:ring-[#F0B429]">
+                <SelectTrigger className="mt-1 bg-white border-gray-200 text-gray-900 focus:ring-green-600">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent className="bg-[#1E1F26] border-[#2A2B35] text-white">
-                  <SelectItem value="unassigned" className="focus:bg-white/5 focus:text-white">미분류</SelectItem>
+                <SelectContent className="bg-white border-gray-200">
+                  <SelectItem value="unassigned" className="focus:bg-gray-50">미분류</SelectItem>
                   {accounts.map((a) => (
-                    <SelectItem key={a.id} value={a.id} className="focus:bg-white/5 focus:text-white">
+                    <SelectItem key={a.id} value={a.id} className="focus:bg-gray-50">
                       {a.name}
-                      <span className="ml-1 text-xs text-[#8B8FA8]">({a.type})</span>
+                      <span className="ml-1 text-xs text-gray-400">({a.type})</span>
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -321,20 +321,20 @@ export function AddHoldingDialog({ open, onClose, onAdd, onUpdate, accounts = []
             </div>
           )}
 
-          {error && <p className="text-sm text-[#FF4D4D]">{error}</p>}
+          {error && <p className="text-sm text-red-500">{error}</p>}
 
           <div className="flex gap-2 justify-end pt-1">
             <Button
               variant="outline"
               onClick={onClose}
-              className="border-[#2A2B35] text-[#8B8FA8] hover:text-white hover:bg-white/5 bg-transparent"
+              className="border-gray-200 text-gray-600 hover:text-gray-900 hover:bg-gray-50 bg-transparent"
             >
               취소
             </Button>
             <Button
               onClick={handleSubmit}
               disabled={submitting}
-              className="bg-[#F0B429] hover:bg-[#D4A017] text-[#14151A] font-bold"
+              className="bg-green-600 hover:bg-green-700 text-white font-bold"
             >
               {submitting ? (isEditMode ? '수정 중...' : '추가 중...') : (isEditMode ? '수정' : '추가')}
             </Button>

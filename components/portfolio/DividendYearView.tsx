@@ -25,8 +25,8 @@ interface Props {
 
 function StockAvatar({ symbol, market }: { symbol: string; market: string }) {
   const letter = symbol.replace(/\.[A-Z]+$/, '')[0]?.toUpperCase() ?? '?';
-  const bg = market === 'US' ? '#1A2940' : '#0D2B1E';
-  const color = market === 'US' ? '#3B82F6' : '#00D085';
+  const bg = market === 'US' ? '#DBEAFE' : '#DCFCE7';
+  const color = market === 'US' ? '#2563EB' : '#16a34a';
   return (
     <div
       className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold shrink-0"
@@ -93,27 +93,27 @@ export function DividendYearView({ holdings, onOpenCalendar }: Props) {
   return (
     <div className="space-y-6">
       {/* Year header + total */}
-      <div className="bg-[#1E1F26] rounded-2xl p-5">
+      <div className="bg-white rounded-2xl p-5 border border-gray-200">
         <div className="flex items-start justify-between mb-2">
           {/* Year selector */}
           <div className="relative">
             <button
               onClick={() => setYearDropOpen((v) => !v)}
-              className="flex items-center gap-1.5 text-sm text-[#8B8FA8] hover:text-white transition-colors"
+              className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900 transition-colors"
             >
               <span>{selectedYear}년 배당금</span>
               <ChevronDown className="h-3.5 w-3.5" />
             </button>
             {yearDropOpen && (
-              <div className="absolute top-7 left-0 bg-[#2A2B35] rounded-xl overflow-hidden z-10 shadow-xl">
+              <div className="absolute top-7 left-0 bg-white rounded-xl overflow-hidden z-10 shadow-lg border border-gray-200">
                 {yearOptions.map((y) => (
                   <button
                     key={y}
                     onClick={() => { setSelectedYear(y); setYearDropOpen(false); }}
                     className={`block w-full text-left px-4 py-2 text-sm transition-colors ${
                       y === selectedYear
-                        ? 'text-[#F0B429] font-semibold'
-                        : 'text-[#8B8FA8] hover:text-white hover:bg-white/5'
+                        ? 'text-green-600 font-semibold'
+                        : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
                     }`}
                   >
                     {y}년
@@ -126,7 +126,7 @@ export function DividendYearView({ holdings, onOpenCalendar }: Props) {
           {/* Calendar button */}
           <button
             onClick={onOpenCalendar}
-            className="flex items-center gap-1.5 bg-[#2A2B35] hover:bg-[#3A3B45] text-[#8B8FA8] hover:text-white text-xs font-semibold px-3 py-1.5 rounded-full transition-colors"
+            className="flex items-center gap-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 hover:text-gray-900 text-xs font-semibold px-3 py-1.5 rounded-full transition-colors"
           >
             <CalendarDays className="h-3.5 w-3.5" />
             배당 캘린더
@@ -135,17 +135,17 @@ export function DividendYearView({ holdings, onOpenCalendar }: Props) {
 
         {/* Year total */}
         {yearTotals.krw > 0 && (
-          <p className={`font-bold text-white leading-tight ${yearTotals.usd > 0 ? 'text-2xl' : 'text-3xl'}`}>
+          <p className={`font-bold text-gray-900 leading-tight ${yearTotals.usd > 0 ? 'text-2xl' : 'text-3xl'}`}>
             {formatCurrency(yearTotals.krw, 'KRW')}
           </p>
         )}
         {yearTotals.usd > 0 && (
-          <p className={`font-bold text-white leading-tight ${yearTotals.krw > 0 ? 'text-lg text-[#8B8FA8] mt-1' : 'text-3xl'}`}>
+          <p className={`font-bold leading-tight ${yearTotals.krw > 0 ? 'text-lg text-gray-500 mt-1' : 'text-3xl text-gray-900'}`}>
             {formatCurrency(yearTotals.usd, 'USD')}
           </p>
         )}
         {yearTotals.krw === 0 && yearTotals.usd === 0 && (
-          <p className="text-3xl font-bold text-[#8B8FA8]">-</p>
+          <p className="text-3xl font-bold text-gray-400">-</p>
         )}
 
         {/* Bar chart */}
@@ -154,7 +154,7 @@ export function DividendYearView({ holdings, onOpenCalendar }: Props) {
             <BarChart data={barChartData} margin={{ top: 28, right: 4, left: 4, bottom: 4 }}>
               <XAxis
                 dataKey="label"
-                tick={{ fontSize: 12, fill: '#8B8FA8' }}
+                tick={{ fontSize: 12, fill: '#9CA3AF' }}
                 axisLine={false}
                 tickLine={false}
               />
@@ -164,12 +164,12 @@ export function DividendYearView({ holdings, onOpenCalendar }: Props) {
                   position="top"
                   // eslint-disable-next-line @typescript-eslint/no-explicit-any
                   formatter={(v: any) => formatBarLabel(Number(v ?? 0), dominantCurrency)}
-                  style={{ fill: '#8B8FA8', fontSize: '10px', fontWeight: 600 }}
+                  style={{ fill: '#9CA3AF', fontSize: '10px', fontWeight: 600 }}
                 />
                 {barChartData.map((entry, i) => (
                   <Cell
                     key={i}
-                    fill={entry.isCurrentMonth ? '#F0B429' : '#2A3A4A'}
+                    fill={entry.isCurrentMonth ? '#16a34a' : '#E5E7EB'}
                   />
                 ))}
               </Bar>
@@ -181,10 +181,10 @@ export function DividendYearView({ holdings, onOpenCalendar }: Props) {
       {/* Monthly breakdown list */}
       {activeMonths.length === 0 ? (
         <div className="py-16 text-center">
-          <p className="text-[#8B8FA8] text-sm">
+          <p className="text-gray-500 text-sm">
             {selectedYear}년 예정된 배당이 없습니다
           </p>
-          <p className="text-[#8B8FA8] text-xs mt-1 opacity-60">
+          <p className="text-gray-400 text-xs mt-1">
             포트폴리오에 종목을 추가해보세요
           </p>
         </div>
@@ -195,20 +195,20 @@ export function DividendYearView({ holdings, onOpenCalendar }: Props) {
             const monthTotalUSD = m.totalUSD;
 
             return (
-              <div key={m.month} className="bg-[#1E1F26] rounded-2xl p-5">
+              <div key={m.month} className="bg-white rounded-2xl p-5 border border-gray-200">
                 {/* Month header */}
                 <div className="flex items-center justify-between mb-4">
-                  <p className="text-sm font-bold text-white">
+                  <p className="text-sm font-bold text-gray-900">
                     {selectedYear}년 {m.month}월
                   </p>
                   <div className="text-right">
                     {monthTotalKRW > 0 && (
-                      <p className="text-sm font-bold text-white">
+                      <p className="text-sm font-bold text-gray-900">
                         {formatCurrency(monthTotalKRW, 'KRW')}
                       </p>
                     )}
                     {monthTotalUSD > 0 && (
-                      <p className={`font-bold text-white ${monthTotalKRW > 0 ? 'text-xs text-[#8B8FA8]' : 'text-sm'}`}>
+                      <p className={`font-bold ${monthTotalKRW > 0 ? 'text-xs text-gray-500' : 'text-sm text-gray-900'}`}>
                         {formatCurrency(monthTotalUSD, 'USD')}
                       </p>
                     )}
@@ -220,8 +220,8 @@ export function DividendYearView({ holdings, onOpenCalendar }: Props) {
                   {m.days.map(({ day, payments }) => (
                     <div key={day}>
                       <div className="flex items-center gap-2 mb-2.5">
-                        <span className="text-sm font-bold text-white">{day}일</span>
-                        <span className="text-[10px] font-semibold bg-[#F0B429] text-[#14151A] px-1.5 py-0.5 rounded">
+                        <span className="text-sm font-bold text-gray-900">{day}일</span>
+                        <span className="text-[10px] font-semibold bg-green-100 text-green-700 px-1.5 py-0.5 rounded">
                           확정
                         </span>
                       </div>
@@ -229,17 +229,17 @@ export function DividendYearView({ holdings, onOpenCalendar }: Props) {
                         {payments.map((p) => (
                           <div
                             key={p.symbol}
-                            className="flex items-center gap-3 bg-[#14151A] rounded-xl px-4 py-3"
+                            className="flex items-center gap-3 bg-gray-50 rounded-xl px-4 py-3"
                           >
                             <StockAvatar symbol={p.symbol} market={p.market} />
                             <div className="flex-1 min-w-0">
-                              <p className="text-sm font-bold text-white truncate">{p.name}</p>
-                              <p className="text-xs text-[#8B8FA8] mt-0.5">
+                              <p className="text-sm font-bold text-gray-900 truncate">{p.name}</p>
+                              <p className="text-xs text-gray-500 mt-0.5">
                                 {p.shares.toLocaleString()}주 보유 · 주당{' '}
                                 {formatCurrency(p.dps, p.currency)}
                               </p>
                             </div>
-                            <p className="text-sm font-bold text-white shrink-0">
+                            <p className="text-sm font-bold text-gray-900 shrink-0">
                               {formatCurrency(p.total, p.currency)}
                             </p>
                           </div>

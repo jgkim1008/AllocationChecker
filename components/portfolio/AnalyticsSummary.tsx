@@ -6,7 +6,7 @@ import type { PortfolioHoldingWithStock } from '@/types/portfolio';
 import { formatCurrency } from '@/lib/utils/dividend-calculator';
 
 const CHART_COLORS = [
-  '#F0B429', '#00D085', '#3B82F6', '#8B5CF6',
+  '#16a34a', '#3B82F6', '#8B5CF6', '#F59E0B',
   '#F04452', '#0891B2', '#EC4899', '#65A30D',
 ];
 
@@ -94,18 +94,18 @@ export function AnalyticsSummary({ holdings: hs, usdKrw }: Props) {
   return (
     <div className="space-y-4">
       {/* Hero card */}
-      <div className="bg-[#1E1F26] rounded-2xl p-5">
-        <p className="text-xs font-medium text-[#8B8FA8] mb-1.5">총 매입금액</p>
+      <div className="bg-white rounded-2xl p-5 border border-gray-200">
+        <p className="text-xs font-medium text-gray-500 mb-1.5">총 매입금액</p>
 
         {/* Hero numbers */}
         <div className="mb-3">
           {showUnified ? (
             // 환율 있을 때: 원화 통합 금액 단일 표시
             <>
-              <p className="text-3xl font-bold text-white leading-tight">
+              <p className="text-3xl font-bold text-gray-900 leading-tight">
                 {formatCurrency(totalKRWUnified, 'KRW')}
               </p>
-              <p className="text-xs text-[#8B8FA8] mt-1">
+              <p className="text-xs text-gray-500 mt-1">
                 ₩{formatCurrency(totalCostKRW, 'KRW').replace(/[₩$,]/g, '').trim()} +{' '}
                 ${totalCostUSD.toFixed(0)} × {Math.round(usdKrw!).toLocaleString()}원
               </p>
@@ -114,19 +114,19 @@ export function AnalyticsSummary({ holdings: hs, usdKrw }: Props) {
             // 환율 없거나 US만/KR만
             <>
               {totalCostUSD > 0 && (
-                <p className={`font-bold text-white leading-tight ${totalCostKRW > 0 ? 'text-2xl' : 'text-3xl'}`}>
+                <p className={`font-bold text-gray-900 leading-tight ${totalCostKRW > 0 ? 'text-2xl' : 'text-3xl'}`}>
                   {formatCurrency(totalCostUSD, 'USD')}
                 </p>
               )}
               {totalCostKRW > 0 && (
                 <p className={`font-bold leading-tight ${
-                  totalCostUSD > 0 ? 'text-lg text-[#8B8FA8] mt-1' : 'text-3xl text-white'
+                  totalCostUSD > 0 ? 'text-lg text-gray-500 mt-1' : 'text-3xl text-gray-900'
                 }`}>
                   {formatCurrency(totalCostKRW, 'KRW')}
                 </p>
               )}
               {totalCostUSD === 0 && totalCostKRW === 0 && (
-                <p className="text-3xl font-bold text-white leading-tight">-</p>
+                <p className="text-3xl font-bold text-gray-900 leading-tight">-</p>
               )}
             </>
           )}
@@ -135,23 +135,23 @@ export function AnalyticsSummary({ holdings: hs, usdKrw }: Props) {
         {/* Annual dividend sub-line */}
         {(annualUSD > 0 || annualKRW > 0) && (
           <div className="flex items-center gap-1.5 mb-4 flex-wrap">
-            <span className="text-xs text-[#8B8FA8]">연간 예상 배당</span>
+            <span className="text-xs text-gray-500">연간 예상 배당</span>
             {showUnified ? (
-              <span className="text-sm font-semibold text-[#00D085]">
+              <span className="text-sm font-semibold text-green-600">
                 {formatCurrency(annualKRW + annualUSD * usdKrw!, 'KRW')}
               </span>
             ) : (
               <>
                 {annualUSD > 0 && (
-                  <span className="text-sm font-semibold text-[#00D085]">
+                  <span className="text-sm font-semibold text-green-600">
                     {formatCurrency(annualUSD, 'USD')}
                   </span>
                 )}
                 {annualUSD > 0 && annualKRW > 0 && (
-                  <span className="text-[#2A2B35] text-xs">·</span>
+                  <span className="text-gray-300 text-xs">·</span>
                 )}
                 {annualKRW > 0 && (
-                  <span className="text-sm font-semibold text-[#00D085]">
+                  <span className="text-sm font-semibold text-green-600">
                     {formatCurrency(annualKRW, 'KRW')}
                   </span>
                 )}
@@ -161,57 +161,57 @@ export function AnalyticsSummary({ holdings: hs, usdKrw }: Props) {
         )}
 
         {/* 3 stats row */}
-        <div className="grid grid-cols-3 gap-3 pt-4 border-t border-[#2A2B35]">
+        <div className="grid grid-cols-3 gap-3 pt-4 border-t border-gray-200">
           <div>
-            <p className="text-[10px] text-[#8B8FA8] mb-1.5">투자 배당률</p>
-            <p className="text-sm font-bold text-white leading-tight">{displayYield}</p>
+            <p className="text-[10px] text-gray-500 mb-1.5">투자 배당률</p>
+            <p className="text-sm font-bold text-gray-900 leading-tight">{displayYield}</p>
           </div>
           <div>
-            <p className="text-[10px] text-[#8B8FA8] mb-1.5">월 평균 배당</p>
+            <p className="text-[10px] text-gray-500 mb-1.5">월 평균 배당</p>
             <div>
               {showUnified && (annualUSD > 0 || annualKRW > 0) ? (
-                <p className="text-sm font-bold text-white leading-tight">
+                <p className="text-sm font-bold text-gray-900 leading-tight">
                   {formatCurrency((annualKRW + annualUSD * usdKrw!) / 12, 'KRW')}
                 </p>
               ) : (
                 <>
                   {annualUSD > 0 && (
-                    <p className={`font-bold text-white leading-tight ${monthlyKRW > 0 ? 'text-xs' : 'text-sm'}`}>
+                    <p className={`font-bold text-gray-900 leading-tight ${monthlyKRW > 0 ? 'text-xs' : 'text-sm'}`}>
                       {formatCurrency(monthlyUSD, 'USD')}
                     </p>
                   )}
                   {annualKRW > 0 && (
-                    <p className={`font-bold text-white leading-tight ${monthlyUSD > 0 ? 'text-xs mt-0.5' : 'text-sm'}`}>
+                    <p className={`font-bold text-gray-900 leading-tight ${monthlyUSD > 0 ? 'text-xs mt-0.5' : 'text-sm'}`}>
                       {formatCurrency(monthlyKRW, 'KRW')}
                     </p>
                   )}
                   {annualUSD === 0 && annualKRW === 0 && (
-                    <p className="text-sm font-bold text-[#8B8FA8]">-</p>
+                    <p className="text-sm font-bold text-gray-500">-</p>
                   )}
                 </>
               )}
             </div>
           </div>
           <div>
-            <p className="text-[10px] text-[#8B8FA8] mb-1.5">보유 종목</p>
-            <p className="text-sm font-bold text-white">{hs.length}개</p>
+            <p className="text-[10px] text-gray-500 mb-1.5">보유 종목</p>
+            <p className="text-sm font-bold text-gray-900">{hs.length}개</p>
           </div>
         </div>
       </div>
 
       {/* Chart card */}
       {chartData.length > 0 && (
-        <div className="bg-[#1E1F26] rounded-2xl p-5">
+        <div className="bg-white rounded-2xl p-5 border border-gray-200">
           {/* Tab toggle */}
-          <div className="flex gap-1 mb-5 bg-[#14151A] rounded-xl p-1">
+          <div className="flex gap-1 mb-5 bg-gray-100 rounded-xl p-1">
             {(['asset', 'dividend'] as ChartMode[]).map((mode) => (
               <button
                 key={mode}
                 onClick={() => { setChartMode(mode); setActiveIndex(null); }}
                 className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                   chartMode === mode
-                    ? 'bg-[#F0B429] text-[#14151A]'
-                    : 'text-[#8B8FA8] hover:text-white'
+                    ? 'bg-green-600 text-white'
+                    : 'text-gray-500 hover:text-gray-900'
                 }`}
               >
                 {mode === 'asset' ? '자산 구성' : '배당 구성'}
@@ -252,20 +252,20 @@ export function AnalyticsSummary({ holdings: hs, usdKrw }: Props) {
               <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
                 {active ? (
                   <>
-                    <p className="text-xs font-bold text-white leading-tight text-center px-1 truncate max-w-[80px]">
+                    <p className="text-xs font-bold text-gray-900 leading-tight text-center px-1 truncate max-w-[80px]">
                       {active.symbol}
                     </p>
-                    <p className="text-xs text-[#F0B429] font-semibold mt-0.5">
+                    <p className="text-xs text-green-600 font-semibold mt-0.5">
                       {((active.value / total) * 100).toFixed(0)}%
                     </p>
                   </>
                 ) : (
                   <>
-                    <p className="text-[10px] text-[#8B8FA8] text-center">
+                    <p className="text-[10px] text-gray-500 text-center">
                       {chartMode === 'asset' ? '총 자산' : '총 배당'}
                     </p>
                     {showCenterTotal && (
-                      <p className="text-xs font-bold text-white mt-0.5 text-center px-1 leading-tight">
+                      <p className="text-xs font-bold text-gray-900 mt-0.5 text-center px-1 leading-tight">
                         {formatCurrency(total, centerCurrency)}
                       </p>
                     )}
@@ -291,13 +291,13 @@ export function AnalyticsSummary({ holdings: hs, usdKrw }: Props) {
                     }}
                   />
                   <p
-                    className="text-xs text-white truncate flex-1 font-medium"
+                    className="text-xs text-gray-900 truncate flex-1 font-medium"
                     style={{ opacity: activeIndex === null || activeIndex === i ? 1 : 0.4 }}
                   >
                     {d.name}
                   </p>
                   <p
-                    className="text-xs text-[#8B8FA8] shrink-0"
+                    className="text-xs text-gray-500 shrink-0"
                     style={{ opacity: activeIndex === null || activeIndex === i ? 1 : 0.4 }}
                   >
                     {((d.value / total) * 100).toFixed(0)}%
@@ -305,16 +305,16 @@ export function AnalyticsSummary({ holdings: hs, usdKrw }: Props) {
                 </div>
               ))}
               {chartData.length > 6 && (
-                <p className="text-xs text-[#8B8FA8]">+{chartData.length - 6}개 더</p>
+                <p className="text-xs text-gray-500">+{chartData.length - 6}개 더</p>
               )}
             </div>
           </div>
 
           {/* Hover detail */}
           {active && (
-            <div className="mt-4 pt-3 border-t border-[#2A2B35] flex items-center justify-between">
-              <p className="text-xs text-[#8B8FA8] truncate">{active.name}</p>
-              <p className="text-xs font-bold text-white shrink-0 ml-2">
+            <div className="mt-4 pt-3 border-t border-gray-200 flex items-center justify-between">
+              <p className="text-xs text-gray-500 truncate">{active.name}</p>
+              <p className="text-xs font-bold text-gray-900 shrink-0 ml-2">
                 {formatCurrency(active.value, active.currency as 'USD' | 'KRW')}
               </p>
             </div>

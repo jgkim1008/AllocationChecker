@@ -21,8 +21,8 @@ interface Props {
 
 function StockAvatar({ symbol, market }: { symbol: string; market: string }) {
   const letter = symbol.replace(/\.[A-Z]+$/, '')[0]?.toUpperCase() ?? '?';
-  const bg = market === 'US' ? '#1A2940' : '#0D2B1E';
-  const color = market === 'US' ? '#3B82F6' : '#00D085';
+  const bg = market === 'US' ? '#DBEAFE' : '#DCFCE7';
+  const color = market === 'US' ? '#2563EB' : '#16a34a';
   return (
     <div
       className="w-11 h-11 rounded-full flex items-center justify-center text-base font-bold shrink-0"
@@ -58,26 +58,26 @@ export function PortfolioTable({ holdings, loading, onDelete, onEdit, currentPri
   if (loading) {
     return (
       <>
-        <div className="flex items-center justify-between px-4 py-3 border-b border-[#2A2B35]">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
           <div className="flex gap-1.5">
             {[1, 2, 3].map((i) => (
-              <div key={i} className="w-12 h-6 rounded-full bg-[#2A2B35] animate-pulse" />
+              <div key={i} className="w-12 h-6 rounded-full bg-gray-200 animate-pulse" />
             ))}
           </div>
-          <div className="w-24 h-6 rounded-full bg-[#2A2B35] animate-pulse" />
+          <div className="w-24 h-6 rounded-full bg-gray-200 animate-pulse" />
         </div>
         {Array.from({ length: 3 }).map((_, i) => (
-          <div key={i} className="px-4 py-4 border-b border-[#2A2B35] animate-pulse space-y-3">
+          <div key={i} className="px-4 py-4 border-b border-gray-200 animate-pulse space-y-3">
             <div className="flex items-center gap-3">
-              <div className="w-11 h-11 rounded-full bg-[#2A2B35]" />
+              <div className="w-11 h-11 rounded-full bg-gray-200" />
               <div className="flex-1 space-y-1.5">
-                <div className="h-4 w-32 bg-[#2A2B35] rounded" />
-                <div className="h-3 w-20 bg-[#2A2B35] rounded" />
+                <div className="h-4 w-32 bg-gray-200 rounded" />
+                <div className="h-3 w-20 bg-gray-200 rounded" />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-2 pl-14">
               {[1, 2, 3, 4, 5, 6].map((j) => (
-                <div key={j} className="h-3 bg-[#2A2B35] rounded" />
+                <div key={j} className="h-3 bg-gray-200 rounded" />
               ))}
             </div>
           </div>
@@ -89,7 +89,7 @@ export function PortfolioTable({ holdings, loading, onDelete, onEdit, currentPri
   return (
     <>
       {/* Filter chips + sort */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-[#2A2B35]">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
         <div className="flex gap-1.5">
           {(['all', 'US', 'KR'] as MarketFilter[]).map((f) => (
             <button
@@ -97,8 +97,8 @@ export function PortfolioTable({ holdings, loading, onDelete, onEdit, currentPri
               onClick={() => setMarketFilter(f)}
               className={`px-3 py-1 rounded-full text-xs font-semibold transition-all ${
                 marketFilter === f
-                  ? 'bg-[#F0B429] text-[#14151A]'
-                  : 'bg-[#2A2B35] text-[#8B8FA8] hover:text-white'
+                  ? 'bg-green-600 text-white'
+                  : 'bg-gray-100 text-gray-600 hover:text-gray-900'
               }`}
             >
               {f === 'all' ? '전체' : f === 'US' ? '미국' : '한국'}
@@ -109,22 +109,22 @@ export function PortfolioTable({ holdings, loading, onDelete, onEdit, currentPri
           <select
             value={sortKey}
             onChange={(e) => setSortKey(e.target.value as SortKey)}
-            className="appearance-none bg-[#2A2B35] text-[#8B8FA8] text-xs font-semibold pl-3 pr-7 py-1 rounded-full cursor-pointer outline-none hover:text-white transition-colors"
+            className="appearance-none bg-gray-100 text-gray-600 text-xs font-semibold pl-3 pr-7 py-1 rounded-full cursor-pointer outline-none hover:text-gray-900 transition-colors"
           >
             <option value="cost">평가금액순</option>
             <option value="dividend">배당금순</option>
           </select>
-          <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 h-3 w-3 text-[#8B8FA8] pointer-events-none" />
+          <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 h-3 w-3 text-gray-500 pointer-events-none" />
         </div>
       </div>
 
       {sorted.length === 0 ? (
         <div className="py-16 text-center">
-          <p className="text-[#8B8FA8] text-sm font-medium">보유 종목이 없습니다</p>
-          <p className="text-[#8B8FA8] text-xs mt-1 opacity-60">종목 추가 버튼으로 시작하세요</p>
+          <p className="text-gray-500 text-sm font-medium">보유 종목이 없습니다</p>
+          <p className="text-gray-400 text-xs mt-1">종목 추가 버튼으로 시작하세요</p>
         </div>
       ) : (
-        <div className="divide-y divide-[#2A2B35]">
+        <div className="divide-y divide-gray-100">
           {sorted.map((holding) => (
             <HoldingCard
               key={holding.id}
@@ -194,22 +194,22 @@ function HoldingCard({
   const profitColor = (profit ?? 0) >= 0 ? '#00D085' : '#FF4D4D';
 
   return (
-    <div className="group px-4 py-4 hover:bg-white/[0.02] transition-colors">
+    <div className="group px-4 py-4 hover:bg-gray-50 transition-colors">
       {/* Top row: avatar + name + shares */}
       <div className="flex items-center gap-3 mb-3">
         <StockAvatar symbol={symbol} market={holding.stock.market} />
         <div className="flex-1 min-w-0">
           <div className="flex items-baseline gap-2">
-            <p className="text-base font-bold text-white truncate leading-tight">{displayName}</p>
-            <span className="text-xs text-[#8B8FA8] shrink-0">{marketLabel}</span>
+            <p className="text-base font-bold text-gray-900 truncate leading-tight">{displayName}</p>
+            <span className="text-xs text-gray-500 shrink-0">{marketLabel}</span>
           </div>
           {displayName !== symbol && (
-            <p className="text-xs text-[#8B8FA8] mt-0.5">{symbol}</p>
+            <p className="text-xs text-gray-400 mt-0.5">{symbol}</p>
           )}
         </div>
         <div className="shrink-0 text-right">
-          <p className="text-[10px] text-[#8B8FA8]">수량</p>
-          <p className="text-sm font-semibold text-white">{shares.toLocaleString()}</p>
+          <p className="text-[10px] text-gray-500">수량</p>
+          <p className="text-sm font-semibold text-gray-900">{shares.toLocaleString()}</p>
         </div>
       </div>
 
@@ -219,11 +219,11 @@ function HoldingCard({
         <div className="space-y-1.5">
           {/* 자산가치 */}
           <div>
-            <span className="text-[#8B8FA8]">자산가치 </span>
+            <span className="text-gray-500">자산가치 </span>
             {pricesLoading && !currentPrice ? (
-              <span className="inline-block w-20 h-3 bg-[#2A2B35] rounded animate-pulse align-middle" />
+              <span className="inline-block w-20 h-3 bg-gray-200 rounded animate-pulse align-middle" />
             ) : (
-              <span className="text-white font-medium">
+              <span className="text-gray-900 font-medium">
                 {assetValue !== null ? formatCurrency(assetValue, currency) : '-'}
               </span>
             )}
@@ -231,9 +231,9 @@ function HoldingCard({
 
           {/* 수익 */}
           <div>
-            <span className="text-[#8B8FA8]">수익 </span>
+            <span className="text-gray-500">수익 </span>
             {pricesLoading && !currentPrice ? (
-              <span className="inline-block w-16 h-3 bg-[#2A2B35] rounded animate-pulse align-middle" />
+              <span className="inline-block w-16 h-3 bg-gray-200 rounded animate-pulse align-middle" />
             ) : profit !== null && profitPct !== null ? (
               <span style={{ color: profitColor }} className="font-medium">
                 {profit >= 0 ? '+' : ''}{formatCurrency(profit, currency)}{' '}
@@ -242,17 +242,17 @@ function HoldingCard({
                 </span>
               </span>
             ) : (
-              <span className="text-[#8B8FA8]">-</span>
+              <span className="text-gray-400">-</span>
             )}
           </div>
 
           {/* 배당월 */}
           <div className="flex items-start gap-1 flex-wrap">
-            <span className="text-[#8B8FA8] shrink-0">배당월 </span>
+            <span className="text-gray-500 shrink-0">배당월 </span>
             {dividendMonths.length > 0 ? (
-              <span className="text-[#F0B429] font-semibold">{dividendMonths.join(', ')}</span>
+              <span className="text-green-600 font-semibold">{dividendMonths.join(', ')}</span>
             ) : (
-              <span className="text-[#8B8FA8]">-</span>
+              <span className="text-gray-400">-</span>
             )}
           </div>
         </div>
@@ -261,20 +261,20 @@ function HoldingCard({
         <div className="space-y-1.5">
           {/* 구매가 */}
           <div>
-            <span className="text-[#8B8FA8]">구매가 </span>
-            <span className="text-white font-medium">
+            <span className="text-gray-500">구매가 </span>
+            <span className="text-gray-900 font-medium">
               {avgCost !== null ? formatCurrency(avgCost, currency) : '-'}
             </span>
           </div>
 
           {/* 현재가 */}
           <div>
-            <span className="text-[#8B8FA8]">현재가 </span>
+            <span className="text-gray-500">현재가 </span>
             {pricesLoading && !currentPrice ? (
-              <span className="inline-block w-20 h-3 bg-[#2A2B35] rounded animate-pulse align-middle" />
+              <span className="inline-block w-20 h-3 bg-gray-200 rounded animate-pulse align-middle" />
             ) : currentPrice !== null ? (
               <span className="font-medium">
-                <span className="text-white">{formatCurrency(currentPrice, currency)}</span>
+                <span className="text-gray-900">{formatCurrency(currentPrice, currency)}</span>
                 {changePercent !== null && (
                   <span className="ml-1 text-[11px]" style={{ color: priceColor }}>
                     ({changePercent >= 0 ? '+' : ''}{changePercent.toFixed(1)}%)
@@ -282,20 +282,20 @@ function HoldingCard({
                 )}
               </span>
             ) : (
-              <span className="text-[#8B8FA8]">-</span>
+              <span className="text-gray-400">-</span>
             )}
           </div>
 
           {/* 투자배당률 */}
           <div>
-            <span className="text-[#8B8FA8]">투자배당률 </span>
+            <span className="text-gray-500">투자배당률 </span>
             {dividendYield !== null ? (
               <span className="font-medium">
-                <span className="text-[#F0B429]">{dividendYield.toFixed(2)}%</span>
-                <span className="text-white ml-1">({formatCurrency(annual, currency)})</span>
+                <span className="text-green-600">{dividendYield.toFixed(2)}%</span>
+                <span className="text-gray-900 ml-1">({formatCurrency(annual, currency)})</span>
               </span>
             ) : (
-              <span className="text-[#8B8FA8]">-</span>
+              <span className="text-gray-400">-</span>
             )}
           </div>
         </div>
@@ -305,14 +305,14 @@ function HoldingCard({
       <div className="flex justify-end gap-1 mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
         <button
           onClick={() => onEdit(holding)}
-          className="p-1.5 rounded-lg text-[#8B8FA8] hover:text-[#3B82F6] hover:bg-[#1A2940] transition-colors"
+          className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
           aria-label="수정"
         >
           <Pencil className="h-3.5 w-3.5" />
         </button>
         <button
           onClick={() => onDelete(holding.id)}
-          className="p-1.5 rounded-lg text-[#8B8FA8] hover:text-[#FF4D4D] hover:bg-[#2D1515] transition-colors"
+          className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
           aria-label="삭제"
         >
           <Trash2 className="h-3.5 w-3.5" />

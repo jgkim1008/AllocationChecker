@@ -70,18 +70,18 @@ export default function PortfolioPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-[#14151A]">
-      <div className="max-w-6xl mx-auto px-4 pt-8 pb-16">
+    <div className="min-h-screen">
+      <div className="max-w-6xl mx-auto px-4 pt-6 pb-16">
 
         {/* 헤더 */}
         <div className="flex items-center justify-between mb-5">
           <div>
-            <p className="text-xs font-medium text-[#8B8FA8] mb-1">내 포트폴리오</p>
-            <h1 className="text-2xl font-bold text-white tracking-tight">배당 분석</h1>
+            <p className="text-xs font-medium text-gray-500 mb-1">내 포트폴리오</p>
+            <h1 className="text-2xl font-bold text-gray-900 tracking-tight">배당 분석</h1>
           </div>
           <button
             onClick={() => { setEditingHolding(null); setDialogOpen(true); }}
-            className="flex items-center gap-1.5 bg-[#F0B429] hover:bg-[#D4A017] text-[#14151A] text-sm font-semibold px-4 py-2 rounded-xl transition-colors"
+            className="flex items-center gap-1.5 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold px-4 py-2 rounded-xl transition-colors"
           >
             <Plus className="h-4 w-4" />
             종목 추가
@@ -89,15 +89,15 @@ export default function PortfolioPage() {
         </div>
 
         {/* 자산 / 배당 탭 */}
-        <div className="flex items-center border-b border-[#2A2B35] mb-5">
+        <div className="flex items-center border-b border-gray-200 mb-5">
           {(['asset', 'dividend'] as PageTab[]).map((tab) => (
             <button
               key={tab}
               onClick={() => setPageTab(tab)}
               className={`px-5 py-2.5 text-sm font-semibold transition-all border-b-2 -mb-px ${
                 pageTab === tab
-                  ? 'text-white border-white'
-                  : 'text-[#8B8FA8] border-transparent hover:text-white'
+                  ? 'text-gray-900 border-gray-900'
+                  : 'text-gray-400 border-transparent hover:text-gray-700'
               }`}
             >
               {tab === 'asset' ? '자산' : '배당'}
@@ -113,13 +113,13 @@ export default function PortfolioPage() {
               onClick={() => setSelectedAccountId(tab.id)}
               className={`shrink-0 px-4 py-1.5 rounded-full text-sm font-semibold transition-all ${
                 selectedAccountId === tab.id
-                  ? 'bg-[#F0B429] text-[#14151A]'
-                  : 'bg-[#1E1F26] text-[#8B8FA8] hover:text-white'
+                  ? 'bg-green-600 text-white'
+                  : 'bg-gray-100 text-gray-600 hover:text-gray-900'
               }`}
             >
               {'sub' in tab && tab.sub ? tab.label : tab.label}
               {'sub' in tab && tab.sub && (
-                <span className={`ml-1 text-xs ${selectedAccountId === tab.id ? 'opacity-60' : 'opacity-70'}`}>
+                <span className={`ml-1 text-xs ${selectedAccountId === tab.id ? 'opacity-70' : 'opacity-70'}`}>
                   {tab.sub}
                 </span>
               )}
@@ -127,7 +127,7 @@ export default function PortfolioPage() {
           ))}
           <button
             onClick={() => setAccountDialogOpen(true)}
-            className="shrink-0 ml-auto p-2 rounded-full bg-[#1E1F26] text-[#8B8FA8] hover:text-white transition-colors"
+            className="shrink-0 ml-auto p-2 rounded-full bg-gray-100 text-gray-500 hover:text-gray-900 transition-colors"
             title="계좌 관리"
           >
             <Settings2 className="h-4 w-4" />
@@ -150,10 +150,10 @@ export default function PortfolioPage() {
             </div>
 
             {/* 우측 패널 — 보유 종목 */}
-            <div className="bg-[#1E1F26] rounded-2xl overflow-hidden">
-              <div className="px-4 py-3.5 flex items-center justify-between border-b border-[#2A2B35]">
-                <p className="text-sm font-bold text-white">보유 종목</p>
-                <span className="text-xs font-semibold text-[#8B8FA8] bg-[#2A2B35] px-2.5 py-0.5 rounded-full">
+            <div className="bg-white rounded-2xl overflow-hidden border border-gray-200">
+              <div className="px-4 py-3.5 flex items-center justify-between border-b border-gray-200">
+                <p className="text-sm font-bold text-gray-900">보유 종목</p>
+                <span className="text-xs font-semibold text-gray-500 bg-gray-100 px-2.5 py-0.5 rounded-full">
                   {filteredHoldings.length}
                 </span>
               </div>
