@@ -31,8 +31,8 @@ function formatCompact(amount: number, currency: 'USD' | 'KRW'): string {
 
 function StockAvatar({ symbol, market }: { symbol: string; market: string }) {
   const letter = symbol.replace(/\.[A-Z]+$/, '')[0]?.toUpperCase() ?? '?';
-  const bg = market === 'US' ? '#1A2940' : '#0D2B1E';
-  const color = market === 'US' ? '#3B82F6' : '#00D085';
+  const bg = market === 'US' ? '#DBEAFE' : '#DCFCE7';
+  const color = market === 'US' ? '#2563EB' : '#16a34a';
   return (
     <div
       className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold shrink-0"
@@ -79,13 +79,13 @@ export function DividendCalendarView({ holdings, onClose }: Props) {
   const isCurrentMonth = today.getFullYear() === year && today.getMonth() + 1 === month;
 
   return (
-    <div className="fixed inset-0 bg-[#14151A] z-50 overflow-y-auto">
+    <div className="fixed inset-0 bg-gray-50 z-50 overflow-y-auto">
       {/* Header */}
-      <div className="sticky top-0 bg-[#14151A] border-b border-[#2A2B35] px-4 py-3 flex items-center justify-between z-10">
-        <h2 className="text-base font-bold text-white">배당 캘린더</h2>
+      <div className="sticky top-0 bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between z-10">
+        <h2 className="text-base font-bold text-gray-900">배당 캘린더</h2>
         <button
           onClick={onClose}
-          className="p-2 rounded-full text-[#8B8FA8] hover:text-white hover:bg-[#1E1F26] transition-colors"
+          className="p-2 rounded-full text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
         >
           <X className="h-5 w-5" />
         </button>
@@ -95,18 +95,18 @@ export function DividendCalendarView({ holdings, onClose }: Props) {
         <div className="grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-6 items-start">
 
           {/* Left: Calendar grid */}
-          <div>
+          <div className="bg-white rounded-2xl border border-gray-200 p-4">
             <div className="flex items-center justify-between mb-5">
               <button
                 onClick={() => setViewDate(subMonths(viewDate, 1))}
-                className="p-1.5 rounded-lg text-[#8B8FA8] hover:text-white hover:bg-[#1E1F26] transition-colors"
+                className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
               >
                 <ChevronLeft className="h-5 w-5" />
               </button>
-              <p className="text-lg font-bold text-white">{format(viewDate, 'yyyy.MM')}</p>
+              <p className="text-base font-bold text-gray-900">{format(viewDate, 'yyyy.MM')}</p>
               <button
                 onClick={() => setViewDate(addMonths(viewDate, 1))}
-                className="p-1.5 rounded-lg text-[#8B8FA8] hover:text-white hover:bg-[#1E1F26] transition-colors"
+                className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
               >
                 <ChevronRight className="h-5 w-5" />
               </button>
@@ -114,7 +114,7 @@ export function DividendCalendarView({ holdings, onClose }: Props) {
 
             <div className="grid grid-cols-7 mb-1">
               {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
-                <div key={d} className="text-center text-xs font-semibold text-[#8B8FA8] py-1">
+                <div key={d} className="text-center text-xs font-semibold text-gray-400 py-1">
                   {d}
                 </div>
               ))}
@@ -143,18 +143,18 @@ export function DividendCalendarView({ holdings, onClose }: Props) {
                         <div
                           className={`w-7 h-7 flex items-center justify-center rounded-full text-sm font-semibold ${
                             isToday
-                              ? 'bg-[#F0B429] text-[#14151A]'
+                              ? 'bg-green-600 text-white'
                               : hasPayment
-                              ? 'text-white'
-                              : 'text-[#8B8FA8]'
+                              ? 'text-green-700 font-bold'
+                              : 'text-gray-400'
                           }`}
                         >
                           {dayNum}
                         </div>
                         {hasPayment && (
                           <div className="flex flex-col items-center mt-0.5 gap-0.5">
-                            <div className="w-1.5 h-1.5 rounded-full bg-[#F0B429]" />
-                            <p className="text-[9px] text-[#F0B429] font-semibold leading-none text-center">
+                            <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                            <p className="text-[9px] text-green-600 font-semibold leading-none text-center">
                               {dayTotal.krw > 0 && formatCompact(dayTotal.krw, 'KRW')}
                               {dayTotal.usd > 0 && formatCompact(dayTotal.usd, 'USD')}
                             </p>
@@ -172,48 +172,48 @@ export function DividendCalendarView({ holdings, onClose }: Props) {
           <div>
             <div className="flex items-center justify-between mb-5">
               <div className="flex items-center gap-2 flex-wrap">
-                <p className="text-sm font-semibold text-white">{month}월 예상 배당금</p>
-                <span className="text-xs bg-[#F0B429]/20 text-[#F0B429] font-semibold px-2 py-0.5 rounded-full">
+                <p className="text-sm font-semibold text-gray-900">{month}월 예상 배당금</p>
+                <span className="text-xs bg-green-50 text-green-700 font-semibold px-2 py-0.5 rounded-full border border-green-100">
                   세금 15% 미적용
                 </span>
               </div>
               <div className="text-right">
                 {monthTotals.krw > 0 && (
-                  <p className="text-base font-bold text-white">
+                  <p className="text-base font-bold text-gray-900">
                     {formatCurrency(monthTotals.krw, 'KRW')}
                   </p>
                 )}
                 {monthTotals.usd > 0 && (
-                  <p className={`font-bold text-white ${monthTotals.krw > 0 ? 'text-sm text-[#8B8FA8]' : 'text-base'}`}>
+                  <p className={`font-bold text-gray-900 ${monthTotals.krw > 0 ? 'text-sm text-gray-500' : 'text-base'}`}>
                     {formatCurrency(monthTotals.usd, 'USD')}
                   </p>
                 )}
                 {monthTotals.krw === 0 && monthTotals.usd === 0 && (
-                  <p className="text-sm text-[#8B8FA8]">이달 배당 없음</p>
+                  <p className="text-sm text-gray-400">이달 배당 없음</p>
                 )}
               </div>
             </div>
 
             {paymentDays.length === 0 ? (
-              <div className="py-16 text-center">
-                <p className="text-[#8B8FA8] text-sm">이달 예정된 배당이 없습니다</p>
-                <p className="text-[#8B8FA8] text-xs mt-1 opacity-60">
+              <div className="bg-white rounded-2xl border border-gray-200 py-16 text-center">
+                <p className="text-gray-400 text-sm">이달 예정된 배당이 없습니다</p>
+                <p className="text-gray-400 text-xs mt-1 opacity-60">
                   포트폴리오에 종목을 추가하거나 다른 달을 확인해보세요
                 </p>
               </div>
             ) : (
-              <div className="space-y-6">
+              <div className="space-y-4">
                 {paymentDays.map((day) => {
                   const payments = paymentsByDay.get(day)!;
                   return (
-                    <div key={day}>
-                      <div className="flex items-center gap-2 mb-3">
-                        <span className="text-sm font-bold text-white">{day}일</span>
-                        <span className="text-[10px] font-semibold bg-[#F0B429] text-[#14151A] px-1.5 py-0.5 rounded">
+                    <div key={day} className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+                      <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-100">
+                        <span className="text-sm font-bold text-gray-900">{day}일</span>
+                        <span className="text-[10px] font-semibold bg-green-600 text-white px-1.5 py-0.5 rounded">
                           확정
                         </span>
                       </div>
-                      <div className="space-y-2">
+                      <div className="divide-y divide-gray-50">
                         {payments.map((p) => (
                           <PaymentRow key={p.symbol} payment={p} />
                         ))}
@@ -232,15 +232,15 @@ export function DividendCalendarView({ holdings, onClose }: Props) {
 
 function PaymentRow({ payment: p }: { payment: DayPayment }) {
   return (
-    <div className="flex items-center gap-3 bg-[#1E1F26] rounded-xl px-4 py-3">
+    <div className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors">
       <StockAvatar symbol={p.symbol} market={p.market} />
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-bold text-white truncate">{p.name}</p>
-        <p className="text-xs text-[#8B8FA8] mt-0.5">
+        <p className="text-sm font-bold text-gray-900 truncate">{p.name}</p>
+        <p className="text-xs text-gray-500 mt-0.5">
           {p.shares.toLocaleString()}주 보유 · 주당 {formatCurrency(p.dps, p.currency)}
         </p>
       </div>
-      <p className="text-sm font-bold text-white shrink-0">
+      <p className="text-sm font-bold text-gray-900 shrink-0">
         {formatCurrency(p.total, p.currency)}
       </p>
     </div>

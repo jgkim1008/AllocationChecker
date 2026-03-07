@@ -9,6 +9,7 @@ import { PortfolioTable } from '@/components/portfolio/PortfolioTable';
 import { AddHoldingDialog } from '@/components/portfolio/AddHoldingDialog';
 import { AccountManageDialog } from '@/components/portfolio/AccountManageDialog';
 import { DividendProjectionChart } from '@/components/portfolio/DividendProjectionChart';
+import { DividendGoalCard } from '@/components/portfolio/DividendGoalCard';
 import { DividendCalendarView } from '@/components/portfolio/DividendCalendarView';
 import { DividendYearView } from '@/components/portfolio/DividendYearView';
 import { useCurrentPrices } from '@/hooks/useCurrentPrices';
@@ -141,6 +142,7 @@ export default function PortfolioPage() {
             {/* 좌측 패널 */}
             <div className="space-y-4">
               <AnalyticsSummary holdings={filteredHoldings} usdKrw={usdKrw} />
+              <DividendGoalCard holdings={filteredHoldings} usdKrw={usdKrw} currentPrices={currentPrices} />
               {hasDividendData && (
                 <DividendProjectionChart
                   holdings={filteredHoldings}
