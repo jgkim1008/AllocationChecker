@@ -25,10 +25,14 @@ interface HoldingGoalRow {
   additionalCost: number | null;
 }
 
+// 세율: US 15%, KR 15.4%
+const TAX_RATE: Record<'USD' | 'KRW', number> = { USD: 0.15, KRW: 0.154 };
+
 export function DividendGoalCard({ holdings, usdKrw, currentPrices = {} }: Props) {
   const [targetInput, setTargetInput] = useState('');
   const [currency, setCurrency] = useState<'USD' | 'KRW'>('USD');
   const [expanded, setExpanded] = useState(true);
+  const [applyTax, setApplyTax] = useState(false);
 
   const targetMonthly = parseFloat(targetInput.replace(/,/g, '')) || 0;
   const canUnify = !!usdKrw && usdKrw > 0;
@@ -42,21 +46,22 @@ export function DividendGoalCard({ holdings, usdKrw, currentPrices = {} }: Props
       const annualDiv = h.estimatedAnnualDividend ?? 0;
       const annualDPS = annualDiv / h.shares;
       const unitPrice: number | null = currentPrices[h.stock.symbol]?.price ?? null;
+      const taxMult = applyTax ? (1 - TAX_RATE[stockCurrency]) : 1;
 
       let monthlyDPS: number;
       let currentMonthly: number;
 
       if (currency === 'KRW' && stockCurrency === 'USD' && canUnify) {
-        monthlyDPS = (annualDPS / 12) * usdKrw!;
-        currentMonthly = (annualDiv / 12) * usdKrw!;
+        monthlyDPS = (annualDPS / 12) * taxMult * usdKrw!;
+        currentMonthly = (annualDiv / 12) * taxMult * usdKrw!;
       } else if (currency === 'USD' && stockCurrency === 'KRW' && canUnify) {
-        monthlyDPS = annualDPS / 12 / usdKrw!;
-        currentMonthly = annualDiv / 12 / usdKrw!;
+        monthlyDPS = annualDPS / 12 * taxMult / usdKrw!;
+        currentMonthly = annualDiv / 12 * taxMult / usdKrw!;
       } else if (stockCurrency !== currency && !canUnify) {
         continue; // 환율 없이 다른 통화는 제외
       } else {
-        monthlyDPS = annualDPS / 12;
-        currentMonthly = annualDiv / 12;
+        monthlyDPS = annualDPS / 12 * taxMult;
+        currentMonthly = annualDiv / 12 * taxMult;
       }
 
       result.push({
@@ -73,7 +78,7 @@ export function DividendGoalCard({ holdings, usdKrw, currentPrices = {} }: Props
       });
     }
     return result;
-  }, [holdings, currency, usdKrw, canUnify, currentPrices]);
+  }, [holdings, currency, usdKrw, canUnify, currentPrices, applyTax]);
 
   const currentTotal = useMemo(
     () => rows.reduce((s, r) => s + r.currentMonthly, 0),
@@ -159,16 +164,43 @@ export function DividendGoalCard({ holdings, usdKrw, currentPrices = {} }: Props
             </select>
           </div>
 
+          {/* 세금 토글 */}
+          <button
+            onClick={() => setApplyTax((p) => !p)}
+            className={`w-full flex items-center justify-between px-3 py-2 rounded-xl border text-xs font-semibold transition-all ${
+              applyTax
+                ? 'border-amber-300 bg-amber-50 text-amber-700'
+                : 'border-gray-200 bg-gray-50 text-gray-500 hover:border-gray-300'
+            }`}
+          >
+            <span>세금 적용 (US 15% · KR 15.4%)</span>
+            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+              applyTax ? 'bg-amber-200 text-amber-800' : 'bg-gray-200 text-gray-500'
+            }`}>
+              {applyTax ? 'ON' : 'OFF'}
+            </span>
+          </button>
+
           {targetMonthly > 0 && (
             <>
               {/* 현재 / 목표 */}
               <div className="flex items-end justify-between">
                 <div>
-                  <p className="text-[10px] text-gray-500 mb-0.5">현재 월 배당</p>
+                  <p className="text-[10px] text-gray-500 mb-0.5">
+                    현재 월 배당
+                    {applyTax && (
+                      <span className="ml-1 text-amber-600 font-semibold">세후</span>
+                    )}
+                  </p>
                   <p className="text-lg font-bold text-gray-900">{fmtCurr(currentTotal)}</p>
                 </div>
                 <div className="text-right">
-                  <p className="text-[10px] text-gray-500 mb-0.5">목표</p>
+                  <p className="text-[10px] text-gray-500 mb-0.5">
+                    목표
+                    {applyTax && (
+                      <span className="ml-1 text-amber-600 font-semibold">세후 기준</span>
+                    )}
+                  </p>
                   <p className="text-base font-semibold text-gray-500">{fmtCurr(targetMonthly)}</p>
                 </div>
               </div>
@@ -221,8 +253,8 @@ export function DividendGoalCard({ holdings, usdKrw, currentPrices = {} }: Props
                                 >
                                   {r.currency === 'USD' ? 'US' : 'KR'}
                                 </span>
-                                <span className="font-semibold text-gray-900 text-xs truncate max-w-[56px]">
-                                  {r.symbol.replace(/\.(KS|KQ)$/, '')}
+                                <span className="font-semibold text-gray-900 text-xs truncate max-w-[80px]">
+                                  {r.name}
                                 </span>
                               </div>
                             </td>
