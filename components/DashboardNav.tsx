@@ -8,6 +8,8 @@ import { useAuth } from '@/components/AuthProvider';
 const NAV_LINKS = [
   { href: '/portfolio', label: '포트폴리오' },
   { href: '/investors', label: '기관투자자' },
+  { href: '/backtesting', label: '백테스팅' },
+  { href: '/infinite-buy', label: '무한매수' },
 ];
 
 export function DashboardNav() {

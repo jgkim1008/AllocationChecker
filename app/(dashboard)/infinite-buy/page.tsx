@@ -1,0 +1,325 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { StrategyCalc } from '@/components/infinite-buy/StrategyCalc';
+import { BuyTracker } from '@/components/infinite-buy/BuyTracker';
+import { BacktestSim } from '@/components/infinite-buy/BacktestSim';
+import { StrategyGuide } from '@/components/infinite-buy/StrategyGuide';
+
+const PRESET_SYMBOLS = ['TQQQ', 'UPRO', 'SOXL', 'FNGU', 'TECL'];
+
+// 각 종목 한줄 설명
+const SYMBOL_DESC: Record<string, string> = {
+  TQQQ: '나스닥100 3배',
+  UPRO: 'S&P500 3배',
+  SOXL: '반도체 3배',
+  FNGU: 'FANG+ 3배',
+  TECL: '기술주 3배',
+};
+
+type Tab = 'calc' | 'tracker' | 'backtest';
+
+const TAB_LABELS: Record<Tab, string> = {
+  calc: '전략 계산기',
+  tracker: '실시간 트래커',
+  backtest: '백테스팅',
+};
+
+const TAB_DESC: Record<Tab, string> = {
+  calc: '파라미터별 매수 시나리오 계산',
+  tracker: '실제 매수 기록 및 손익 추적',
+  backtest: '과거 데이터로 전략 성과 검증',
+};
+
+export default function InfiniteBuyPage() {
+  const [symbol, setSymbol] = useState<string>('TQQQ');
+  const [customSymbol, setCustomSymbol] = useState<string>('');
+  const [isCustom, setIsCustom] = useState(false);
+
+  const [capital, setCapital] = useState<number>(10000);
+  const [capitalInput, setCapitalInput] = useState<string>('10000');
+  const [n, setN] = useState<number>(40);
+  const [nInput, setNInput] = useState<string>('40');
+  const [targetRate, setTargetRate] = useState<number>(0.10);
+  const [targetRateInput, setTargetRateInput] = useState<string>('10');
+  const [variableBuy, setVariableBuy] = useState<boolean>(true);
+
+  const [tab, setTab] = useState<Tab>('calc');
+
+  // 실시간 현재가 (프리셋 버튼 표시용)
+  const [presetPrices, setPresetPrices] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    fetch(`/api/stocks/prices?symbols=${PRESET_SYMBOLS.join(',')}`)
+      .then((r) => r.json())
+      .then((data) => {
+        const map: Record<string, number> = {};
+        for (const sym of PRESET_SYMBOLS) {
+          const p = data?.prices?.[sym]?.price;
+          if (p && p > 0) map[sym] = p;
+        }
+        setPresetPrices(map);
+      })
+      .catch(() => {});
+  }, []);
+
+  const activeSymbol = isCustom ? customSymbol.trim().toUpperCase() : symbol;
+
+  function handlePresetClick(sym: string) {
+    setSymbol(sym);
+    setIsCustom(false);
+  }
+
+  function handleCustomInput(val: string) {
+    setCustomSymbol(val);
+    setIsCustom(true);
+  }
+
+  return (
+    <div className="max-w-6xl mx-auto px-4 py-8 space-y-5">
+      {/* Header */}
+      <div>
+        <h1 className="text-xl font-bold text-gray-900">무한 매수법</h1>
+        <p className="text-sm text-gray-500 mt-1">
+          라오어 무한 매수법 — 레버리지 ETF 분할 매수 전략 계산기
+        </p>
+      </div>
+
+      {/* 전략 가이드 (접힘/펼침) */}
+      <StrategyGuide />
+
+      {/* ETF 선택 */}
+      <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
+        <div>
+          <p className="text-sm font-medium text-gray-900">종목 선택</p>
+          <p className="text-xs text-gray-400 mt-0.5">무한매수법에 주로 사용하는 3배 레버리지 ETF입니다</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {PRESET_SYMBOLS.map((sym) => {
+            const isActive = !isCustom && symbol === sym;
+            const price = presetPrices[sym];
+            return (
+              <button
+                key={sym}
+                onClick={() => handlePresetClick(sym)}
+                className={`flex flex-col items-start px-3 py-2 rounded-lg border transition-colors min-w-[80px] ${
+                  isActive
+                    ? 'bg-green-600 text-white border-green-600'
+                    : 'bg-white text-gray-700 border-gray-200 hover:border-green-400 hover:text-green-700'
+                }`}
+              >
+                <span className="text-sm font-bold">{sym}</span>
+                <span className={`text-xs mt-0.5 ${isActive ? 'text-green-100' : 'text-gray-400'}`}>
+                  {SYMBOL_DESC[sym]}
+                </span>
+                {price ? (
+                  <span className={`text-xs font-medium mt-0.5 ${isActive ? 'text-white' : 'text-gray-600'}`}>
+                    ${price.toFixed(2)}
+                  </span>
+                ) : (
+                  <span className={`text-xs mt-0.5 ${isActive ? 'text-green-200' : 'text-gray-300'}`}>
+                    로딩 중…
+                  </span>
+                )}
+              </button>
+            );
+          })}
+
+          {/* 직접 입력 */}
+          <div className="flex flex-col justify-center">
+            <input
+              type="text"
+              placeholder="직접 입력 (예: LABU)"
+              value={isCustom ? customSymbol : ''}
+              onChange={(e) => handleCustomInput(e.target.value)}
+              onFocus={() => setIsCustom(true)}
+              className={`text-sm border rounded-lg px-3 py-2 h-full min-h-[60px] w-36 focus:outline-none focus:ring-2 focus:ring-green-500 transition-colors placeholder:text-gray-300 ${
+                isCustom ? 'border-green-500' : 'border-gray-200'
+              }`}
+            />
+          </div>
+        </div>
+
+        {activeSymbol && (
+          <p className="text-xs text-gray-400">
+            선택된 종목:{' '}
+            <span className="font-semibold text-gray-700">{activeSymbol}</span>
+            {!isCustom && SYMBOL_DESC[activeSymbol] && (
+              <span className="text-gray-400"> — {SYMBOL_DESC[activeSymbol]}</span>
+            )}
+          </p>
+        )}
+      </div>
+
+      {/* 공통 파라미터 */}
+      <div className="bg-white border border-gray-200 rounded-xl p-4">
+        <div className="mb-3">
+          <p className="text-sm font-medium text-gray-900">전략 파라미터</p>
+          <p className="text-xs text-gray-400 mt-0.5">
+            아래 탭(전략 계산기·트래커·백테스팅)에 공통 적용됩니다
+          </p>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {/* 총 투자금 */}
+          <div>
+            <label className="text-xs font-medium text-gray-600 block mb-1">
+              총 투자금 (C)
+              <span className="font-normal text-gray-400 ml-1">— 이번 사이클에 쓸 전체 금액</span>
+            </label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
+              <input
+                type="number"
+                min="100"
+                step="100"
+                value={capitalInput}
+                onChange={(e) => setCapitalInput(e.target.value)}
+                onBlur={() => {
+                  const v = parseFloat(capitalInput);
+                  const clamped = isNaN(v) ? capital : Math.max(100, v);
+                  setCapital(clamped);
+                  setCapitalInput(clamped.toString());
+                }}
+                className="w-full text-sm border border-gray-200 rounded-lg pl-7 pr-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500"
+              />
+            </div>
+          </div>
+
+          {/* 분할 횟수 */}
+          <div>
+            <label className="text-xs font-medium text-gray-600 block mb-1">
+              분할 횟수 (N)
+              <span className="font-normal text-gray-400 ml-1">— 라오어 기본값 40</span>
+            </label>
+            <div className="relative">
+              <input
+                type="number"
+                min="2"
+                max="200"
+                step="1"
+                value={nInput}
+                onChange={(e) => setNInput(e.target.value)}
+                onBlur={() => {
+                  const v = parseInt(nInput, 10);
+                  const clamped = isNaN(v) ? n : Math.max(2, Math.min(200, v));
+                  setN(clamped);
+                  setNInput(clamped.toString());
+                }}
+                className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500"
+              />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs">등분</span>
+            </div>
+          </div>
+
+          {/* 목표 수익률 */}
+          <div>
+            <label className="text-xs font-medium text-gray-600 block mb-1">
+              목표 수익률
+              <span className="font-normal text-gray-400 ml-1">— 이 수익이 나면 전량 매도</span>
+            </label>
+            <div className="relative">
+              <input
+                type="number"
+                min="0.1"
+                max="50"
+                step="0.1"
+                value={targetRateInput}
+                onChange={(e) => setTargetRateInput(e.target.value)}
+                onBlur={() => {
+                  const v = parseFloat(targetRateInput);
+                  if (!isNaN(v) && v > 0) {
+                    setTargetRate(v / 100);
+                    setTargetRateInput(v.toString());
+                  } else {
+                    setTargetRateInput((targetRate * 100).toString());
+                  }
+                }}
+                className="w-full text-sm border border-gray-200 rounded-lg px-3 pr-8 py-2 focus:outline-none focus:ring-2 focus:ring-green-500"
+              />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs">%</span>
+            </div>
+          </div>
+        </div>
+
+        {/* 계산 요약 + 매수 방식 토글 */}
+        <div className="mt-3 pt-3 border-t border-gray-100 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-gray-500">
+          <span>
+            1분할 매수금:{' '}
+            <strong className="text-gray-700">${(capital / n).toLocaleString('en-US', { maximumFractionDigits: 2 })}</strong>
+          </span>
+          <span>
+            목표 수익금:{' '}
+            <strong className="text-green-600">${(capital * targetRate).toLocaleString('en-US', { maximumFractionDigits: 2 })}</strong>
+          </span>
+          <span>
+            목표 도달 시 총 평가금:{' '}
+            <strong className="text-gray-700">${(capital * (1 + targetRate)).toLocaleString('en-US', { maximumFractionDigits: 2 })}</strong>
+          </span>
+
+          {/* 매수 방식 토글 */}
+          <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5 ml-auto">
+            <button
+              onClick={() => setVariableBuy(false)}
+              className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                !variableBuy
+                  ? 'bg-white text-gray-800 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              1분할 고정
+            </button>
+            <button
+              onClick={() => setVariableBuy(true)}
+              className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                variableBuy
+                  ? 'bg-green-600 text-white shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              가변 (평단 기준 1/2분할)
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* 탭 */}
+      <div className="border-b border-gray-200">
+        <nav className="flex">
+          {(Object.keys(TAB_LABELS) as Tab[]).map((t) => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className={`px-4 py-2.5 text-left transition-colors border-b-2 ${
+                tab === t
+                  ? 'border-green-600 text-green-700'
+                  : 'border-transparent text-gray-500 hover:text-gray-900 hover:border-gray-300'
+              }`}
+            >
+              <span className="text-sm font-medium block">{TAB_LABELS[t]}</span>
+              <span className="text-xs text-gray-400 hidden sm:block">{TAB_DESC[t]}</span>
+            </button>
+          ))}
+        </nav>
+      </div>
+
+      {/* 탭 내용 */}
+      <div>
+        {tab === 'calc' && (
+          <StrategyCalc symbol={activeSymbol} capital={capital} n={n} targetRate={targetRate} variableBuy={variableBuy} />
+        )}
+        {tab === 'tracker' && (
+          <BuyTracker symbol={activeSymbol} capital={capital} n={n} targetRate={targetRate} />
+        )}
+        {tab === 'backtest' && (
+          <BacktestSim symbol={activeSymbol} capital={capital} n={n} targetRate={targetRate} variableBuy={variableBuy} />
+        )}
+      </div>
+
+      {/* 면책 */}
+      <p className="text-xs text-gray-400 text-center pb-4">
+        과거 수익률이 미래 수익을 보장하지 않습니다. 레버리지 ETF는 높은 위험을 수반합니다.
+        투자는 본인의 판단과 책임 하에 진행하세요.
+      </p>
+    </div>
+  );
+}
