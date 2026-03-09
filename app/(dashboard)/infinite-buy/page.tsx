@@ -169,9 +169,8 @@ export default function InfiniteBuyPage() {
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
               <input
-                type="number"
-                min="100"
-                step="100"
+                type="text"
+                inputMode="decimal"
                 value={capitalInput}
                 onChange={(e) => setCapitalInput(e.target.value)}
                 onBlur={() => {
@@ -193,10 +192,8 @@ export default function InfiniteBuyPage() {
             </label>
             <div className="relative">
               <input
-                type="number"
-                min="2"
-                max="200"
-                step="1"
+                type="text"
+                inputMode="numeric"
                 value={nInput}
                 onChange={(e) => setNInput(e.target.value)}
                 onBlur={() => {
@@ -219,10 +216,8 @@ export default function InfiniteBuyPage() {
             </label>
             <div className="relative">
               <input
-                type="number"
-                min="0.1"
-                max="50"
-                step="0.1"
+                type="text"
+                inputMode="decimal"
                 value={targetRateInput}
                 onChange={(e) => setTargetRateInput(e.target.value)}
                 onBlur={() => {
