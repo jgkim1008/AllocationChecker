@@ -168,11 +168,14 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy }: St
         ? Math.ceil(remainingDivisions / 2)
         : remainingDivisions;
 
+      const sessionBuyAmount = isCheap ? 2 * unitBuy : unitBuy;
+
       return {
         dropRate: dropRate * 100,
         scenarioPrice,
         remainingDivisions,
         remainingBudget,
+        sessionBuyAmount,
         estimatedSessions,
         isCheap,
         newAvgCost,
@@ -261,7 +264,7 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy }: St
                 <p className="text-sm font-medium text-gray-900">추매 시나리오 (현재 포지션 기반)</p>
                 <p className="text-xs text-gray-500 mt-0.5">
                   {variableBuy
-                    ? '평단 미만 가격에서는 2분할 매수 → 세션당 더 빠르게 소진됩니다. 추매 금액(총예산)은 동일하지만 소요 세션 수가 달라집니다.'
+                    ? '평단 미만 가격에서는 2분할 매수 → 1회 추매금이 늘어나고 세션 수가 줄어듭니다.'
                     : '1분할 고정 모드 — 매 세션마다 1분할씩 매수합니다.'}
                 </p>
               </div>
@@ -342,7 +345,7 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy }: St
                     <th className="text-right px-4 py-2.5 text-xs font-medium text-gray-500">도달가</th>
                     <th className="text-right px-4 py-2.5 text-xs font-medium text-gray-500">매수 방식</th>
                     <th className="text-right px-4 py-2.5 text-xs font-medium text-gray-500">예상 세션</th>
-                    <th className="text-right px-4 py-2.5 text-xs font-medium text-gray-500">추매 금액</th>
+                    <th className="text-right px-4 py-2.5 text-xs font-medium text-gray-500">1회 추매금</th>
                     <th className="text-right px-4 py-2.5 text-xs font-medium text-gray-500">추매 후 평단</th>
                     <th className="text-right px-4 py-2.5 text-xs font-medium text-gray-500">목표가</th>
                     <th className="text-right px-4 py-2.5 text-xs font-medium text-gray-500">필요 상승폭</th>
@@ -386,7 +389,7 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy }: St
                         )}
                       </td>
                       <td className="px-4 py-2.5 text-right text-gray-600">
-                        ${row.remainingBudget.toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                        ${row.sessionBuyAmount.toFixed(2)}
                       </td>
                       <td className="px-4 py-2.5 text-right font-medium text-gray-900">
                         ${row.newAvgCost.toFixed(2)}
