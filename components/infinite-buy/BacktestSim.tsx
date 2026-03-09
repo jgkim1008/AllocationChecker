@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   LineChart,
   Line,
@@ -15,7 +15,7 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import { simulateInfiniteBuy } from '@/lib/utils/infinite-buy-calc';
-import type { SimResult, SimCycle } from '@/lib/utils/infinite-buy-calc';
+import type { SimCycle } from '@/lib/utils/infinite-buy-calc';
 
 interface BacktestSimProps {
   symbol: string;
@@ -44,13 +44,14 @@ export function BacktestSim({ symbol, capital, n, targetRate, variableBuy }: Bac
   const [prices, setPrices] = useState<number[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<SimResult | null>(null);
 
-  const fetchAndRun = useCallback(() => {
+  // 가격 fetch: symbol·range 변경 시에만 실행
+  useEffect(() => {
     if (!symbol) return;
     setLoading(true);
     setError(null);
-    setResult(null);
+    setDates([]);
+    setPrices([]);
 
     const years = RANGE_YEARS[range];
     fetch(`/api/infinite-buy/prices?symbol=${symbol}&range=${years}`)
@@ -61,18 +62,16 @@ export function BacktestSim({ symbol, capital, n, targetRate, variableBuy }: Bac
       .then((data: { dates: string[]; prices: number[] }) => {
         setDates(data.dates ?? []);
         setPrices(data.prices ?? []);
-        if (data.prices && data.prices.length > 0) {
-          const sim = simulateInfiniteBuy(data.prices, { capital, n, targetRate, variableBuy });
-          setResult(sim);
-        }
       })
       .catch(() => setError('데이터를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.'))
       .finally(() => setLoading(false));
-  }, [symbol, range, capital, n, targetRate, variableBuy]);
+  }, [symbol, range]);
 
-  useEffect(() => {
-    fetchAndRun();
-  }, [fetchAndRun]);
+  // 시뮬레이션: 가격 또는 파라미터 변경 시 재계산 (API 호출 없음)
+  const result = useMemo(() => {
+    if (prices.length === 0) return null;
+    return simulateInfiniteBuy(prices, { capital, n, targetRate, variableBuy });
+  }, [prices, capital, n, targetRate, variableBuy]);
 
   // Build comparison chart data (normalize to 100)
   const comparisonData = (() => {
