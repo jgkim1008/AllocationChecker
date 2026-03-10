@@ -2,20 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { Plus, Trash2, RefreshCw, Pencil, Check, X } from 'lucide-react';
-
-interface BuyRecord {
-  date: string;
-  price: number;
-  shares: number;
-  amount: number;
-}
-
-interface TrackerState {
-  capital: number;
-  n: number;
-  targetRate: number;
-  buys: BuyRecord[];
-}
+import { useInfiniteBuyRecords, BuyRecord } from '@/hooks/useInfiniteBuyRecords';
 
 interface BuyTrackerProps {
   symbol: string;
@@ -24,12 +11,10 @@ interface BuyTrackerProps {
   targetRate: number;
 }
 
-function storageKey(sym: string) {
-  return `ac_ibl_${sym.toUpperCase()}`;
-}
-
 export function BuyTracker({ symbol, capital, n, targetRate }: BuyTrackerProps) {
-  const [state, setState] = useState<TrackerState>({ capital, n, targetRate, buys: [] });
+  const { records, loading: recordsLoading, addRecord, updateRecord, deleteRecord, deleteAllRecords } =
+    useInfiniteBuyRecords(symbol);
+
   const [currentPrice, setCurrentPrice] = useState<number | null>(null);
   const [loadingPrice, setLoadingPrice] = useState(false);
 
@@ -40,30 +25,16 @@ export function BuyTracker({ symbol, capital, n, targetRate }: BuyTrackerProps) 
   const [formShares, setFormShares] = useState('');
   const [inputMode, setInputMode] = useState<'amount' | 'shares'>('amount');
   const [showForm, setShowForm] = useState(false);
+  const [adding, setAdding] = useState(false);
 
   // 편집 state
-  const [editingIdx, setEditingIdx] = useState<number | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [editDate, setEditDate] = useState('');
   const [editPrice, setEditPrice] = useState('');
   const [editAmount, setEditAmount] = useState('');
   const [editShares, setEditShares] = useState('');
   const [editMode, setEditMode] = useState<'amount' | 'shares'>('amount');
-
-  // Load from localStorage
-  useEffect(() => {
-    if (!symbol) return;
-    try {
-      const raw = localStorage.getItem(storageKey(symbol));
-      if (raw) {
-        const parsed: TrackerState = JSON.parse(raw);
-        setState(parsed);
-      } else {
-        setState({ capital, n, targetRate, buys: [] });
-      }
-    } catch {
-      setState({ capital, n, targetRate, buys: [] });
-    }
-  }, [symbol, capital, n, targetRate]);
+  const [saving, setSaving] = useState(false);
 
   // Fetch current price
   const fetchPrice = useCallback(() => {
@@ -83,14 +54,7 @@ export function BuyTracker({ symbol, capital, n, targetRate }: BuyTrackerProps) 
     fetchPrice();
   }, [fetchPrice]);
 
-  function save(next: TrackerState) {
-    setState(next);
-    try {
-      localStorage.setItem(storageKey(symbol), JSON.stringify(next));
-    } catch {}
-  }
-
-  function handleAddBuy() {
+  async function handleAddBuy() {
     const price = parseFloat(formPrice);
     if (!formDate || isNaN(price) || price <= 0) return;
 
@@ -107,35 +71,44 @@ export function BuyTracker({ symbol, capital, n, targetRate }: BuyTrackerProps) 
       amount = shares * price;
     }
 
-    const newBuy: BuyRecord = { date: formDate, price, shares, amount };
-    const next: TrackerState = {
-      ...state,
-      buys: [...state.buys, newBuy].sort((a, b) => a.date.localeCompare(b.date)),
-    };
-    save(next);
-    setFormPrice('');
-    setFormAmount('');
-    setFormShares('');
+    setAdding(true);
+    try {
+      await addRecord({
+        buy_date: formDate,
+        price,
+        shares,
+        amount,
+        capital,
+        n,
+        target_rate: targetRate,
+      });
+      setFormPrice('');
+      setFormAmount('');
+      setFormShares('');
+      setShowForm(false);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : '추가 실패');
+    } finally {
+      setAdding(false);
+    }
+  }
+
+  function startEdit(record: BuyRecord) {
+    setEditingId(record.id);
+    setEditDate(record.buy_date);
+    setEditPrice(record.price.toString());
+    setEditAmount(record.amount.toString());
+    setEditShares(record.shares.toString());
+    setEditMode('amount');
     setShowForm(false);
   }
 
-  function startEdit(idx: number) {
-    const b = state.buys[idx];
-    setEditingIdx(idx);
-    setEditDate(b.date);
-    setEditPrice(b.price.toString());
-    setEditAmount(b.amount.toString());
-    setEditShares(b.shares.toString());
-    setEditMode('amount');
-    setShowForm(false); // 추가 폼 닫기
-  }
-
   function cancelEdit() {
-    setEditingIdx(null);
+    setEditingId(null);
   }
 
-  function handleSaveEdit() {
-    if (editingIdx === null) return;
+  async function handleSaveEdit() {
+    if (editingId === null) return;
     const price = parseFloat(editPrice);
     if (!editDate || isNaN(price) || price <= 0) return;
 
@@ -152,35 +125,31 @@ export function BuyTracker({ symbol, capital, n, targetRate }: BuyTrackerProps) 
       amount = shares * price;
     }
 
-    const updated = state.buys.map((b, i) =>
-      i === editingIdx ? { date: editDate, price, shares, amount } : b
-    );
-    save({
-      ...state,
-      buys: updated.sort((a, b) => a.date.localeCompare(b.date)),
-    });
-    setEditingIdx(null);
+    setSaving(true);
+    try {
+      await updateRecord(editingId, { buy_date: editDate, price, shares, amount });
+      setEditingId(null);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : '수정 실패');
+    } finally {
+      setSaving(false);
+    }
   }
 
-  function handleReset() {
-    if (!confirm(`${symbol} 무한매수 기록을 초기화하시겠습니까?`)) return;
-    const next: TrackerState = { capital, n, targetRate, buys: [] };
-    save(next);
+  async function handleReset() {
+    if (!confirm(`${symbol} 무한매수 기록을 모두 삭제하시겠습니까?`)) return;
+    await deleteAllRecords();
   }
 
-  function handleDeleteBuy(idx: number) {
-    const next: TrackerState = {
-      ...state,
-      buys: state.buys.filter((_, i) => i !== idx),
-    };
-    save(next);
+  async function handleDeleteBuy(id: string) {
+    await deleteRecord(id);
   }
 
   // Calculations
-  const totalShares = state.buys.reduce((s, b) => s + b.shares, 0);
-  const totalInvested = state.buys.reduce((s, b) => s + b.amount, 0);
+  const totalShares = records.reduce((s, b) => s + b.shares, 0);
+  const totalInvested = records.reduce((s, b) => s + b.amount, 0);
   const avgCost = totalShares > 0 ? totalInvested / totalShares : 0;
-  const divisionsUsed = state.buys.length;
+  const divisionsUsed = records.length;
   const evalValue = currentPrice ? totalShares * currentPrice : null;
   const unrealizedPnl = evalValue != null ? evalValue - totalInvested : null;
   const unrealizedPct = totalInvested > 0 && unrealizedPnl != null ? unrealizedPnl / totalInvested : null;
@@ -190,7 +159,7 @@ export function BuyTracker({ symbol, capital, n, targetRate }: BuyTrackerProps) 
   // Running avg cost per buy
   let runningShares = 0;
   let runningInvested = 0;
-  const buysWithAvg = state.buys.map((b) => {
+  const buysWithAvg = records.map((b) => {
     runningShares += b.shares;
     runningInvested += b.amount;
     return { ...b, runningAvg: runningShares > 0 ? runningInvested / runningShares : 0 };
@@ -296,7 +265,10 @@ export function BuyTracker({ symbol, capital, n, targetRate }: BuyTrackerProps) 
       {/* Buy History Table */}
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
         <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-          <p className="text-sm font-medium text-gray-900">매수 내역</p>
+          <p className="text-sm font-medium text-gray-900">
+            매수 내역
+            {recordsLoading && <span className="text-xs text-gray-400 ml-2">로딩 중...</span>}
+          </p>
           <div className="flex items-center gap-2">
             <button
               onClick={() => setShowForm((v) => !v)}
@@ -305,7 +277,7 @@ export function BuyTracker({ symbol, capital, n, targetRate }: BuyTrackerProps) 
               <Plus className="h-3.5 w-3.5" />
               매수 추가
             </button>
-            {state.buys.length > 0 && (
+            {records.length > 0 && (
               <button
                 onClick={handleReset}
                 className="text-xs font-medium text-gray-500 hover:text-red-600 px-2 py-1.5 rounded-lg hover:bg-red-50 transition-colors"
@@ -416,9 +388,10 @@ export function BuyTracker({ symbol, capital, n, targetRate }: BuyTrackerProps) 
 
               <button
                 onClick={handleAddBuy}
-                className="text-sm font-medium text-white bg-green-600 hover:bg-green-700 px-3 py-1.5 rounded-lg transition-colors"
+                disabled={adding}
+                className="text-sm font-medium text-white bg-green-600 hover:bg-green-700 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
               >
-                추가
+                {adding ? '추가 중...' : '추가'}
               </button>
               <button
                 onClick={() => setShowForm(false)}
@@ -432,7 +405,7 @@ export function BuyTracker({ symbol, capital, n, targetRate }: BuyTrackerProps) 
 
         {buysWithAvg.length === 0 ? (
           <div className="px-4 py-10 text-center text-sm text-gray-400">
-            아직 매수 내역이 없습니다. 매수 추가 버튼을 눌러 기록하세요.
+            {recordsLoading ? '로딩 중...' : '아직 매수 내역이 없습니다. 매수 추가 버튼을 눌러 기록하세요.'}
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -448,10 +421,10 @@ export function BuyTracker({ symbol, capital, n, targetRate }: BuyTrackerProps) 
                 </tr>
               </thead>
               <tbody>
-                {buysWithAvg.map((b, idx) =>
-                  editingIdx === idx ? (
+                {buysWithAvg.map((b) =>
+                  editingId === b.id ? (
                     /* ── 편집 행 ── */
-                    <tr key={idx} className="border-t border-green-200 bg-green-50">
+                    <tr key={b.id} className="border-t border-green-200 bg-green-50">
                       {/* 날짜 */}
                       <td className="px-2 py-2">
                         <input
@@ -536,7 +509,8 @@ export function BuyTracker({ symbol, capital, n, targetRate }: BuyTrackerProps) 
                         <div className="flex items-center justify-end gap-1">
                           <button
                             onClick={handleSaveEdit}
-                            className="text-green-600 hover:text-green-700 transition-colors"
+                            disabled={saving}
+                            className="text-green-600 hover:text-green-700 transition-colors disabled:opacity-50"
                             title="저장"
                           >
                             <Check className="h-3.5 w-3.5" />
@@ -553,8 +527,8 @@ export function BuyTracker({ symbol, capital, n, targetRate }: BuyTrackerProps) 
                     </tr>
                   ) : (
                     /* ── 표시 행 ── */
-                    <tr key={idx} className="border-t border-gray-100 hover:bg-gray-50 group">
-                      <td className="px-4 py-2.5 text-gray-700">{b.date}</td>
+                    <tr key={b.id} className="border-t border-gray-100 hover:bg-gray-50 group">
+                      <td className="px-4 py-2.5 text-gray-700">{b.buy_date}</td>
                       <td className="px-4 py-2.5 text-right text-gray-700">${b.price.toFixed(2)}</td>
                       <td className="px-4 py-2.5 text-right text-gray-700">{b.shares.toFixed(4)}</td>
                       <td className="px-4 py-2.5 text-right text-gray-700">${b.amount.toFixed(2)}</td>
@@ -562,14 +536,14 @@ export function BuyTracker({ symbol, capital, n, targetRate }: BuyTrackerProps) 
                       <td className="px-4 py-2.5 text-right">
                         <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                           <button
-                            onClick={() => startEdit(idx)}
+                            onClick={() => startEdit(b)}
                             className="text-gray-400 hover:text-blue-500 transition-colors"
                             title="수정"
                           >
                             <Pencil className="h-3.5 w-3.5" />
                           </button>
                           <button
-                            onClick={() => handleDeleteBuy(idx)}
+                            onClick={() => handleDeleteBuy(b.id)}
                             className="text-gray-400 hover:text-red-500 transition-colors"
                             title="삭제"
                           >

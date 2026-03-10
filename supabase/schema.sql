@@ -127,3 +127,38 @@ CREATE INDEX IF NOT EXISTS idx_portfolio_stock_id ON portfolio_holdings(stock_id
 CREATE INDEX IF NOT EXISTS idx_portfolio_account_id ON portfolio_holdings(account_id);
 CREATE INDEX IF NOT EXISTS idx_api_cache_key ON api_cache(cache_key);
 CREATE INDEX IF NOT EXISTS idx_api_cache_expires ON api_cache(expires_at);
+
+-- ============================================================
+-- infinite_buy_records (무한매수법 매수 기록)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS infinite_buy_records (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  symbol       TEXT NOT NULL,
+  buy_date     DATE NOT NULL,
+  price        NUMERIC(14, 4) NOT NULL,
+  shares       NUMERIC(14, 6) NOT NULL,
+  amount       NUMERIC(14, 4) NOT NULL,
+  capital      NUMERIC(14, 4) NOT NULL,
+  n            INTEGER NOT NULL,
+  target_rate  NUMERIC(6, 4) NOT NULL,
+  user_id      UUID REFERENCES auth.users(id),
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE infinite_buy_records ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "infinite_buy_public_read" ON infinite_buy_records
+  FOR SELECT USING (true);
+
+CREATE POLICY "infinite_buy_public_insert" ON infinite_buy_records
+  FOR INSERT WITH CHECK (true);
+
+CREATE POLICY "infinite_buy_public_update" ON infinite_buy_records
+  FOR UPDATE USING (true);
+
+CREATE POLICY "infinite_buy_public_delete" ON infinite_buy_records
+  FOR DELETE USING (true);
+
+CREATE INDEX IF NOT EXISTS idx_infinite_buy_symbol ON infinite_buy_records(symbol);
+CREATE INDEX IF NOT EXISTS idx_infinite_buy_user ON infinite_buy_records(user_id);
