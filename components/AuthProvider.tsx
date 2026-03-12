@@ -1,8 +1,9 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import type { User } from '@supabase/supabase-js';
+import type { SupabaseClient } from '@supabase/supabase-js';
 
 interface AuthContextType {
   user: User | null;
@@ -17,81 +18,64 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [isPremium, setIsPremium] = useState(false);
+  const supabaseRef = useRef<SupabaseClient | null>(null);
 
   useEffect(() => {
-    // 타임아웃: 3초 후에도 로딩 중이면 강제 해제
-    const timeout = setTimeout(() => {
-      setLoading(false);
-    }, 3000);
+    if (!supabaseRef.current) {
+      supabaseRef.current = createClient();
+    }
+    const supabase = supabaseRef.current;
 
-    const supabase = createClient();
-
-    supabase.auth.getUser().then(async ({ data: { user } }) => {
-      clearTimeout(timeout);
-      setUser(user);
-
-      if (user) {
-        // 유료 구독 여부 확인
-        try {
-          const { data } = await supabase
-            .from('premium_users')
-            .select('is_active, expires_at')
-            .eq('user_id', user.id)
-            .single();
-
-          if (data) {
-            const isActive = data.is_active;
-            const notExpired = !data.expires_at || new Date(data.expires_at) > new Date();
-            setIsPremium(isActive && notExpired);
-          }
-        } catch (e) {
-          console.error('Failed to check premium status:', e);
-        }
+    const checkPremium = async () => {
+      try {
+        const res = await fetch('/api/auth/premium');
+        const data = await res.json();
+        console.log('Premium API result:', data);
+        setIsPremium(data.isPremium);
+      } catch (e) {
+        console.error('Failed to check premium:', e);
+        setIsPremium(false);
       }
+    };
 
-      setLoading(false);
-    }).catch((e) => {
-      clearTimeout(timeout);
-      console.error('Failed to get user:', e);
-      setLoading(false);
-    });
+    const initAuth = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        setUser(user);
+        if (user) {
+          await checkPremium();
+        }
+      } catch (e) {
+        console.error('Failed to get user:', e);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    initAuth();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       const currentUser = session?.user ?? null;
       setUser(currentUser);
 
       if (currentUser) {
-        try {
-          const { data } = await supabase
-            .from('premium_users')
-            .select('is_active, expires_at')
-            .eq('user_id', currentUser.id)
-            .single();
-
-          if (data) {
-            const isActive = data.is_active;
-            const notExpired = !data.expires_at || new Date(data.expires_at) > new Date();
-            setIsPremium(isActive && notExpired);
-          } else {
-            setIsPremium(false);
-          }
-        } catch (e) {
-          setIsPremium(false);
-        }
+        await checkPremium();
       } else {
         setIsPremium(false);
       }
     });
 
     return () => {
-      clearTimeout(timeout);
       subscription.unsubscribe();
     };
   }, []);
 
   const logout = async () => {
-    const supabase = createClient();
-    await supabase.auth.signOut();
+    if (supabaseRef.current) {
+      await supabaseRef.current.auth.signOut();
+      setUser(null);
+      setIsPremium(false);
+    }
   };
 
   return (
