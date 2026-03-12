@@ -162,3 +162,48 @@ CREATE POLICY "infinite_buy_public_delete" ON infinite_buy_records
 
 CREATE INDEX IF NOT EXISTS idx_infinite_buy_symbol ON infinite_buy_records(symbol);
 CREATE INDEX IF NOT EXISTS idx_infinite_buy_user ON infinite_buy_records(user_id);
+
+-- ============================================================
+-- fibonacci_reports (피보나치 되돌림 리포트)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS fibonacci_reports (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  report_date  DATE NOT NULL UNIQUE,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  us_data      JSONB NOT NULL DEFAULT '[]',
+  kr_data      JSONB NOT NULL DEFAULT '[]',
+  indices_data JSONB NOT NULL DEFAULT '[]'
+);
+
+ALTER TABLE fibonacci_reports ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "fibonacci_reports_public_read" ON fibonacci_reports
+  FOR SELECT USING (true);
+
+CREATE POLICY "fibonacci_reports_public_insert" ON fibonacci_reports
+  FOR INSERT WITH CHECK (true);
+
+CREATE POLICY "fibonacci_reports_public_update" ON fibonacci_reports
+  FOR UPDATE USING (true);
+
+CREATE INDEX IF NOT EXISTS idx_fibonacci_reports_date ON fibonacci_reports(report_date DESC);
+
+-- ============================================================
+-- premium_users (유료 구독 사용자)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS premium_users (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id      UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE UNIQUE,
+  username     TEXT NOT NULL UNIQUE,
+  is_active    BOOLEAN NOT NULL DEFAULT TRUE,
+  expires_at   TIMESTAMPTZ,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE premium_users ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "premium_users_public_read" ON premium_users
+  FOR SELECT USING (true);
+
+CREATE INDEX IF NOT EXISTS idx_premium_users_user_id ON premium_users(user_id);
+CREATE INDEX IF NOT EXISTS idx_premium_users_username ON premium_users(username);
