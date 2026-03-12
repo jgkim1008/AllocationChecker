@@ -154,6 +154,52 @@ export async function getDividendHistory(
   }
 }
 
+export async function getDailyHistory(
+  symbol: string,
+  market: 'US' | 'KR' = 'KR'
+): Promise<{ date: string; price: number; high: number; low: number; volume: number }[]> {
+  const ticker = market === 'KR' ? ensureSuffix(symbol) : toYahooUSTicker(symbol);
+  // 2년치 일봉 데이터 (이평선 448일 계산용)
+  const url = `${QUERY_URL}/v8/finance/chart/${encodeURIComponent(ticker)}?range=2y&interval=1d`;
+
+  try {
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0' },
+      next: { revalidate: 3600 },
+    });
+    if (!res.ok) return [];
+
+    const data = await res.json();
+    const result = data?.chart?.result?.[0];
+    if (!result) return [];
+
+    const timestamps: number[] = result.timestamp ?? [];
+    const quotes = result.indicators?.quote?.[0] ?? {};
+    const adjClose = result.indicators?.adjclose?.[0]?.adjclose ?? [];
+    
+    const { high = [], low = [], volume = [] } = quotes;
+
+    const history = [];
+    // 최신 데이터가 앞에 오도록 역순 정렬을 위해 unshift 사용하거나 나중에 reverse
+    for (let i = 0; i < timestamps.length; i++) {
+      if (adjClose[i] == null) continue;
+      
+      const d = new Date(timestamps[i] * 1000);
+      history.push({
+        date: d.toISOString().split('T')[0],
+        price: adjClose[i],
+        high: high[i] ?? adjClose[i],
+        low: low[i] ?? adjClose[i],
+        volume: volume[i] ?? 0,
+      });
+    }
+
+    return history.reverse(); // 최신순
+  } catch {
+    return [];
+  }
+}
+
 export async function getStockInfo(symbol: string): Promise<{ name: string; currency: string } | null> {
   const ticker = ensureSuffix(symbol);
   // 티커에서 숫자 코드 추출 (005387.KQ → 005387)

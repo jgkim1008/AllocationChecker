@@ -47,7 +47,7 @@ export function FibonacciTable({ stocks, market }: FibonacciTableProps) {
               <td className="px-4 py-3 text-gray-400">{stock.rank}</td>
               <td className="px-4 py-3">
                 <Link
-                  href={`/fibonacci/${stock.symbol}?market=${market}&name=${encodeURIComponent(stock.name)}`}
+                  href={`/strategies/fibonacci/${stock.symbol}?market=${market}&name=${encodeURIComponent(stock.name)}`}
                   className="font-medium text-gray-900 hover:text-purple-600"
                 >
                   {stock.symbol}
@@ -55,7 +55,7 @@ export function FibonacciTable({ stocks, market }: FibonacciTableProps) {
               </td>
               <td className="px-4 py-3">
                 <Link
-                  href={`/fibonacci/${stock.symbol}?market=${market}&name=${encodeURIComponent(stock.name)}`}
+                  href={`/strategies/fibonacci/${stock.symbol}?market=${market}&name=${encodeURIComponent(stock.name)}`}
                   className="text-gray-500 hover:text-purple-600 flex items-center gap-1"
                 >
                   {stock.name}

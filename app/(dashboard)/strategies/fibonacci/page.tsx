@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { RefreshCw, TrendingUp, AlertCircle, Lock } from 'lucide-react';
+import { RefreshCw, TrendingUp, AlertCircle, Lock, ArrowLeft } from 'lucide-react';
+import Link from 'next/link';
 import { FibonacciTable } from '@/components/fibonacci/FibonacciTable';
 import { FibonacciLevelBadge } from '@/components/fibonacci/FibonacciLevelBadge';
 import { useAuth } from '@/components/AuthProvider';
@@ -82,6 +83,15 @@ export default function FibonacciPage() {
   return (
     <div className="min-h-screen">
       <div className="max-w-6xl mx-auto px-4 pt-6 pb-16">
+        {/* 뒤로가기 */}
+        <Link
+          href="/strategies"
+          className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-900 mb-6 transition-colors group"
+        >
+          <ArrowLeft className="h-4 w-4 group-hover:-translate-x-0.5 transition-transform" />
+          전략 목록으로 돌아가기
+        </Link>
+
         {/* 헤더 */}
         <div className="mb-6">
           <p className="text-xs font-medium text-gray-500 mb-1">FIBONACCI RETRACEMENT</p>
