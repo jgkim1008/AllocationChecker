@@ -65,35 +65,38 @@ async function fetchQuoteSummary(symbol: string, modules: string) {
 
 // ─────────────────────────────────────────────
 // 네이버 금융 PER/PBR/EPS (한국 주식 전용)
+// finance.naver.com HTML에서 em#_per, em#_pbr, em#_eps 파싱
 // ─────────────────────────────────────────────
 async function getNaverFundamentals(symbol: string) {
-  const clean = symbol.replace(/\.[A-Z]+$/, ''); // 6자리 종목코드만
+  const clean = symbol.replace(/\.[A-Z]+$/, '');
   try {
     const res = await fetch(
-      `https://m.stock.naver.com/api/stock/${clean}/basic`,
+      `https://finance.naver.com/item/main.naver?code=${clean}`,
       {
         headers: {
-          'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15',
-          'Referer': 'https://m.stock.naver.com/',
-          'Accept': 'application/json',
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+          'Referer': 'https://finance.naver.com/',
+          'Accept-Language': 'ko-KR,ko;q=0.9',
         },
         next: { revalidate: 3600 },
       }
     );
     if (!res.ok) return null;
 
-    const data = await res.json();
-    const parse = (v: unknown) => {
-      if (v == null || v === '' || v === '-') return null;
-      const n = parseFloat(String(v).replace(/,/g, ''));
+    const html = await res.text();
+
+    const parseField = (id: string) => {
+      const m = html.match(new RegExp(`<em[^>]*id="${id}"[^>]*>([^<]+)`));
+      if (!m) return null;
+      const n = parseFloat(m[1].replace(/,/g, ''));
       return isNaN(n) ? null : n;
     };
 
     return {
-      pe:  parse(data.per),
-      pb:  parse(data.pbr),
-      eps: parse(data.eps),
-      bps: parse(data.bps),
+      pe:  parseField('_per'),
+      pb:  parseField('_pbr'),
+      eps: parseField('_eps'),
+      bps: null,
     };
   } catch {
     return null;
