@@ -15,10 +15,9 @@ async function getYahooCrumb(): Promise<{ crumb: string; cookie: string } | null
     return { crumb: cachedCrumb.crumb, cookie: cachedCrumb.cookie };
   }
   try {
-    // Step 1: Get session cookie from Yahoo Finance
-    const homeRes = await fetch('https://finance.yahoo.com/', {
+    // Step 1: Get session cookie from fc.yahoo.com (A3 cookie provider)
+    const homeRes = await fetch('https://fc.yahoo.com/', {
       headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36' },
-      redirect: 'follow',
     });
     const rawCookies = homeRes.headers.getSetCookie?.() ?? [];
     const cookie = rawCookies.map(c => c.split(';')[0]).join('; ');
@@ -56,7 +55,7 @@ async function fetchQuoteSummary(symbol: string, modules: string) {
     });
     if (!res.ok) return null;
     const data = await res.json();
-    const result = data?.finance?.result?.[0];
+    const result = data?.quoteSummary?.result?.[0];
     return result ?? null;
   } catch {
     return null;
