@@ -162,26 +162,35 @@ export async function GET(
   } catch { /* ignore */ }
 
   // 3. quoteSummary (크럼 필요) — 실패 시 graceful fallback
+  // price 모듈 추가: 한국 주식의 경우 trailingPE, earningsPerShare 가 price 모듈에만 존재
   const summary = await fetchQuoteSummary(
     yahooTicker,
-    'financialData,summaryDetail,defaultKeyStatistics,assetProfile,recommendationTrend'
+    'financialData,summaryDetail,defaultKeyStatistics,assetProfile,recommendationTrend,price'
   );
 
   const sd = summary?.summaryDetail ?? {};
   const fd = summary?.financialData ?? {};
   const ks = summary?.defaultKeyStatistics ?? {};
   const ap = summary?.assetProfile ?? {};
+  const pr = summary?.price ?? {};
   const rt = summary?.recommendationTrend?.trend?.[0]; // 최근 1개월
 
+  const currentPrice = meta.regularMarketPrice ?? fd.currentPrice ?? null;
+
   const fundamentals = {
-    currentPrice: meta.regularMarketPrice ?? fd.currentPrice ?? null,
+    currentPrice,
     yearHigh: meta.fiftyTwoWeekHigh ?? null,
     yearLow: meta.fiftyTwoWeekLow ?? null,
-    marketCap: sd.marketCap ?? null,
-    pe: sd.trailingPE ?? null,
-    pb: ks.priceToBook ?? null,
+    marketCap: sd.marketCap ?? pr.marketCap ?? null,
+    // 한국 주식: trailingPE 가 price 모듈에 있음
+    pe: sd.trailingPE ?? pr.trailingPE ?? null,
+    // 한국 주식: priceToBook null이면 currentPrice / bookValue 로 계산
+    pb: ks.priceToBook ?? (currentPrice && ks.bookValue
+      ? Math.round((currentPrice / ks.bookValue) * 100) / 100
+      : null),
     beta: sd.beta ?? null,
-    eps: ks.trailingEps ?? null,
+    // 한국 주식: earningsPerShare 가 price 모듈에 있음
+    eps: ks.trailingEps ?? pr.earningsPerShare ?? null,
     roe: fd.returnOnEquity != null ? Math.round(fd.returnOnEquity * 1000) / 10 : null,
     revenue: fd.totalRevenue ?? null,
     netIncome: null as number | null,
