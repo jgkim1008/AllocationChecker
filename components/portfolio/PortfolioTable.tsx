@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { Pencil, Trash2, ChevronDown } from 'lucide-react';
+import Link from 'next/link';
+import { Pencil, Trash2, ChevronDown, ExternalLink } from 'lucide-react';
 import type { PortfolioHoldingWithStock } from '@/types/portfolio';
 import type { QuoteData } from '@/hooks/useCurrentPrices';
 import { formatCurrency } from '@/lib/utils/dividend-calculator';
@@ -200,11 +201,22 @@ function HoldingCard({
         <StockAvatar symbol={symbol} market={holding.stock.market} />
         <div className="flex-1 min-w-0">
           <div className="flex items-baseline gap-2">
-            <p className="text-base font-bold text-gray-900 truncate leading-tight">{displayName}</p>
+            <Link 
+              href={`/stocks/${symbol}`}
+              className="text-base font-bold text-gray-900 truncate leading-tight hover:text-green-600 transition-colors flex items-center gap-1 group/link"
+            >
+              {displayName}
+              <ExternalLink className="h-3 w-3 opacity-0 group-hover/link:opacity-100 transition-opacity" />
+            </Link>
             <span className="text-xs text-gray-500 shrink-0">{marketLabel}</span>
           </div>
           {displayName !== symbol && (
-            <p className="text-xs text-gray-400 mt-0.5">{symbol}</p>
+            <Link 
+              href={`/stocks/${symbol}`}
+              className="text-xs text-gray-400 mt-0.5 hover:text-green-600 transition-colors"
+            >
+              {symbol}
+            </Link>
           )}
         </div>
         <div className="shrink-0 text-right">

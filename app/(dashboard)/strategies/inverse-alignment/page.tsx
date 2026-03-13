@@ -58,7 +58,7 @@ export default function InverseAlignmentPage() {
               이평선 역배열 돌파
             </h1>
             <p className="text-gray-500 max-w-2xl font-medium leading-relaxed">
-              피보나치 되돌림 구간에 있는 종목들 중, 장기 이평선(448, 224, 112) 역배열 상태에서 
+              주요 우량주(미국 100위, 한국 30위) 전체를 대상으로 448, 224, 112일선 역배열 상태에서 
               60일선을 돌파하며 추세를 전환하는 종목을 정밀 분석합니다.
             </p>
           </div>

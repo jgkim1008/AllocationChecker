@@ -1,12 +1,16 @@
 {
   "crons": [
     {
-      "path": "/api/fibonacci/scan",
+      "path": "/api/fibonacci/scan?market=US",
+      "schedule": "0 22 * * 1-5"
+    },
+    {
+      "path": "/api/fibonacci/scan?market=KR",
       "schedule": "0 7 * * 1-5"
     },
     {
-      "path": "/api/fibonacci/scan",
-      "schedule": "0 21 * * 1-5"
+      "path": "/api/fibonacci/scan?market=INDEX",
+      "schedule": "30 7 * * 1-5"
     }
   ]
 }

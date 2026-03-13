@@ -10,7 +10,6 @@ const NAV_LINKS = [
   { href: '/investors', label: '기관투자자' },
   { href: '/strategies', label: '전략' },
   { href: '/backtesting', label: '백테스팅' },
-  { href: '/infinite-buy', label: '무한매수' },
 ];
 
 export function DashboardNav() {

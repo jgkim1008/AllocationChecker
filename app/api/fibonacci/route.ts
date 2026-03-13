@@ -1,74 +1,43 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
-import type { FibonacciReportRow } from '@/types/fibonacci';
+import { analyzeStocksFromDB } from '@/lib/api/fibonacci';
+
+export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   try {
-    const supabase = await createClient();
     const { searchParams } = new URL(request.url);
-    const date = searchParams.get('date');
+    const market = searchParams.get('market') as 'US' | 'KR' | 'INDEX' | null;
 
-    let query = supabase
-      .from('fibonacci_reports')
-      .select('*')
-      .order('report_date', { ascending: false });
+    // DB에서 즉시 분석 (매우 빠름)
+    const [usStocks, krStocks, indices] = await Promise.all([
+      analyzeStocksFromDB('US'),
+      analyzeStocksFromDB('KR'),
+      analyzeStocksFromDB('INDEX'),
+    ]);
 
-    if (date && date !== 'latest') {
-      query = query.eq('report_date', date);
-    } else {
-      query = query.limit(1);
-    }
-
-    const { data, error } = await query;
-
-    if (error) {
-      console.error('Error fetching fibonacci report:', error);
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
-
-    if (!data || data.length === 0) {
-      return NextResponse.json({ report: null });
-    }
-
-    const row = data[0] as FibonacciReportRow;
+    // UI 구조에 맞게 리포트 형식으로 구성
     const report = {
-      id: row.id,
-      report_date: row.report_date,
-      created_at: row.created_at,
-      us_stocks: row.us_data,
-      kr_stocks: row.kr_data,
-      indices: row.indices_data ?? [],
+      report_date: new Date().toISOString().split('T')[0],
+      us_stocks: usStocks,
+      kr_stocks: krStocks,
+      indices: indices,
     };
 
     return NextResponse.json({ report });
   } catch (error) {
-    console.error('Fibonacci API error:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    console.error('[Fibonacci API Error]', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
 
 export async function POST() {
-  // 수동 스캔 트리거 (개발/테스트용)
-  const scanUrl = new URL('/api/fibonacci/scan', process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000');
-
+  // 전체 데이터 강제 갱신 트리거
   try {
-    const response = await fetch(scanUrl, {
-      method: 'GET',
-      headers: {
-        authorization: `Bearer ${process.env.CRON_SECRET}`,
-      },
+    const res = await fetch('http://localhost:3000/api/market/refresh', {
+      headers: { 'Authorization': `Bearer ${process.env.CRON_SECRET || '123456'}` }
     });
-
-    const result = await response.json();
-    return NextResponse.json(result, { status: response.status });
+    return NextResponse.json(await res.json());
   } catch (error) {
-    console.error('Scan trigger error:', error);
-    return NextResponse.json(
-      { error: 'Failed to trigger scan' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to trigger refresh' }, { status: 500 });
   }
 }

@@ -6,6 +6,16 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 
 const STRATEGIES = [
   {
+    id: 'analyst-alpha',
+    title: 'Analyst Alpha (AI)',
+    description: '기본적 가치 평가, 애널리스트 추정치, 몬테카를로 시뮬레이션을 결합한 AI 기반 퀀트 분석 엔진입니다.',
+    icon: BarChart3,
+    href: '/strategies/analyst-alpha',
+    color: 'bg-indigo-50 text-indigo-600',
+    tag: 'AI',
+    tagColor: 'bg-indigo-100 text-indigo-700',
+  },
+  {
     id: 'fibonacci',
     title: '피보나치 되돌림',
     description: '주가의 급등락 이후 조정이 일어날 때, 주요 피보나치 레벨(0.382, 0.618 등)에서의 반등 지점을 포착하는 기술적 분석 전략입니다.',
@@ -18,7 +28,7 @@ const STRATEGIES = [
   {
     id: 'inverse-alignment',
     title: '이평선 역배열 전략',
-    description: '448, 224, 112일선 역배열 상태에서 60일선을 돌파하고 112/5일선에 근접한 종목을 포착하는 추세 전환 전략입니다.',
+    description: '주요 우량주(미국 100위, 한국 30위) 전체를 대상으로, 448, 224, 112일선 역배열 상태에서 60일선을 돌파하며 강력한 추세 전환이 일어나는 종목을 포착합니다.',
     icon: TrendingUp,
     href: '/strategies/inverse-alignment',
     color: 'bg-orange-50 text-orange-600',
@@ -27,22 +37,22 @@ const STRATEGIES = [
   },
   {
     id: 'infinite-buy',
-    title: '무한매수법 (Link)',
+    title: '무한매수법',
     description: '라오어의 무한매수법 전략을 기반으로 한 분할 매수 및 수익 실현 자동 계산기입니다.',
     icon: Infinity,
     href: '/infinite-buy',
     color: 'bg-blue-50 text-blue-600',
-    tag: '외부',
+    tag: '기본',
     tagColor: 'bg-blue-100 text-blue-700',
   },
   {
     id: 'backtesting',
-    title: '전략 백테스팅 (Link)',
+    title: '전략 백테스팅',
     description: '나만의 매매 전략을 과거 데이터를 통해 검증하고 수익률을 확인합니다.',
-    icon: BarChart3,
+    icon: Activity,
     href: '/backtesting',
     color: 'bg-green-50 text-green-600',
-    tag: '외부',
+    tag: '검증',
     tagColor: 'bg-green-100 text-green-700',
   },
   {

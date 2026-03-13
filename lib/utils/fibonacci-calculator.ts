@@ -22,7 +22,7 @@ export function calculateFibonacciPosition(
  */
 export function findNearestFibonacciLevel(
   position: number,
-  tolerance: number = 0.03
+  tolerance: number = 0.10
 ): { level: FibonacciLevel | null; distance: number } {
   let nearestLevel: FibonacciLevel | null = null;
   let minDistance = Infinity;

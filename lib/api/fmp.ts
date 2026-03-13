@@ -1,118 +1,104 @@
-import type { NormalizedDividend, DividendFrequency } from '@/types/dividend';
+import type { NormalizedDividend } from '@/types/dividend';
 import type { StockSearchResult } from '@/types/stock';
 
-const BASE_URL = 'https://financialmodelingprep.com';
+const POLYGON_API_KEY = process.env.POLYGON_API_KEY;
+const FMP_API_KEY = process.env.FMP_API_KEY;
 
-function getApiKey(): string {
-  const key = process.env.FMP_API_KEY;
-  if (!key) throw new Error('FMP_API_KEY is not set');
-  return key;
+function getFmpApiKey(): string {
+  if (!FMP_API_KEY) throw new Error('FMP_API_KEY is not set');
+  return FMP_API_KEY;
 }
 
-function parseFrequency(freq: string | undefined): DividendFrequency {
-  if (!freq) return null;
-  const lower = freq.toLowerCase();
-  if (lower === 'monthly') return 'monthly';
-  if (lower === 'quarterly') return 'quarterly';
-  if (lower.includes('semi')) return 'semi-annual';
-  if (lower === 'annual' || lower === 'yearly') return 'annual';
-  return null;
-}
-
-/** 배당 날짜 간격으로 지급 빈도를 추정합니다 (FMP가 frequency를 미제공할 때 사용). */
-function detectFrequency(dates: string[]): DividendFrequency {
-  if (dates.length < 2) return null;
-  const sorted = [...dates].sort((a, b) => b.localeCompare(a));
-  const gaps: number[] = [];
-  for (let i = 0; i < Math.min(sorted.length - 1, 4); i++) {
-    const diffMs = new Date(sorted[i]).getTime() - new Date(sorted[i + 1]).getTime();
-    gaps.push(diffMs / (1000 * 60 * 60 * 24));
-  }
-  const avg = gaps.reduce((a, b) => a + b, 0) / gaps.length;
-  if (avg <= 35) return 'monthly';
-  if (avg <= 100) return 'quarterly';
-  if (avg <= 200) return 'semi-annual';
-  return 'annual';
-}
-
+/**
+ * FMP API를 통한 종목 검색
+ */
 export async function searchStocks(query: string): Promise<StockSearchResult[]> {
-  const url = `${BASE_URL}/stable/search-symbol?query=${encodeURIComponent(query)}&limit=10&apikey=${getApiKey()}`;
-  const res = await fetch(url, { next: { revalidate: 3600 } });
-  if (!res.ok) return [];
-
-  const data = await res.json();
-  if (!Array.isArray(data)) return [];
-
-  return data
-    .filter((item: Record<string, unknown>) => item.symbol)
-    .map((item: Record<string, unknown>) => ({
-      symbol: item.symbol as string,
-      name: (item.name ?? item.companyName ?? item.symbol) as string,
-      exchange: (item.exchange ?? item.exchangeShortName ?? null) as string | null,
-      market: 'US' as const,
-      currency: 'USD' as const,
-    }));
-}
-
-export interface StockQuote {
-  symbol: string;
-  price: number;
-  changePercent: number;
-}
-
-export async function getQuotes(symbols: string[]): Promise<StockQuote[]> {
-  if (symbols.length === 0) return [];
-
-  // Free plan does not support bulk (comma-separated) symbol queries.
-  // Fetch each symbol individually and merge results.
-  const results = await Promise.allSettled(
-    symbols.map(async (symbol) => {
-      const url = `${BASE_URL}/stable/quote?symbol=${encodeURIComponent(symbol)}&apikey=${getApiKey()}`;
-      const res = await fetch(url, { next: { revalidate: 300 } });
-      if (!res.ok) return null;
-      const data = await res.json();
-      if (!Array.isArray(data) || data.length === 0) return null;
-      const item = data[0] as Record<string, unknown>;
-      return {
-        symbol: item.symbol as string,
-        price: Number(item.price ?? 0),
-        // FMP stable/quote returns "changePercentage" (not "changesPercentage")
-        changePercent: Number(item.changePercentage ?? 0),
-      };
-    })
-  );
-
-  return results
-    .filter((r): r is PromiseFulfilledResult<StockQuote> => r.status === 'fulfilled' && r.value !== null)
-    .map((r) => r.value);
-}
-
-export async function getDividendHistory(symbol: string): Promise<NormalizedDividend[]> {
-  const url = `${BASE_URL}/stable/dividends?symbol=${encodeURIComponent(symbol)}&apikey=${getApiKey()}`;
-  // cache: 'no-store' — Supabase api_cache 테이블에서 직접 캐싱하므로 Next.js fetch 캐시 비활성화
   try {
-    const res = await fetch(url, { cache: 'no-store' });
+    const url = `https://financialmodelingprep.com/api/v3/search?query=${encodeURIComponent(query)}&limit=10&apikey=${getFmpApiKey()}`;
+    const res = await fetch(url, { next: { revalidate: 86400 } });
     if (!res.ok) return [];
 
     const data = await res.json();
-    if (!Array.isArray(data)) return []; // FMP 무료 플랜 미지원 심볼은 텍스트 에러 반환
-
-    // FMP stable/dividends 가 frequency 필드를 미제공하는 경우 날짜 간격으로 감지
-    const parsedFrequency = parseFrequency(data[0]?.frequency as string | undefined);
-    const frequency: DividendFrequency =
-      parsedFrequency ?? detectFrequency(data.map((d: Record<string, unknown>) => d.date as string));
-
-    return data.map((item: Record<string, unknown>) => ({
-      symbol,
-      market: 'US' as const,
-      exDividendDate: item.date as string,
-      paymentDate: (item.paymentDate as string) ?? null,
-      dividendAmount: Number(item.adjDividend ?? item.dividend) || 0,
-      frequency,
-      currency: 'USD' as const,
-      source: 'fmp' as const,
+    return data.map((item: any) => ({
+      symbol: item.symbol,
+      name: item.name,
+      market: 'US', // FMP search results are primarily US
+      currency: item.currency || 'USD'
     }));
-  } catch {
+  } catch (error) {
+    console.error('FMP Search failed:', error);
+    return [];
+  }
+}
+
+/**
+ * FMP API를 통한 시세 조회 (Polygon으로 대체됨)
+ */
+export async function getQuotes(symbols: string[]) {
+  if (symbols.length === 0) return [];
+  
+  const results = await Promise.all(
+    symbols.map(async (symbol) => {
+      try {
+        const res = await fetch(`https://api.polygon.io/v2/aggs/ticker/${symbol.toUpperCase()}/prev?adjusted=true&apiKey=${POLYGON_API_KEY}`);
+        const data = await res.json();
+        if (data.status === 'OK' && data.results && data.results[0]) {
+          const r = data.results[0];
+          return {
+            symbol: symbol.toUpperCase(),
+            price: r.c,
+            changesPercentage: ((r.c - r.o) / r.o) * 100,
+            change: r.c - r.o,
+            dayLow: r.l,
+            dayHigh: r.h,
+            yearHigh: r.h, 
+            yearLow: r.l,
+            marketCap: 0,
+            priceAvg50: 0,
+            priceAvg200: 0,
+            volume: r.v,
+            avgVolume: 0,
+            exchange: 'NASDAQ',
+            open: r.o,
+            previousClose: r.c,
+            eps: 0,
+            pe: 0,
+            earningsAnnouncement: '',
+            sharesOutstanding: 0,
+            timestamp: Date.now()
+          };
+        }
+      } catch (e) {
+        console.error(`Polygon quote failed for ${symbol}:`, e);
+      }
+      return null;
+    })
+  );
+
+  return results.filter(r => r !== null);
+}
+
+/**
+ * FMP API를 통한 배당 내역 조회
+ */
+export async function getDividendHistory(symbol: string): Promise<NormalizedDividend[]> {
+  try {
+    const url = `https://financialmodelingprep.com/api/v3/historical-price-full/stock_dividend/${symbol.toUpperCase()}?apikey=${getFmpApiKey()}`;
+    const res = await fetch(url, { next: { revalidate: 86400 } });
+    if (!res.ok) return [];
+
+    const data = await res.json();
+    if (!data.historical) return [];
+
+    return data.historical.map((d: any) => ({
+      exDividendDate: d.date,
+      paymentDate: d.paymentDate || d.adjDividend ? d.date : null,
+      dividendAmount: d.adjDividend || d.dividend,
+      currency: 'USD', // FMP는 주로 미국 주식 기준
+      source: 'fmp' as const
+    }));
+  } catch (error) {
+    console.error(`FMP Dividend fetch failed for ${symbol}:`, error);
     return [];
   }
 }
