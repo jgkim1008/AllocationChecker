@@ -64,70 +64,40 @@ async function fetchQuoteSummary(symbol: string, modules: string) {
 }
 
 // ─────────────────────────────────────────────
-// KRX 공식 PER/PBR/EPS (한국 주식 전용)
+// 네이버 금융 PER/PBR/EPS (한국 주식 전용)
 // ─────────────────────────────────────────────
-async function getKrxFundamentals(symbol: string, yahooTicker: string) {
-  // .KQ = KOSDAQ, 그 외 = KOSPI
-  const mktId = yahooTicker.endsWith('.KQ') ? 'KSQ' : 'STK';
+async function getNaverFundamentals(symbol: string) {
   const clean = symbol.replace(/\.[A-Z]+$/, ''); // 6자리 종목코드만
-
-  // 최근 5 영업일 시도 (주말/공휴일 건너뜀)
-  const tradingDates: string[] = [];
-  const d = new Date();
-  while (tradingDates.length < 5) {
-    if (d.getDay() !== 0 && d.getDay() !== 6) {
-      tradingDates.push(d.toISOString().slice(0, 10).replace(/-/g, ''));
-    }
-    d.setDate(d.getDate() - 1);
-  }
-
-  for (const trdDd of tradingDates) {
-    try {
-      const res = await fetch('https://data.krx.co.kr/comm/bldAttendant/getJsonData.cmd', {
-        method: 'POST',
+  try {
+    const res = await fetch(
+      `https://m.stock.naver.com/api/stock/${clean}/basic`,
+      {
         headers: {
-          'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-          'Referer': 'https://data.krx.co.kr/',
-          'Origin': 'https://data.krx.co.kr',
-          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
-          'X-Requested-With': 'XMLHttpRequest',
+          'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15',
+          'Referer': 'https://m.stock.naver.com/',
+          'Accept': 'application/json',
         },
-        body: new URLSearchParams({
-          bld: 'dbms/MDC/STAT/standard/MDCSTAT03501',
-          mktId,
-          trdDd,
-        }).toString(),
         next: { revalidate: 3600 },
-      });
-      if (!res.ok) continue;
+      }
+    );
+    if (!res.ok) return null;
 
-      const data = await res.json();
-      const rows: Record<string, string>[] = data.output ?? [];
-      if (rows.length === 0) continue; // 휴장일이면 빈 배열
+    const data = await res.json();
+    const parse = (v: unknown) => {
+      if (v == null || v === '' || v === '-') return null;
+      const n = parseFloat(String(v).replace(/,/g, ''));
+      return isNaN(n) ? null : n;
+    };
 
-      const row = rows.find(r => r.ISU_SRT_CD === clean);
-      if (!row) break; // 데이터는 있는데 종목이 없으면 → 다른 시장(KOSDAQ↔KOSPI)
-
-      const parse = (v: string) => {
-        if (!v || v.trim() === '-') return null;
-        const n = parseFloat(v.replace(/,/g, ''));
-        return isNaN(n) ? null : n;
-      };
-
-      return {
-        pe: parse(row.PER),
-        pb: parse(row.PBR),
-        eps: parse(row.EPS),
-        bps: parse(row.BPS),
-      };
-    } catch { /* 다음 날짜 시도 */ }
+    return {
+      pe:  parse(data.per),
+      pb:  parse(data.pbr),
+      eps: parse(data.eps),
+      bps: parse(data.bps),
+    };
+  } catch {
+    return null;
   }
-
-  // KOSPI에서 못 찾으면 KOSDAQ으로 재시도
-  if (mktId === 'STK') {
-    return getKrxFundamentals(symbol, symbol + '.KQ');
-  }
-  return null;
 }
 
 // ─────────────────────────────────────────────
@@ -234,7 +204,7 @@ export async function GET(
       yahooTicker,
       'financialData,summaryDetail,defaultKeyStatistics,assetProfile,recommendationTrend,price'
     ),
-    market === 'KR' ? getKrxFundamentals(upperSymbol, yahooTicker) : Promise.resolve(null),
+    market === 'KR' ? getNaverFundamentals(upperSymbol) : Promise.resolve(null),
   ]);
 
   const sd = summary?.summaryDetail ?? {};
