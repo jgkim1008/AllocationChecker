@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { getDailyHistory } from '@/lib/api/yahoo';
+import { createServiceClient } from '@/lib/supabase/server';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -119,15 +120,21 @@ function runMonteCarlo(prices: number[], simCount = 500, days = 252) {
 // GET /api/strategies/analyst-alpha/[symbol]
 // ─────────────────────────────────────────────
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ symbol: string }> }
 ) {
   const { symbol } = await params;
   const upperSymbol = symbol.toUpperCase();
+  const market = (request.nextUrl.searchParams.get('market') ?? 'US') as 'US' | 'KR';
+
+  // 한국 주식은 .KS 접미사 필요 (없으면 추가)
+  const yahooTicker = market === 'KR' && !upperSymbol.endsWith('.KS') && !upperSymbol.endsWith('.KQ')
+    ? `${upperSymbol}.KS`
+    : upperSymbol;
 
   // 1. 기본 가격 정보 (Yahoo v8/chart — 인증 불필요)
   const chartRes = await fetch(
-    `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(upperSymbol)}?range=1d&interval=1d`,
+    `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooTicker)}?range=1d&interval=1d`,
     { headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 300 } }
   );
   if (!chartRes.ok) {
@@ -143,12 +150,12 @@ export async function GET(
   let sector = '', industry = '';
   try {
     const searchRes = await fetch(
-      `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(upperSymbol)}&quotesCount=1&newsCount=0`,
+      `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(yahooTicker)}&quotesCount=1&newsCount=0`,
       { headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 86400 } }
     );
     if (searchRes.ok) {
       const searchJson = await searchRes.json();
-      const q = (searchJson?.quotes ?? []).find((q: { symbol: string }) => q.symbol === upperSymbol) ?? searchJson?.quotes?.[0];
+      const q = (searchJson?.quotes ?? []).find((q: { symbol: string }) => q.symbol === yahooTicker) ?? searchJson?.quotes?.[0];
       sector = q?.sector ?? '';
       industry = q?.industryDisp ?? q?.industry ?? '';
     }
@@ -156,7 +163,7 @@ export async function GET(
 
   // 3. quoteSummary (크럼 필요) — 실패 시 graceful fallback
   const summary = await fetchQuoteSummary(
-    upperSymbol,
+    yahooTicker,
     'financialData,summaryDetail,defaultKeyStatistics,assetProfile,recommendationTrend'
   );
 
@@ -202,8 +209,25 @@ export async function GET(
     count: fd.numberOfAnalystOpinions ?? 0,
   } : null;
 
+  // 5-1. 버핏 스코어 계산 후 DB 저장 (fire-and-forget)
+  const buffettData = {
+    pe: fundamentals.pe != null && fundamentals.pe > 0 && fundamentals.pe <= 15,
+    pb: fundamentals.pb != null && fundamentals.pb <= 2,
+    roe: fundamentals.roe != null && fundamentals.roe >= 20,
+    eps: fundamentals.eps != null && fundamentals.eps > 0,
+    beta: fundamentals.beta != null && fundamentals.beta <= 0.8,
+    revenueGrowth: fundamentals.revenueGrowth != null && fundamentals.revenueGrowth > 0,
+  };
+  const buffettScore = Object.values(buffettData).filter(Boolean).length;
+
+  createServiceClient().then(supabase =>
+    supabase.from('stocks')
+      .update({ buffett_score: buffettScore, buffett_data: buffettData })
+      .eq('symbol', upperSymbol)
+  ).catch(() => {});
+
   // 6. 몬테카를로
-  const history = await getDailyHistory(upperSymbol, 'US');
+  const history = await getDailyHistory(upperSymbol, market);
   const prices = history.map(h => h.price).reverse();
   const monte = runMonteCarlo(prices);
 
@@ -215,8 +239,8 @@ export async function GET(
 
 **기업 정보**
 - 섹터: ${fundamentals.sector || 'N/A'} / ${fundamentals.industry || 'N/A'}
-- 현재가: $${fundamentals.currentPrice}
-- 시가총액: ${fundamentals.marketCap ? '$' + (fundamentals.marketCap / 1e9).toFixed(1) + 'B' : 'N/A'}
+- 현재가: ${market === 'KR' ? '₩' : '$'}${fundamentals.currentPrice}
+- 시가총액: ${fundamentals.marketCap ? (market === 'KR' ? '₩' + (fundamentals.marketCap / 1e12).toFixed(1) + '조' : '$' + (fundamentals.marketCap / 1e9).toFixed(1) + 'B') : 'N/A'}
 
 **밸류에이션**
 - PER: ${fundamentals.pe ?? 'N/A'} | PBR: ${fundamentals.pb ?? 'N/A'} | EPS: ${fundamentals.eps ?? 'N/A'}
