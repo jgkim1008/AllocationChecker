@@ -3,7 +3,7 @@
 import { useState, useEffect, use, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, RefreshCw, Sparkles, TrendingUp, AlertTriangle, BarChart3, Target, Brain, Info } from 'lucide-react';
+import { ArrowLeft, RefreshCw, TrendingUp, AlertTriangle, BarChart3, Target, Info, Layers, Sparkles } from 'lucide-react';
 
 interface MonteCarloResult {
   currentPrice: number;
@@ -25,6 +25,8 @@ interface PriceTarget {
 
 interface Fundamentals {
   currentPrice: number;
+  yearHigh: number | null;
+  yearLow: number | null;
   marketCap: number;
   pe: number | null;
   pb: number | null;
@@ -46,7 +48,6 @@ interface AnalystAlphaData {
   consensus: Consensus | null;
   priceTarget: PriceTarget | null;
   monteCarlo: MonteCarloResult | null;
-  aiAnalysis: string | null;
   updatedAt: string;
 }
 
@@ -317,6 +318,159 @@ function ConsensusBar({ consensus }: { consensus: Consensus }) {
   );
 }
 
+// ─── 퀀트 투자 분석 ───────────────────────────
+function InvestmentAnalysis({ f, monte, currency, fmtPrice }: {
+  f: Fundamentals;
+  monte: MonteCarloResult | null;
+  currency: string;
+  fmtPrice: (n: number | null | undefined) => string;
+}) {
+  const basePer = f.pe != null && f.pe > 0 ? f.pe : null;
+
+  // 1. 밸류에이션 시나리오 (EPS × PER)
+  const scenarios = basePer && f.eps != null && f.eps > 0 ? [
+    { label: '비관', per: Math.round(basePer * 0.75 * 10) / 10, style: 'border-red-100 bg-red-50' },
+    { label: '기준', per: Math.round(basePer * 10) / 10,        style: 'border-indigo-100 bg-indigo-50' },
+    { label: '낙관', per: Math.round(basePer * 1.25 * 10) / 10, style: 'border-green-100 bg-green-50' },
+  ].map(s => ({
+    ...s,
+    price: Math.round(f.eps! * s.per),
+    upside: Math.round(((f.eps! * s.per - f.currentPrice) / f.currentPrice) * 1000) / 10,
+  })) : null;
+
+  // PEG = PER ÷ 매출성장률
+  const peg = basePer && f.revenueGrowth != null && f.revenueGrowth > 0
+    ? Math.round((basePer / f.revenueGrowth) * 100) / 100
+    : null;
+  const pegLabel = peg == null ? null : peg < 1 ? '성장 대비 저평가' : peg < 2 ? '적정 수준' : '성장 대비 고평가';
+  const pegColor = peg == null ? '' : peg < 1 ? 'text-green-600' : peg < 2 ? 'text-yellow-600' : 'text-red-500';
+
+  // 2. 팩터 전략
+  const factors = [
+    {
+      name: 'Value', desc: '저평가 기업 발굴',
+      items: [
+        { label: 'PER ≤ 15', pass: f.pe != null && f.pe > 0 && f.pe <= 15 },
+        { label: 'PBR ≤ 2',  pass: f.pb != null && f.pb <= 2 },
+        { label: 'EPS 양수', pass: f.eps != null && f.eps > 0 },
+      ],
+    },
+    {
+      name: 'Momentum', desc: '성장·추세 추종',
+      items: [
+        { label: '매출 성장 > 0%',  pass: f.revenueGrowth != null && f.revenueGrowth > 0 },
+        { label: '매출 성장 > 15%', pass: f.revenueGrowth != null && f.revenueGrowth > 15 },
+        { label: '52주 상위권',      pass: f.yearHigh != null && f.yearLow != null &&
+            f.currentPrice > f.yearLow + (f.yearHigh - f.yearLow) * 0.5 },
+      ],
+    },
+    {
+      name: 'Quality', desc: '재무 건전성',
+      items: [
+        { label: 'ROE ≥ 15%',       pass: f.roe != null && f.roe >= 15 },
+        { label: '베타 ≤ 1.2',       pass: f.beta != null && f.beta <= 1.2 },
+        { label: '성장 + 수익성',    pass: f.revenueGrowth != null && f.revenueGrowth > 0 && f.eps != null && f.eps > 0 },
+      ],
+    },
+  ];
+
+  const scoreColor = (s: number, max: number) => s / max >= 0.67 ? 'text-green-600' : s / max >= 0.34 ? 'text-yellow-600' : 'text-gray-400';
+  const barColor   = (s: number, max: number) => s / max >= 0.67 ? 'bg-green-500' : s / max >= 0.34 ? 'bg-yellow-400' : 'bg-gray-300';
+
+  return (
+    <div className="bg-white rounded-[24px] border border-gray-200 p-6 space-y-6">
+      <div className="flex items-center gap-2">
+        <Layers className="h-4 w-4 text-indigo-500" />
+        <h2 className="font-black text-gray-900">퀀트 투자 분석</h2>
+      </div>
+
+      {/* 밸류에이션 시나리오 */}
+      <div>
+        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3">밸류에이션 시나리오 (EPS × PER)</p>
+        {scenarios ? (
+          <div className="grid grid-cols-3 gap-2">
+            {scenarios.map(s => (
+              <div key={s.label} className={`rounded-2xl border p-3 text-center ${s.style}`}>
+                <p className="text-[10px] font-black text-gray-500 uppercase mb-1">{s.label}</p>
+                <p className="text-[11px] text-gray-400 mb-1">PER {s.per}x</p>
+                <p className="text-sm font-black text-gray-900">{currency === '₩'
+                  ? `₩${s.price.toLocaleString('ko-KR')}`
+                  : `$${s.price.toLocaleString('en-US', { minimumFractionDigits: 2 })}`
+                }</p>
+                <p className={`text-xs font-bold mt-0.5 ${s.upside >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                  {s.upside >= 0 ? '+' : ''}{s.upside}%
+                </p>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-gray-400">EPS/PER 데이터 부족으로 시나리오 계산 불가</p>
+        )}
+        {peg != null && (
+          <div className="mt-3 flex items-center gap-2 text-sm bg-gray-50 rounded-xl px-3 py-2">
+            <span className="text-gray-500 font-medium">PEG 비율</span>
+            <span className={`font-black ${pegColor}`}>{peg.toFixed(2)}</span>
+            <span className="text-gray-400 text-xs">· {pegLabel}</span>
+            <span className="text-gray-300 text-xs ml-auto">PER ÷ 매출성장률</span>
+          </div>
+        )}
+      </div>
+
+      {/* 팩터 전략 */}
+      <div>
+        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3">팩터 전략 평가</p>
+        <div className="space-y-2.5">
+          {factors.map(({ name, desc, items }) => {
+            const s = items.filter(i => i.pass).length;
+            return (
+              <div key={name} className="bg-gray-50 rounded-2xl p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-sm font-black text-gray-900">{name}</span>
+                    <span className="text-[11px] text-gray-400">{desc}</span>
+                  </div>
+                  <span className={`text-sm font-black ${scoreColor(s, items.length)}`}>{s}/{items.length}</span>
+                </div>
+                <div className="h-1.5 bg-gray-200 rounded-full mb-2.5">
+                  <div className={`h-1.5 rounded-full transition-all ${barColor(s, items.length)}`} style={{ width: `${(s / items.length) * 100}%` }} />
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {items.map(item => (
+                    <span key={item.label} className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${item.pass ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400'}`}>
+                      {item.pass ? '✓ ' : '✕ '}{item.label}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 퀀트 시뮬레이션 요약 */}
+      {monte && (
+        <div>
+          <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3">퀀트 시뮬레이션 (500회)</p>
+          <div className="grid grid-cols-3 gap-2">
+            <div className={`rounded-2xl p-3 text-center border ${monte.probUp >= 50 ? 'bg-green-50 border-green-100' : 'bg-red-50 border-red-100'}`}>
+              <p className="text-[10px] text-gray-500 font-bold mb-1">1년 상승 확률</p>
+              <p className={`text-lg font-black ${monte.probUp >= 50 ? 'text-green-600' : 'text-red-500'}`}>{monte.probUp}%</p>
+            </div>
+            <div className="rounded-2xl p-3 text-center border bg-gray-50 border-gray-100">
+              <p className="text-[10px] text-gray-500 font-bold mb-1">연간 변동성</p>
+              <p className="text-lg font-black text-gray-900">{monte.annualizedVolatility}%</p>
+            </div>
+            <div className="rounded-2xl p-3 text-center border bg-indigo-50 border-indigo-100">
+              <p className="text-[10px] text-gray-500 font-bold mb-1">P50 예상가</p>
+              <p className="text-lg font-black text-indigo-700">{fmtPrice(monte.p50)}</p>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MonteCarloChart({ monte }: { monte: MonteCarloResult }) {
   const days = monte.p50Path?.length ?? 0;
   if (days < 2) return null;
@@ -548,20 +702,8 @@ export default function AnalystAlphaDetailPage({ params }: { params: Promise<{ s
               </div>
             )}
 
-            {/* AI 분석 */}
-            <div className="bg-white rounded-[24px] border border-gray-200 p-6">
-              <div className="flex items-center gap-2 mb-4">
-                <Brain className="h-4 w-4 text-indigo-500" />
-                <h2 className="font-black text-gray-900">AI 투자 분석</h2>
-                <div className="flex items-center gap-1 text-indigo-500 ml-1">
-                  <Sparkles className="h-3 w-3" />
-                  <span className="text-[10px] font-bold uppercase">Claude</span>
-                </div>
-              </div>
-              {data.aiAnalysis
-                ? <div className="text-gray-700 leading-relaxed whitespace-pre-wrap text-sm">{data.aiAnalysis}</div>
-                : <p className="text-sm text-gray-400">AI 분석을 불러오지 못했습니다. (ANTHROPIC_API_KEY 설정 필요)</p>}
-            </div>
+            {/* 퀀트 투자 분석 */}
+            <InvestmentAnalysis f={f} monte={data.monteCarlo} currency={currency} fmtPrice={fmtPrice} />
 
             <p className="text-center text-[11px] text-gray-400 pt-2">
               분석 시각: {new Date(data.updatedAt).toLocaleString('ko-KR')} · 투자 참고용이며 실제 투자 결과를 보장하지 않습니다.

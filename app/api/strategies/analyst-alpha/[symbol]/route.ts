@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import Anthropic from '@anthropic-ai/sdk';
 import { getDailyHistory } from '@/lib/api/yahoo';
 import { createServiceClient } from '@/lib/supabase/server';
 
@@ -280,56 +279,12 @@ export async function GET(
   const prices = history.map(h => h.price).reverse();
   const monte = runMonteCarlo(prices);
 
-  // 7. Claude AI 분석
-  let aiAnalysis: string | null = null;
-  try {
-    const client = new Anthropic();
-    const prompt = `당신은 전문 주식 애널리스트입니다. 아래 데이터를 바탕으로 ${upperSymbol} (${fundamentals.name}) 종목에 대한 투자 분석을 한국어로 작성해주세요.
-
-**기업 정보**
-- 섹터: ${fundamentals.sector || 'N/A'} / ${fundamentals.industry || 'N/A'}
-- 현재가: ${market === 'KR' ? '₩' : '$'}${fundamentals.currentPrice}
-- 시가총액: ${fundamentals.marketCap ? (market === 'KR' ? '₩' + (fundamentals.marketCap / 1e12).toFixed(1) + '조' : '$' + (fundamentals.marketCap / 1e9).toFixed(1) + 'B') : 'N/A'}
-
-**밸류에이션**
-- PER: ${fundamentals.pe ?? 'N/A'} | PBR: ${fundamentals.pb ?? 'N/A'} | EPS: ${fundamentals.eps ?? 'N/A'}
-- ROE: ${fundamentals.roe != null ? fundamentals.roe + '%' : 'N/A'} | 베타: ${fundamentals.beta ?? 'N/A'}
-
-**성장성**
-- 매출 성장률(YoY): ${fundamentals.revenueGrowth != null ? fundamentals.revenueGrowth + '%' : 'N/A'}
-
-**애널리스트 컨센서스**
-${consensus ? `강력매수: ${consensus.strongBuy}, 매수: ${consensus.buy}, 보유: ${consensus.hold}, 매도: ${consensus.sell}, 강력매도: ${consensus.strongSell}` : '데이터 없음'}
-
-**목표주가**
-${priceTargetData ? `평균: $${priceTargetData.avg}, 최고: $${priceTargetData.high}, 최저: $${priceTargetData.low}` : '데이터 없음'}
-
-**몬테카를로 (1년, 500회)**
-${monte ? `연간 변동성: ${monte.annualizedVolatility}% | 상승확률: ${monte.probUp}% | P10~P90: $${monte.p10.toFixed(0)}~$${monte.p90.toFixed(0)}` : '데이터 부족'}
-
-다음 형식으로 분석해주세요 (각 2-3문장):
-1. **핵심 요약** (투자 매력도 한줄 평가 포함)
-2. **밸류에이션 분석**
-3. **리스크 요인**
-4. **투자 의견** (매수/보유/매도 + 근거)`;
-
-    const message = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 800,
-      messages: [{ role: 'user', content: prompt }],
-    });
-    aiAnalysis = message.content[0].type === 'text' ? message.content[0].text : null;
-  } catch (e) {
-    console.error('Claude API error:', e);
-  }
-
   return NextResponse.json({
     symbol: upperSymbol,
     fundamentals,
     consensus,
     priceTarget: priceTargetData,
     monteCarlo: monte,
-    aiAnalysis,
     updatedAt: new Date().toISOString(),
   });
 }
