@@ -25,11 +25,6 @@ const LEVEL_COLOR: Record<number, { line: string; badge: string; label: string }
   0.886: { line: '#f97316', badge: 'bg-orange-100 text-orange-700', label: '88.6%' },
 };
 
-// 피보나치 레벨의 바 위치: 레벨은 고점→저점 기준 되돌림이므로
-// 저점 기준 위치 = (1 - level)
-function fibBarPct(level: FibonacciLevel): number {
-  return (1 - level) * 100;
-}
 
 function FibRangeBar({
   fibValue,
@@ -45,8 +40,6 @@ function FibRangeBar({
   market: 'US' | 'KR';
 }) {
   const currentPct = Math.min(100, Math.max(0, fibValue * 100));
-  const levelPct = fibLevel != null ? fibBarPct(fibLevel) : null;
-  const meta = fibLevel != null ? LEVEL_COLOR[fibLevel] : null;
 
   return (
     <div className="w-40">
@@ -57,13 +50,6 @@ function FibRangeBar({
           className="absolute top-0 h-full rounded-full bg-indigo-100"
           style={{ width: `${currentPct}%` }}
         />
-        {/* 피보나치 레벨 수직선 */}
-        {levelPct != null && meta && (
-          <div
-            className="absolute top-1/2 -translate-y-1/2 w-[2px] h-4 rounded-full opacity-80"
-            style={{ left: `${levelPct}%`, backgroundColor: meta.line, transform: 'translate(-50%, -50%)' }}
-          />
-        )}
         {/* 현재가 도트 */}
         <div
           className="absolute top-1/2 w-2.5 h-2.5 bg-indigo-600 border-2 border-white rounded-full shadow"
