@@ -11,20 +11,25 @@ const INDICES = [
   { symbol: '^N225', name: 'Nikkei 225', market: 'JP' },
 ];
 
+// S&P 500 시총 상위 100개 고정 목록 (FMP v3 screener 폐기 대응)
+const TOP_US_SYMBOLS = [
+  'AAPL','MSFT','NVDA','AMZN','GOOGL','META','TSLA','BRK.B','AVGO','JPM',
+  'LLY','V','UNH','XOM','MA','COST','HD','PG','WMT','NFLX',
+  'ORCL','BAC','CRM','CVX','KO','ABBV','MRK','AMD','PEP','ACN',
+  'TMO','LIN','ADBE','MCD','CSCO','WFC','DHR','TXN','ABT','MS',
+  'AMGN','IBM','GE','PM','ISRG','CAT','RTX','INTU','NOW','SPGI',
+  'GS','BLK','HON','QCOM','NEE','LOW','AMAT','PFE','UBER','UNP',
+  'ELV','T','DE','BKNG','SBUX','C','AXP','TJX','VRTX','PANW',
+  'GILD','BSX','REGN','SYK','ADI','MDLZ','MU','MMC','BX','CI',
+  'PLD','ZTS','EOG','DUK','SO','APH','KLAC','CME','INTC','ETN',
+  'SHW','CB','MCO','LRCX','AON','WELL','ICE','MAR','HCA','GD',
+];
+
 /**
- * 미국 시총 상위 100개 종목 심볼 가져오기 (FMP API 활용)
+ * 미국 시총 상위 100개 종목 심볼 가져오기
  */
 async function fetchTopUSSymbols(): Promise<string[]> {
-  try {
-    const res = await fetch(`https://financialmodelingprep.com/api/v3/stock-screener?marketCapMoreThan=10000000000&exchange=NYSE,NASDAQ&limit=100&apikey=${FMP_KEY}`);
-    const data = await res.json();
-    if (Array.isArray(data)) {
-      return data.map((s: any) => s.symbol);
-    }
-  } catch (e) {
-    console.error('[MarketMonitor] Failed to fetch US Top 100:', e);
-  }
-  return []; // 실패 시 기존 하드코딩 리스트나 빈 배열 반환
+  return TOP_US_SYMBOLS;
 }
 
 /**

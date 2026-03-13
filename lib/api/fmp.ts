@@ -14,7 +14,7 @@ function getFmpApiKey(): string {
  */
 export async function searchStocks(query: string): Promise<StockSearchResult[]> {
   try {
-    const url = `https://financialmodelingprep.com/api/v3/search?query=${encodeURIComponent(query)}&limit=10&apikey=${getFmpApiKey()}`;
+    const url = `https://financialmodelingprep.com/stable/search-symbol?query=${encodeURIComponent(query)}&limit=10&apikey=${getFmpApiKey()}`;
     const res = await fetch(url, { next: { revalidate: 86400 } });
     if (!res.ok) return [];
 
@@ -22,7 +22,7 @@ export async function searchStocks(query: string): Promise<StockSearchResult[]> 
     return data.map((item: any) => ({
       symbol: item.symbol,
       name: item.name,
-      market: 'US', // FMP search results are primarily US
+      market: 'US',
       currency: item.currency || 'USD'
     }));
   } catch (error) {
@@ -83,18 +83,21 @@ export async function getQuotes(symbols: string[]) {
  */
 export async function getDividendHistory(symbol: string): Promise<NormalizedDividend[]> {
   try {
-    const url = `https://financialmodelingprep.com/api/v3/historical-price-full/stock_dividend/${symbol.toUpperCase()}?apikey=${getFmpApiKey()}`;
+    const url = `https://financialmodelingprep.com/stable/dividends?symbol=${symbol.toUpperCase()}&apikey=${getFmpApiKey()}`;
     const res = await fetch(url, { next: { revalidate: 86400 } });
     if (!res.ok) return [];
 
     const data = await res.json();
-    if (!data.historical) return [];
+    if (!Array.isArray(data)) return [];
 
-    return data.historical.map((d: any) => ({
+    return data.map((d: any) => ({
+      symbol: d.symbol ?? symbol.toUpperCase(),
+      market: 'US' as const,
       exDividendDate: d.date,
-      paymentDate: d.paymentDate || d.adjDividend ? d.date : null,
-      dividendAmount: d.adjDividend || d.dividend,
-      currency: 'USD', // FMP는 주로 미국 주식 기준
+      paymentDate: d.paymentDate ?? null,
+      dividendAmount: d.adjDividend ?? d.dividend,
+      frequency: null,
+      currency: 'USD' as const,
       source: 'fmp' as const
     }));
   } catch (error) {
