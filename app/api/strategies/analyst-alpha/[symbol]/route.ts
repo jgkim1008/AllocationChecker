@@ -64,6 +64,73 @@ async function fetchQuoteSummary(symbol: string, modules: string) {
 }
 
 // ─────────────────────────────────────────────
+// KRX 공식 PER/PBR/EPS (한국 주식 전용)
+// ─────────────────────────────────────────────
+async function getKrxFundamentals(symbol: string, yahooTicker: string) {
+  // .KQ = KOSDAQ, 그 외 = KOSPI
+  const mktId = yahooTicker.endsWith('.KQ') ? 'KSQ' : 'STK';
+  const clean = symbol.replace(/\.[A-Z]+$/, ''); // 6자리 종목코드만
+
+  // 최근 5 영업일 시도 (주말/공휴일 건너뜀)
+  const tradingDates: string[] = [];
+  const d = new Date();
+  while (tradingDates.length < 5) {
+    if (d.getDay() !== 0 && d.getDay() !== 6) {
+      tradingDates.push(d.toISOString().slice(0, 10).replace(/-/g, ''));
+    }
+    d.setDate(d.getDate() - 1);
+  }
+
+  for (const trdDd of tradingDates) {
+    try {
+      const res = await fetch('https://data.krx.co.kr/comm/bldAttendant/getJsonData.cmd', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+          'Referer': 'https://data.krx.co.kr/',
+          'Origin': 'https://data.krx.co.kr',
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+          'X-Requested-With': 'XMLHttpRequest',
+        },
+        body: new URLSearchParams({
+          bld: 'dbms/MDC/STAT/standard/MDCSTAT03501',
+          mktId,
+          trdDd,
+        }).toString(),
+        next: { revalidate: 3600 },
+      });
+      if (!res.ok) continue;
+
+      const data = await res.json();
+      const rows: Record<string, string>[] = data.output ?? [];
+      if (rows.length === 0) continue; // 휴장일이면 빈 배열
+
+      const row = rows.find(r => r.ISU_SRT_CD === clean);
+      if (!row) break; // 데이터는 있는데 종목이 없으면 → 다른 시장(KOSDAQ↔KOSPI)
+
+      const parse = (v: string) => {
+        if (!v || v.trim() === '-') return null;
+        const n = parseFloat(v.replace(/,/g, ''));
+        return isNaN(n) ? null : n;
+      };
+
+      return {
+        pe: parse(row.PER),
+        pb: parse(row.PBR),
+        eps: parse(row.EPS),
+        bps: parse(row.BPS),
+      };
+    } catch { /* 다음 날짜 시도 */ }
+  }
+
+  // KOSPI에서 못 찾으면 KOSDAQ으로 재시도
+  if (mktId === 'STK') {
+    return getKrxFundamentals(symbol, symbol + '.KQ');
+  }
+  return null;
+}
+
+// ─────────────────────────────────────────────
 // Monte Carlo Simulation
 // ─────────────────────────────────────────────
 function runMonteCarlo(prices: number[], simCount = 500, days = 252) {
@@ -161,12 +228,14 @@ export async function GET(
     }
   } catch { /* ignore */ }
 
-  // 3. quoteSummary (크럼 필요) — 실패 시 graceful fallback
-  // price 모듈 추가: 한국 주식의 경우 trailingPE, earningsPerShare 가 price 모듈에만 존재
-  const summary = await fetchQuoteSummary(
-    yahooTicker,
-    'financialData,summaryDetail,defaultKeyStatistics,assetProfile,recommendationTrend,price'
-  );
+  // 3. quoteSummary + KRX 병렬 호출
+  const [summary, krx] = await Promise.all([
+    fetchQuoteSummary(
+      yahooTicker,
+      'financialData,summaryDetail,defaultKeyStatistics,assetProfile,recommendationTrend,price'
+    ),
+    market === 'KR' ? getKrxFundamentals(upperSymbol, yahooTicker) : Promise.resolve(null),
+  ]);
 
   const sd = summary?.summaryDetail ?? {};
   const fd = summary?.financialData ?? {};
@@ -182,15 +251,13 @@ export async function GET(
     yearHigh: meta.fiftyTwoWeekHigh ?? null,
     yearLow: meta.fiftyTwoWeekLow ?? null,
     marketCap: sd.marketCap ?? pr.marketCap ?? null,
-    // 한국 주식: trailingPE 가 price 모듈에 있음
-    pe: sd.trailingPE ?? pr.trailingPE ?? null,
-    // 한국 주식: priceToBook null이면 currentPrice / bookValue 로 계산
-    pb: ks.priceToBook ?? (currentPrice && ks.bookValue
+    // KR: KRX 우선, fallback Yahoo
+    pe: krx?.pe ?? sd.trailingPE ?? pr.trailingPE ?? null,
+    pb: krx?.pb ?? ks.priceToBook ?? (currentPrice && ks.bookValue
       ? Math.round((currentPrice / ks.bookValue) * 100) / 100
       : null),
     beta: sd.beta ?? null,
-    // 한국 주식: earningsPerShare 가 price 모듈에 있음
-    eps: ks.trailingEps ?? pr.earningsPerShare ?? null,
+    eps: krx?.eps ?? ks.trailingEps ?? pr.earningsPerShare ?? null,
     roe: fd.returnOnEquity != null ? Math.round(fd.returnOnEquity * 1000) / 10 : null,
     revenue: fd.totalRevenue ?? null,
     netIncome: null as number | null,
