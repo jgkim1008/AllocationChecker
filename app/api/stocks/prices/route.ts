@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
 
   if (usResult.status === 'fulfilled') {
     for (const q of usResult.value) {
-      prices[q.symbol] = { price: q.price, changePercent: q.changePercent };
+      prices[q.symbol] = { price: q.price, changePercent: q.changesPercentage };
     }
   }
 
