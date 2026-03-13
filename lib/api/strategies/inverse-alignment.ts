@@ -5,6 +5,7 @@ import type { InverseAlignmentStock } from '@/types/strategies';
 
 /**
  * DB(stocks 테이블)에 저장된 데이터를 기반으로 이평선 역배열 돌파 전략 스캔
+ * @module inverse-alignment
  */
 export async function scanInverseAlignmentFromDB(): Promise<InverseAlignmentStock[]> {
   const supabase = await createServiceClient();
