@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect, use } from 'react';
+import { useState, useEffect, use, useCallback } from 'react';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, RefreshCw, Sparkles, TrendingUp, AlertTriangle, BarChart3, Target, Brain, Info } from 'lucide-react';
 
@@ -54,11 +55,11 @@ function fmt(n: number | null | undefined, decimals = 2) {
   return n.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
 }
 
-function fmtB(n: number | null | undefined) {
+function fmtB(n: number | null | undefined, cur = '$') {
   if (n == null) return 'N/A';
-  if (n >= 1e12) return `$${(n / 1e12).toFixed(2)}T`;
-  if (n >= 1e9) return `$${(n / 1e9).toFixed(1)}B`;
-  return `$${(n / 1e6).toFixed(0)}M`;
+  if (n >= 1e12) return `${cur}${(n / 1e12).toFixed(2)}T`;
+  if (n >= 1e9) return `${cur}${(n / 1e9).toFixed(1)}B`;
+  return `${cur}${(n / 1e6).toFixed(0)}M`;
 }
 
 // ─── 지표 정의 ────────────────────────────────
@@ -350,15 +351,17 @@ function MonteCarloChart({ monte }: { monte: MonteCarloResult }) {
 
 export default function AnalystAlphaDetailPage({ params }: { params: Promise<{ symbol: string }> }) {
   const { symbol } = use(params);
+  const searchParams = useSearchParams();
+  const market = searchParams.get('market') ?? 'US';
   const [data, setData] = useState<AnalystAlphaData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/strategies/analyst-alpha/${symbol}`);
+      const res = await fetch(`/api/strategies/analyst-alpha/${symbol}?market=${market}`);
       if (!res.ok) {
         const j = await res.json();
         throw new Error(j.error ?? 'Failed to fetch');
@@ -369,14 +372,20 @@ export default function AnalystAlphaDetailPage({ params }: { params: Promise<{ s
     } finally {
       setLoading(false);
     }
-  };
+  }, [symbol, market]);
 
-  useEffect(() => { fetchData(); }, [symbol]);
+  useEffect(() => { fetchData(); }, [fetchData]);
 
   const f = data?.fundamentals;
   const upside = f && data?.priceTarget
     ? ((data.priceTarget.avg - f.currentPrice) / f.currentPrice) * 100
     : null;
+  const currency = market === 'KR' ? '₩' : '$';
+  const fmtPrice = (n: number | null | undefined) => {
+    if (n == null) return 'N/A';
+    if (market === 'KR') return `₩${n.toLocaleString('ko-KR')}`;
+    return `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  };
 
   return (
     <div className="min-h-screen bg-gray-50/50">
@@ -387,7 +396,7 @@ export default function AnalystAlphaDetailPage({ params }: { params: Promise<{ s
           <div className="p-1.5 bg-white rounded-lg border border-gray-100 group-hover:border-gray-300">
             <ArrowLeft className="h-3.5 w-3.5" />
           </div>
-          종목 검색으로
+          종목 목록으로
         </Link>
 
         {/* 헤더 */}
@@ -432,8 +441,8 @@ export default function AnalystAlphaDetailPage({ params }: { params: Promise<{ s
               {/* 현재가는 툴팁 없는 일반 카드 */}
               <div className="bg-white rounded-[20px] border border-gray-200 p-4">
                 <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">현재가</p>
-                <p className="text-2xl font-black text-gray-900">${fmt(f.currentPrice)}</p>
-                <p className="text-[11px] text-gray-400 mt-0.5">시총 {fmtB(f.marketCap)}</p>
+                <p className="text-2xl font-black text-gray-900">{fmtPrice(f.currentPrice)}</p>
+                <p className="text-[11px] text-gray-400 mt-0.5">시총 {fmtB(f.marketCap, currency)}</p>
               </div>
               <MetricCard metaKey="pe" value={f.pe ? fmt(f.pe, 1) : 'N/A'} />
               <MetricCard metaKey="pb" value={f.pb ? fmt(f.pb, 2) : 'N/A'} />
@@ -450,11 +459,11 @@ export default function AnalystAlphaDetailPage({ params }: { params: Promise<{ s
                 </span>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                <FinancialRow metaKey="eps" value={f.eps != null ? `$${fmt(f.eps)}` : 'N/A'} positive={f.eps != null ? f.eps > 0 : undefined} />
+                <FinancialRow metaKey="eps" value={f.eps != null ? `${currency}${fmt(f.eps)}` : 'N/A'} positive={f.eps != null ? f.eps > 0 : undefined} />
                 <FinancialRow metaKey="roe" value={f.roe != null ? `${fmt(f.roe, 1)}%` : 'N/A'} positive={f.roe != null ? f.roe >= 15 : undefined} />
                 <div>
                   <p className="text-xs text-gray-400 font-bold mb-1">매출</p>
-                  <p className="text-lg font-black text-gray-900">{fmtB(f.revenue)}</p>
+                  <p className="text-lg font-black text-gray-900">{fmtB(f.revenue, currency)}</p>
                 </div>
                 <div>
                   <p className="text-xs text-gray-400 font-bold mb-1">매출 성장(YoY)</p>
@@ -488,14 +497,14 @@ export default function AnalystAlphaDetailPage({ params }: { params: Promise<{ s
                 {data.priceTarget ? (
                   <div className="space-y-2">
                     <div className="flex items-end gap-2">
-                      <span className="text-3xl font-black text-indigo-700">${fmt(data.priceTarget.avg)}</span>
+                      <span className="text-3xl font-black text-indigo-700">{fmtPrice(data.priceTarget.avg)}</span>
                       {upside !== null && (
                         <span className={`text-sm font-bold mb-1 ${upside > 0 ? 'text-green-600' : 'text-red-500'}`}>
                           {upside > 0 ? '+' : ''}{upside.toFixed(1)}%
                         </span>
                       )}
                     </div>
-                    <p className="text-xs text-gray-400">고: ${fmt(data.priceTarget.high)} · 저: ${fmt(data.priceTarget.low)} · {data.priceTarget.count}명 평균</p>
+                    <p className="text-xs text-gray-400">고: {fmtPrice(data.priceTarget.high)} · 저: {fmtPrice(data.priceTarget.low)} · {data.priceTarget.count}명 평균</p>
                     <div className="relative mt-3">
                       <div className="h-2 bg-gray-100 rounded-full">
                         <div className="h-2 bg-indigo-500 rounded-full" style={{
@@ -503,9 +512,9 @@ export default function AnalystAlphaDetailPage({ params }: { params: Promise<{ s
                         }} />
                       </div>
                       <div className="flex justify-between text-[10px] text-gray-400 mt-1">
-                        <span>${fmt(data.priceTarget.low)}</span>
-                        <span className="text-indigo-500 font-bold">현재 ${fmt(f.currentPrice)}</span>
-                        <span>${fmt(data.priceTarget.high)}</span>
+                        <span>{fmtPrice(data.priceTarget.low)}</span>
+                        <span className="text-indigo-500 font-bold">현재 {fmtPrice(f.currentPrice)}</span>
+                        <span>{fmtPrice(data.priceTarget.high)}</span>
                       </div>
                     </div>
                   </div>
@@ -525,8 +534,8 @@ export default function AnalystAlphaDetailPage({ params }: { params: Promise<{ s
                   {[
                     { label: '상승 확률', value: `${data.monteCarlo.probUp}%`, color: data.monteCarlo.probUp >= 50 ? 'text-green-600' : 'text-red-500' },
                     { label: '연간 변동성', value: `${data.monteCarlo.annualizedVolatility}%`, color: 'text-gray-900' },
-                    { label: 'P50 예상가', value: `$${fmt(data.monteCarlo.p50)}`, color: 'text-indigo-700' },
-                    { label: 'P10~P90', value: `$${fmt(data.monteCarlo.p10, 0)}~$${fmt(data.monteCarlo.p90, 0)}`, color: 'text-gray-600' },
+                    { label: 'P50 예상가', value: fmtPrice(data.monteCarlo.p50), color: 'text-indigo-700' },
+                    { label: 'P10~P90', value: `${fmtPrice(data.monteCarlo.p10)}~${fmtPrice(data.monteCarlo.p90)}`, color: 'text-gray-600' },
                   ].map(({ label, value, color }) => (
                     <div key={label}>
                       <p className="text-xs text-gray-400 font-bold mb-0.5">{label}</p>
