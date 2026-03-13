@@ -5,23 +5,73 @@ import { getDailyHistory } from '@/lib/api/yahoo';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
-const FMP_API_KEY = process.env.FMP_API_KEY;
+// ─────────────────────────────────────────────
+// Yahoo Finance crumb session (in-memory cache)
+// ─────────────────────────────────────────────
+let cachedCrumb: { crumb: string; cookie: string; expiresAt: number } | null = null;
 
-async function fetchFmp(path: string) {
-  const url = `https://financialmodelingprep.com/api${path}&apikey=${FMP_API_KEY}`;
-  const res = await fetch(url, { next: { revalidate: 3600 } });
-  if (!res.ok) return null;
-  return res.json();
+async function getYahooCrumb(): Promise<{ crumb: string; cookie: string } | null> {
+  if (cachedCrumb && Date.now() < cachedCrumb.expiresAt) {
+    return { crumb: cachedCrumb.crumb, cookie: cachedCrumb.cookie };
+  }
+  try {
+    // Step 1: Get session cookie from Yahoo Finance
+    const homeRes = await fetch('https://finance.yahoo.com/', {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36' },
+      redirect: 'follow',
+    });
+    const rawCookies = homeRes.headers.getSetCookie?.() ?? [];
+    const cookie = rawCookies.map(c => c.split(';')[0]).join('; ');
+
+    // Step 2: Get crumb
+    const crumbRes = await fetch('https://query1.finance.yahoo.com/v1/test/getcrumb', {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+        'Referer': 'https://finance.yahoo.com/',
+        'Cookie': cookie,
+      },
+    });
+    if (!crumbRes.ok) return null;
+    const crumb = (await crumbRes.text()).trim();
+    if (!crumb || crumb.includes('<!')) return null;
+
+    cachedCrumb = { crumb, cookie, expiresAt: Date.now() + 55 * 60 * 1000 }; // 55분 캐시
+    return { crumb, cookie };
+  } catch {
+    return null;
+  }
 }
 
+async function fetchQuoteSummary(symbol: string, modules: string) {
+  const session = await getYahooCrumb();
+  if (!session) return null;
+  try {
+    const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${symbol}?modules=${modules}&crumb=${encodeURIComponent(session.crumb)}&formatted=false`;
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+        'Cookie': session.cookie,
+      },
+      next: { revalidate: 3600 },
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const result = data?.finance?.result?.[0];
+    return result ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// ─────────────────────────────────────────────
+// Monte Carlo Simulation
+// ─────────────────────────────────────────────
 function runMonteCarlo(prices: number[], simCount = 500, days = 252) {
   if (prices.length < 30) return null;
 
   const returns: number[] = [];
   for (let i = 1; i < prices.length; i++) {
-    if (prices[i - 1] > 0) {
-      returns.push(Math.log(prices[i] / prices[i - 1]));
-    }
+    if (prices[i - 1] > 0) returns.push(Math.log(prices[i] / prices[i - 1]));
   }
 
   const mean = returns.reduce((a, b) => a + b, 0) / returns.length;
@@ -29,7 +79,6 @@ function runMonteCarlo(prices: number[], simCount = 500, days = 252) {
   const sigma = Math.sqrt(variance);
   const currentPrice = prices[prices.length - 1];
 
-  // Box-Muller transform for normal random numbers
   function randNormal() {
     const u = Math.random(), v = Math.random();
     return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
@@ -50,136 +99,145 @@ function runMonteCarlo(prices: number[], simCount = 500, days = 252) {
   }
 
   finalPrices.sort((a, b) => a - b);
-
   const pct = (p: number) => finalPrices[Math.floor(finalPrices.length * p)];
   const probUp = finalPrices.filter(p => p > currentPrice).length / finalPrices.length;
 
-  // Sample paths for chart (P10/P50/P90 path)
   const sortedByFinal = [...paths].sort((a, b) => a[a.length - 1] - b[b.length - 1]);
-  const p10Path = sortedByFinal[Math.floor(simCount * 0.1)];
-  const p50Path = sortedByFinal[Math.floor(simCount * 0.5)];
-  const p90Path = sortedByFinal[Math.floor(simCount * 0.9)];
+  const pick = (p: number) => sortedByFinal[Math.floor(simCount * p)];
 
   return {
     currentPrice,
-    p10: pct(0.1),
-    p25: pct(0.25),
-    p50: pct(0.5),
-    p75: pct(0.75),
-    p90: pct(0.9),
+    p10: pct(0.1), p25: pct(0.25), p50: pct(0.5), p75: pct(0.75), p90: pct(0.9),
     probUp: Math.round(probUp * 100),
     annualizedVolatility: Math.round(sigma * Math.sqrt(252) * 100 * 10) / 10,
-    p10Path: p10Path?.map(v => Math.round(v * 100) / 100),
-    p50Path: p50Path?.map(v => Math.round(v * 100) / 100),
-    p90Path: p90Path?.map(v => Math.round(v * 100) / 100),
+    p10Path: pick(0.1)?.map(v => Math.round(v * 100) / 100),
+    p50Path: pick(0.5)?.map(v => Math.round(v * 100) / 100),
+    p90Path: pick(0.9)?.map(v => Math.round(v * 100) / 100),
   };
 }
 
+// ─────────────────────────────────────────────
+// GET /api/strategies/analyst-alpha/[symbol]
+// ─────────────────────────────────────────────
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ symbol: string }> }
 ) {
   const { symbol } = await params;
   const upperSymbol = symbol.toUpperCase();
 
-  if (!FMP_API_KEY) {
-    return NextResponse.json({ error: 'FMP_API_KEY not configured' }, { status: 500 });
+  // 1. 기본 가격 정보 (Yahoo v8/chart — 인증 불필요)
+  const chartRes = await fetch(
+    `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(upperSymbol)}?range=1d&interval=1d`,
+    { headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 300 } }
+  );
+  if (!chartRes.ok) {
+    return NextResponse.json({ error: `종목을 찾을 수 없습니다: ${upperSymbol}` }, { status: 404 });
   }
-
-  // 1. FMP 데이터 병렬 조회
-  const [profile, priceTarget, analystRec, incomeRaw] = await Promise.all([
-    fetchFmp(`/v3/profile/${upperSymbol}?`),
-    fetchFmp(`/v3/price-target/${upperSymbol}?`),
-    fetchFmp(`/v3/analyst-stock-recommendations/${upperSymbol}?limit=1`),
-    fetchFmp(`/v3/income-statement/${upperSymbol}?limit=4`),
-  ]);
-
-  const profileData = Array.isArray(profile) ? profile[0] : null;
-  if (!profileData) {
+  const chartJson = await chartRes.json();
+  const meta = chartJson?.chart?.result?.[0]?.meta;
+  if (!meta) {
     return NextResponse.json({ error: `종목을 찾을 수 없습니다: ${upperSymbol}` }, { status: 404 });
   }
 
-  // 2. Yahoo 히스토리로 몬테카를로 실행
-  const history = await getDailyHistory(upperSymbol, 'US');
-  const prices = history.map(h => h.price).reverse(); // 오래된 것 → 최신
-  const monte = runMonteCarlo(prices);
+  // 2. 검색 API로 섹터/산업 정보
+  let sector = '', industry = '';
+  try {
+    const searchRes = await fetch(
+      `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(upperSymbol)}&quotesCount=1&newsCount=0`,
+      { headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 86400 } }
+    );
+    if (searchRes.ok) {
+      const searchJson = await searchRes.json();
+      const q = (searchJson?.quotes ?? []).find((q: { symbol: string }) => q.symbol === upperSymbol) ?? searchJson?.quotes?.[0];
+      sector = q?.sector ?? '';
+      industry = q?.industryDisp ?? q?.industry ?? '';
+    }
+  } catch { /* ignore */ }
 
-  // 3. 애널리스트 컨센서스 집계
-  const recData = Array.isArray(analystRec) ? analystRec[0] : null;
-  const consensus = recData ? {
-    strongBuy: recData.analystRatingsStrongBuy ?? 0,
-    buy: recData.analystRatingsbuy ?? 0,
-    hold: recData.analystRatingsHold ?? 0,
-    sell: recData.analystRatingsSell ?? 0,
-    strongSell: recData.analystRatingsStrongSell ?? 0,
-  } : null;
+  // 3. quoteSummary (크럼 필요) — 실패 시 graceful fallback
+  const summary = await fetchQuoteSummary(
+    upperSymbol,
+    'financialData,summaryDetail,defaultKeyStatistics,assetProfile,recommendationTrend'
+  );
 
-  // 4. 가격 목표
-  const priceTargetData = Array.isArray(priceTarget) && priceTarget.length > 0
-    ? {
-        avg: Math.round(priceTarget.reduce((s: number, d: { priceTarget: number }) => s + d.priceTarget, 0) / priceTarget.length * 100) / 100,
-        high: Math.max(...priceTarget.map((d: { priceTarget: number }) => d.priceTarget)),
-        low: Math.min(...priceTarget.map((d: { priceTarget: number }) => d.priceTarget)),
-        count: priceTarget.length,
-      }
-    : null;
-
-  // 5. 재무 데이터
-  const income = Array.isArray(incomeRaw) ? incomeRaw : [];
-  const latestIncome = income[0] ?? null;
+  const sd = summary?.summaryDetail ?? {};
+  const fd = summary?.financialData ?? {};
+  const ks = summary?.defaultKeyStatistics ?? {};
+  const ap = summary?.assetProfile ?? {};
+  const rt = summary?.recommendationTrend?.trend?.[0]; // 최근 1개월
 
   const fundamentals = {
-    currentPrice: profileData.price,
-    marketCap: profileData.mktCap,
-    pe: profileData.pe,
-    pb: profileData.priceToBookRatio ?? null,
-    beta: profileData.beta,
-    eps: profileData.eps,
-    roe: profileData.roe ?? null,
-    revenue: latestIncome?.revenue ?? null,
-    netIncome: latestIncome?.netIncome ?? null,
-    revenueGrowth: income.length >= 2 && income[1]?.revenue
-      ? Math.round(((income[0].revenue - income[1].revenue) / income[1].revenue) * 1000) / 10
-      : null,
-    name: profileData.companyName,
-    sector: profileData.sector,
-    industry: profileData.industry,
-    description: profileData.description,
+    currentPrice: meta.regularMarketPrice ?? fd.currentPrice ?? null,
+    yearHigh: meta.fiftyTwoWeekHigh ?? null,
+    yearLow: meta.fiftyTwoWeekLow ?? null,
+    marketCap: sd.marketCap ?? null,
+    pe: sd.trailingPE ?? null,
+    pb: ks.priceToBook ?? null,
+    beta: sd.beta ?? null,
+    eps: ks.trailingEps ?? null,
+    roe: fd.returnOnEquity != null ? Math.round(fd.returnOnEquity * 1000) / 10 : null,
+    revenue: fd.totalRevenue ?? null,
+    netIncome: null as number | null,
+    revenueGrowth: fd.revenueGrowth != null ? Math.round(fd.revenueGrowth * 1000) / 10 : null,
+    name: meta.longName ?? meta.shortName ?? upperSymbol,
+    sector: ap.sector ?? sector,
+    industry: ap.industry ?? industry,
+    description: ap.longBusinessSummary ?? '',
   };
 
-  // 6. Claude AI 분석
+  // 4. 애널리스트 추천
+  const consensus = rt ? {
+    strongBuy: rt.strongBuy ?? 0,
+    buy: rt.buy ?? 0,
+    hold: rt.hold ?? 0,
+    sell: rt.sell ?? 0,
+    strongSell: rt.strongSell ?? 0,
+  } : null;
+
+  // 5. 목표주가
+  const priceTargetData = fd.targetMeanPrice != null ? {
+    avg: fd.targetMeanPrice,
+    high: fd.targetHighPrice ?? fd.targetMeanPrice,
+    low: fd.targetLowPrice ?? fd.targetMeanPrice,
+    count: fd.numberOfAnalystOpinions ?? 0,
+  } : null;
+
+  // 6. 몬테카를로
+  const history = await getDailyHistory(upperSymbol, 'US');
+  const prices = history.map(h => h.price).reverse();
+  const monte = runMonteCarlo(prices);
+
+  // 7. Claude AI 분석
   let aiAnalysis: string | null = null;
   try {
     const client = new Anthropic();
     const prompt = `당신은 전문 주식 애널리스트입니다. 아래 데이터를 바탕으로 ${upperSymbol} (${fundamentals.name}) 종목에 대한 투자 분석을 한국어로 작성해주세요.
 
 **기업 정보**
-- 섹터: ${fundamentals.sector} / ${fundamentals.industry}
+- 섹터: ${fundamentals.sector || 'N/A'} / ${fundamentals.industry || 'N/A'}
 - 현재가: $${fundamentals.currentPrice}
-- 시가총액: $${fundamentals.marketCap ? (fundamentals.marketCap / 1e9).toFixed(1) + 'B' : 'N/A'}
+- 시가총액: ${fundamentals.marketCap ? '$' + (fundamentals.marketCap / 1e9).toFixed(1) + 'B' : 'N/A'}
 
 **밸류에이션**
-- PER: ${fundamentals.pe ?? 'N/A'}
-- PBR: ${fundamentals.pb ?? 'N/A'}
-- EPS: ${fundamentals.eps ?? 'N/A'}
-- ROE: ${fundamentals.roe ?? 'N/A'}%
-- 베타: ${fundamentals.beta ?? 'N/A'}
+- PER: ${fundamentals.pe ?? 'N/A'} | PBR: ${fundamentals.pb ?? 'N/A'} | EPS: ${fundamentals.eps ?? 'N/A'}
+- ROE: ${fundamentals.roe != null ? fundamentals.roe + '%' : 'N/A'} | 베타: ${fundamentals.beta ?? 'N/A'}
 
 **성장성**
-- 매출 성장률(YoY): ${fundamentals.revenueGrowth !== null ? fundamentals.revenueGrowth + '%' : 'N/A'}
+- 매출 성장률(YoY): ${fundamentals.revenueGrowth != null ? fundamentals.revenueGrowth + '%' : 'N/A'}
 
 **애널리스트 컨센서스**
-${consensus ? `- 강력매수: ${consensus.strongBuy}, 매수: ${consensus.buy}, 보유: ${consensus.hold}, 매도: ${consensus.sell}, 강력매도: ${consensus.strongSell}` : '- 데이터 없음'}
+${consensus ? `강력매수: ${consensus.strongBuy}, 매수: ${consensus.buy}, 보유: ${consensus.hold}, 매도: ${consensus.sell}, 강력매도: ${consensus.strongSell}` : '데이터 없음'}
 
-**애널리스트 목표가**
-${priceTargetData ? `- 평균: $${priceTargetData.avg}, 최고: $${priceTargetData.high}, 최저: $${priceTargetData.low} (${priceTargetData.count}명)` : '- 데이터 없음'}
+**목표주가**
+${priceTargetData ? `평균: $${priceTargetData.avg}, 최고: $${priceTargetData.high}, 최저: $${priceTargetData.low}` : '데이터 없음'}
 
-**몬테카를로 시뮬레이션 (1년, 500회)**
-${monte ? `- 연간 변동성: ${monte.annualizedVolatility}%\n- 상승 확률: ${monte.probUp}%\n- P10/P50/P90: $${monte.p10.toFixed(2)} / $${monte.p50.toFixed(2)} / $${monte.p90.toFixed(2)}` : '- 데이터 부족'}
+**몬테카를로 (1년, 500회)**
+${monte ? `연간 변동성: ${monte.annualizedVolatility}% | 상승확률: ${monte.probUp}% | P10~P90: $${monte.p10.toFixed(0)}~$${monte.p90.toFixed(0)}` : '데이터 부족'}
 
-다음 형식으로 분석해주세요 (각 섹션 2-3문장):
+다음 형식으로 분석해주세요 (각 2-3문장):
 1. **핵심 요약** (투자 매력도 한줄 평가 포함)
-2. **밸류에이션 분석** (현재 가격의 적정성)
+2. **밸류에이션 분석**
 3. **리스크 요인**
 4. **투자 의견** (매수/보유/매도 + 근거)`;
 
