@@ -228,7 +228,7 @@ export async function GET(
     pb: krx?.pb ?? ks.priceToBook ?? (currentPrice && ks.bookValue
       ? Math.round((currentPrice / ks.bookValue) * 100) / 100
       : null),
-    beta: sd.beta ?? null,
+    beta: sd.beta ?? pr.beta ?? null,
     eps: krx?.eps ?? ks.trailingEps ?? pr.earningsPerShare ?? null,
     roe: fd.returnOnEquity != null ? Math.round(fd.returnOnEquity * 1000) / 10 : null,
     revenue: fd.totalRevenue ?? null,
