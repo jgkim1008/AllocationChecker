@@ -1,6 +1,7 @@
 import { createServiceClient } from '@/lib/supabase/server';
 import { getDailyHistory } from '@/lib/api/yahoo';
 import { calculateInverseAlignment } from '@/lib/utils/inverse-alignment-calculator';
+// v2
 import type { InverseAlignmentStock } from '@/types/strategies';
 
 /**
