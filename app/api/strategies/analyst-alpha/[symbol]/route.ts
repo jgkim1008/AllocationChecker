@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDailyHistory } from '@/lib/api/yahoo';
+import { getDividendHistory } from '@/lib/api/fmp';
 import { createServiceClient } from '@/lib/supabase/server';
 
 export const dynamic = 'force-dynamic';
@@ -95,8 +96,29 @@ async function getNaverFundamentals(symbol: string) {
       pe:  parseField('_per'),
       pb:  parseField('_pbr'),
       eps: parseField('_eps'),
+      dvr: parseField('_dvr'), // 배당수익률 (%)
       bps: null,
     };
+  } catch {
+    return null;
+  }
+}
+
+// ─────────────────────────────────────────────
+// 배당 주기 결정 (FMP 역사 기반, US 전용)
+// ─────────────────────────────────────────────
+async function detectDividendFrequency(symbol: string): Promise<string | null> {
+  try {
+    const history = await getDividendHistory(symbol);
+    if (!history || history.length === 0) return null;
+    const oneYearAgo = new Date();
+    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+    const recentCount = history.filter(d => d.exDividendDate && new Date(d.exDividendDate) > oneYearAgo).length;
+    if (recentCount >= 10) return 'monthly';
+    if (recentCount >= 3)  return 'quarterly';
+    if (recentCount >= 2)  return 'semi-annual';
+    if (recentCount >= 1)  return 'annual';
+    return null;
   } catch {
     return null;
   }
@@ -200,13 +222,14 @@ export async function GET(
     }
   } catch { /* ignore */ }
 
-  // 3. quoteSummary + KRX 병렬 호출
-  const [summary, krx] = await Promise.all([
+  // 3. quoteSummary + Naver + 배당 주기(US) 병렬 호출
+  const [summary, krx, dividendFrequency] = await Promise.all([
     fetchQuoteSummary(
       yahooTicker,
       'financialData,summaryDetail,defaultKeyStatistics,assetProfile,recommendationTrend,price'
     ),
     market === 'KR' ? getNaverFundamentals(upperSymbol) : Promise.resolve(null),
+    market === 'US' ? detectDividendFrequency(upperSymbol) : Promise.resolve(null),
   ]);
 
   const sd = summary?.summaryDetail ?? {};
@@ -257,6 +280,33 @@ export async function GET(
     count: fd.numberOfAnalystOpinions ?? 0,
   } : null;
 
+  // 5-1. 배당 정보 추출
+  const rawDivYield = sd.dividendYield ?? null;              // 0.025 = 2.5%
+  const rawDivRate  = sd.dividendRate  ?? null;              // 연간 주당 배당금
+  const rawExDate   = sd.exDividendDate ?? null;             // unix timestamp (seconds)
+
+  // KR: Naver에서 배당수익률 보완 (네이버는 % 단위로 제공)
+  const dividendYield = rawDivYield != null
+    ? Math.round(rawDivYield * 10000) / 100  // 0.025 → 2.5
+    : (krx?.dvr ?? null);                    // Naver _dvr = 이미 % 단위
+
+  const dividendPerShare = rawDivRate ?? null;
+
+  const exDividendDate = rawExDate != null
+    ? new Date(rawExDate * 1000).toISOString().split('T')[0]
+    : null;
+
+  // KR 배당 주기 추정: Yahoo 데이터만으로는 확인 어려우므로 null
+  const finalDividendFrequency = dividendFrequency;
+
+  const dividendInfo = {
+    hasDividend: dividendYield != null && dividendYield > 0,
+    yield: dividendYield,
+    perShare: dividendPerShare,
+    exDate: exDividendDate,
+    frequency: finalDividendFrequency,
+  };
+
   // 5-1. 버핏 스코어 계산 후 DB 저장 (fire-and-forget)
   const buffettData = {
     pe: fundamentals.pe != null && fundamentals.pe > 0 && fundamentals.pe <= 15,
@@ -270,7 +320,14 @@ export async function GET(
 
   createServiceClient().then(supabase =>
     supabase.from('stocks')
-      .update({ buffett_score: buffettScore, buffett_data: buffettData })
+      .update({
+        buffett_score: buffettScore,
+        buffett_data: buffettData,
+        dividend_yield: dividendInfo.yield,
+        dividend_per_share: dividendInfo.perShare,
+        ex_dividend_date: dividendInfo.exDate,
+        dividend_frequency: dividendInfo.frequency,
+      })
       .eq('symbol', upperSymbol)
   ).catch(() => {});
 
@@ -285,6 +342,7 @@ export async function GET(
     consensus,
     priceTarget: priceTargetData,
     monteCarlo: monte,
+    dividendInfo,
     updatedAt: new Date().toISOString(),
   });
 }

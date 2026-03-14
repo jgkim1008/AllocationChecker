@@ -3,7 +3,7 @@
 import { useState, useEffect, use, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, RefreshCw, TrendingUp, AlertTriangle, BarChart3, Target, Info, Layers, Sparkles } from 'lucide-react';
+import { ArrowLeft, RefreshCw, TrendingUp, AlertTriangle, BarChart3, Target, Info, Layers, Sparkles, BadgeDollarSign } from 'lucide-react';
 
 interface MonteCarloResult {
   currentPrice: number;
@@ -42,12 +42,21 @@ interface Fundamentals {
   description: string;
 }
 
+interface DividendInfo {
+  hasDividend: boolean;
+  yield: number | null;
+  perShare: number | null;
+  exDate: string | null;
+  frequency: string | null;
+}
+
 interface AnalystAlphaData {
   symbol: string;
   fundamentals: Fundamentals;
   consensus: Consensus | null;
   priceTarget: PriceTarget | null;
   monteCarlo: MonteCarloResult | null;
+  dividendInfo: DividendInfo | null;
   updatedAt: string;
 }
 
@@ -227,6 +236,62 @@ function FinancialRow({ metaKey, value, positive }: { metaKey: string; value: st
           <button onClick={() => setOpen(false)} className="mt-2 text-[10px] text-gray-400 hover:text-gray-700">닫기</button>
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── 배당 정보 ────────────────────────────────
+const FREQ_LABEL: Record<string, string> = {
+  monthly: '월배당', quarterly: '분기배당', 'semi-annual': '반기배당', annual: '연배당',
+};
+
+function DividendCard({ info, fmtPrice, currency }: {
+  info: DividendInfo;
+  fmtPrice: (n: number | null | undefined) => string;
+  currency: string;
+}) {
+  if (!info.hasDividend) {
+    return (
+      <div className="bg-white rounded-[24px] border border-gray-200 p-6">
+        <div className="flex items-center gap-2 mb-4">
+          <BadgeDollarSign className="h-4 w-4 text-gray-300" />
+          <h2 className="font-black text-gray-900">배당 정보</h2>
+        </div>
+        <p className="text-sm text-gray-400">배당 미지급 종목입니다.</p>
+      </div>
+    );
+  }
+  return (
+    <div className="bg-white rounded-[24px] border border-gray-200 p-6">
+      <div className="flex items-center gap-2 mb-5">
+        <BadgeDollarSign className="h-4 w-4 text-emerald-500" />
+        <h2 className="font-black text-gray-900">배당 정보</h2>
+        {info.frequency && (
+          <span className="ml-auto px-2.5 py-1 bg-emerald-50 text-emerald-700 text-[11px] font-black rounded-full">
+            {FREQ_LABEL[info.frequency] ?? info.frequency}
+          </span>
+        )}
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+        <div>
+          <p className="text-xs text-gray-400 font-bold mb-1">배당 수익률</p>
+          <p className="text-2xl font-black text-emerald-600">{info.yield != null ? `${info.yield.toFixed(2)}%` : 'N/A'}</p>
+        </div>
+        <div>
+          <p className="text-xs text-gray-400 font-bold mb-1">주당 배당금</p>
+          <p className="text-2xl font-black text-gray-900">{info.perShare != null ? fmtPrice(info.perShare) : 'N/A'}</p>
+          <p className="text-[10px] text-gray-400 mt-0.5">연간 기준</p>
+        </div>
+        <div>
+          <p className="text-xs text-gray-400 font-bold mb-1">배당락일</p>
+          <p className="text-lg font-black text-gray-900">
+            {info.exDate
+              ? new Date(info.exDate).toLocaleDateString('ko-KR', { month: 'long', day: 'numeric' })
+              : 'N/A'}
+          </p>
+          {info.exDate && <p className="text-[10px] text-gray-400 mt-0.5">{info.exDate}</p>}
+        </div>
+      </div>
     </div>
   );
 }
@@ -627,6 +692,11 @@ export default function AnalystAlphaDetailPage({ params }: { params: Promise<{ s
                 </div>
               </div>
             </div>
+
+            {/* 배당 정보 */}
+            {data.dividendInfo && (
+              <DividendCard info={data.dividendInfo} fmtPrice={fmtPrice} currency={currency} />
+            )}
 
             {/* 버핏 스코어 */}
             <BuffettScore f={f} />

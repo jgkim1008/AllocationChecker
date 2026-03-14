@@ -8,7 +8,7 @@ export async function GET() {
 
   const { data, error } = await supabase
     .from('stocks')
-    .select('symbol, name, market, current_price, year_high, year_low, last_fetched_at, buffett_score, buffett_data')
+    .select('symbol, name, market, current_price, year_high, year_low, last_fetched_at, buffett_score, buffett_data, dividend_yield, dividend_frequency')
     .not('current_price', 'is', null)
     .not('symbol', 'like', '^%') // 지수 제외
     .order('market', { ascending: true })

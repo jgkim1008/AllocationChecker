@@ -13,6 +13,8 @@ interface Stock {
   last_fetched_at: string | null;
   buffett_score: number | null;
   buffett_data: Record<string, boolean> | null;
+  dividend_yield: number | null;
+  dividend_frequency: string | null;
 }
 
 const BUFFETT_KEYS = ['pe', 'pb', 'roe', 'eps', 'beta', 'revenueGrowth'] as const;
@@ -37,6 +39,24 @@ function BuffettBadge({ score, data }: { score: number; data: Record<string, boo
         ))}
       </div>
       <span className={`text-xs font-black tabular-nums ${color}`}>{score}/6</span>
+    </div>
+  );
+}
+
+const FREQ_LABEL: Record<string, string> = {
+  monthly: '월배당', quarterly: '분기배당', 'semi-annual': '반기배당', annual: '연배당',
+};
+
+function DividendBadge({ yield: y, frequency }: { yield: number | null; frequency: string | null }) {
+  if (!y || y <= 0) return <span className="text-[11px] text-gray-300">-</span>;
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className="inline-block px-2 py-0.5 rounded-full text-[11px] font-black bg-emerald-50 text-emerald-700">
+        {y.toFixed(2)}%
+      </span>
+      {frequency && (
+        <span className="text-[10px] text-gray-400 font-medium">{FREQ_LABEL[frequency] ?? frequency}</span>
+      )}
     </div>
   );
 }
@@ -149,6 +169,7 @@ export default function AnalystAlphaPage() {
                   <th className="text-left px-5 py-3.5 text-[10px] font-black text-gray-400 uppercase tracking-widest">종목</th>
                   <th className="text-right px-5 py-3.5 text-[10px] font-black text-gray-400 uppercase tracking-widest hidden sm:table-cell">현재가</th>
                   <th className="text-left px-5 py-3.5 text-[10px] font-black text-gray-400 uppercase tracking-widest hidden sm:table-cell">버핏 기준</th>
+                  <th className="text-left px-5 py-3.5 text-[10px] font-black text-gray-400 uppercase tracking-widest hidden md:table-cell">배당</th>
                   <th className="px-4 py-3.5" />
                 </tr>
               </thead>
@@ -186,6 +207,11 @@ export default function AnalystAlphaPage() {
                       ) : (
                         <span className="text-[11px] text-gray-300 font-medium">미분석</span>
                       )}
+                    </td>
+
+                    {/* 배당 */}
+                    <td className="px-5 py-4 hidden md:table-cell">
+                      <DividendBadge yield={s.dividend_yield} frequency={s.dividend_frequency} />
                     </td>
 
                     {/* 화살표 */}
