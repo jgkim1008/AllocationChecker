@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { scanInverseAlignmentFromDB } from '@/lib/api/strategies/inverse-alignment';
+import { scanInverseAlignmentFromDB } from '@/lib/utils/inverse-alignment-scanner';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300; // 전수 조사 시 60초 이상 소요될 수 있음
