@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, CheckCircle2, XCircle, Activity, Target, Loader2, RefreshCw } from 'lucide-react';
 import { InverseAlignmentChart } from '@/components/strategies/InverseAlignmentChart';
 import { calculateInverseAlignment } from '@/lib/utils/inverse-alignment-calculator';
+import { PremiumGate } from '@/components/PremiumGate';
 
 export default function InverseAlignmentDetailPage({
   params,
@@ -115,6 +116,7 @@ function InverseAlignmentDetailContent({
           </button>
         </header>
 
+        <PremiumGate featureName="이평선 역배열 상세 분석">
         <div className="grid grid-cols-1 xl:grid-cols-4 gap-8">
           <div className="xl:col-span-3 space-y-6">
             <div className="bg-white p-8 rounded-[32px] border border-gray-200 shadow-sm overflow-hidden relative">
@@ -160,6 +162,7 @@ function InverseAlignmentDetailContent({
             </div>
           </div>
         </div>
+        </PremiumGate>
       </div>
     </div>
   );

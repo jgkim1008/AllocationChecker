@@ -1,17 +1,16 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { RefreshCw, TrendingUp, AlertCircle, Lock, ArrowLeft } from 'lucide-react';
+import { RefreshCw, TrendingUp, AlertCircle, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 import { FibonacciTable } from '@/components/fibonacci/FibonacciTable';
 import { FibonacciLevelBadge } from '@/components/fibonacci/FibonacciLevelBadge';
-import { useAuth } from '@/components/AuthProvider';
+import { PremiumGate } from '@/components/PremiumGate';
 import type { FibonacciReport, FibonacciLevel } from '@/types/fibonacci';
 
 type MarketFilter = 'all' | 'US' | 'KR' | 'INDEX';
 
 export default function FibonacciPage() {
-  const { isPremium } = useAuth();
   const [report, setReport] = useState<FibonacciReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -226,25 +225,8 @@ export default function FibonacciPage() {
         {/* 결과 테이블 */}
         {!loading && report && (
           <div className="relative">
-            {/* 비프리미엄 사용자 블러 오버레이 */}
-            {!isPremium && (
-              <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/60 backdrop-blur-sm rounded-2xl">
-                <div className="text-center p-8">
-                  <div className="w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <Lock className="h-8 w-8 text-purple-600" />
-                  </div>
-                  <h3 className="text-lg font-bold text-gray-900 mb-2">프리미엄 전용 기능</h3>
-                  <p className="text-sm text-gray-600 mb-4">
-                    피보나치 되돌림 스캐너는 프리미엄 구독자만 이용할 수 있습니다.
-                  </p>
-                  <p className="text-xs text-gray-400">
-                    구독 문의: 관리자에게 연락하세요
-                  </p>
-                </div>
-              </div>
-            )}
-
-            <div className={`space-y-6 ${!isPremium ? 'blur-sm pointer-events-none select-none' : ''}`}>
+            <PremiumGate featureName="피보나치 되돌림 스캐너">
+            <div className="space-y-6">
               {/* 주요 지수 */}
               {(marketFilter === 'all' || marketFilter === 'INDEX') && (
                 <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
@@ -314,6 +296,7 @@ export default function FibonacciPage() {
                 </div>
               )}
             </div>
+            </PremiumGate>
           </div>
         )}
 

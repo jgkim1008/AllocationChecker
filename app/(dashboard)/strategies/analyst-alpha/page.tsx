@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, Search, Sparkles, ChevronRight } from 'lucide-react';
+import { PremiumGate } from '@/components/PremiumGate';
 
 interface Stock {
   symbol: string;
@@ -151,6 +152,7 @@ export default function AnalystAlphaPage() {
         </div>
 
         {/* 리스트 */}
+        <PremiumGate featureName="Analyst Alpha">
         {loading ? (
           <div className="space-y-2">
             {Array.from({ length: 8 }).map((_, i) => (
@@ -229,6 +231,7 @@ export default function AnalystAlphaPage() {
             </div>
           </div>
         )}
+        </PremiumGate>
       </div>
     </div>
   );

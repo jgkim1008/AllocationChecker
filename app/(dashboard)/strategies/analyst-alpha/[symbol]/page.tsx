@@ -4,6 +4,7 @@ import { useState, useEffect, use, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, RefreshCw, TrendingUp, AlertTriangle, BarChart3, Target, Info, Layers, Sparkles, BadgeDollarSign } from 'lucide-react';
+import { PremiumGate } from '@/components/PremiumGate';
 
 interface MonteCarloResult {
   currentPrice: number;
@@ -653,6 +654,7 @@ export default function AnalystAlphaDetailPage({ params }: { params: Promise<{ s
         )}
 
         {!loading && data && f && (
+          <PremiumGate featureName="Analyst Alpha 상세 분석">
           <div className="space-y-5">
 
             {/* 현재가 + 핵심 4지표 (툴팁 포함) */}
@@ -779,6 +781,7 @@ export default function AnalystAlphaDetailPage({ params }: { params: Promise<{ s
               분석 시각: {new Date(data.updatedAt).toLocaleString('ko-KR')} · 투자 참고용이며 실제 투자 결과를 보장하지 않습니다.
             </p>
           </div>
+          </PremiumGate>
         )}
       </div>
     </div>

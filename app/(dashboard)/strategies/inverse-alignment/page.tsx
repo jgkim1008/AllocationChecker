@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, RefreshCw, TrendingUp, Info, Target, Sparkles } from 'lucide-react';
 import { InverseAlignmentTable } from '@/components/strategies/InverseAlignmentTable';
+import { PremiumGate } from '@/components/PremiumGate';
 import type { InverseAlignmentStock } from '@/types/strategies';
 
 export default function InverseAlignmentPage() {
@@ -90,8 +91,10 @@ export default function InverseAlignmentPage() {
             </h2>
             {!loading && <p className="text-xs text-gray-400 font-bold uppercase tracking-widest">Sorted by match rate</p>}
           </div>
-          
-          <InverseAlignmentTable stocks={stocks} loading={loading} />
+
+          <PremiumGate featureName="이평선 역배열 전략">
+            <InverseAlignmentTable stocks={stocks} loading={loading} />
+          </PremiumGate>
         </div>
       </div>
     </div>
