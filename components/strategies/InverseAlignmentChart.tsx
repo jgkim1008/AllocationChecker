@@ -67,16 +67,20 @@ export function InverseAlignmentChart({ history, market }: InverseAlignmentChart
     const ma448Series = createMASeries('#6b7280', 1);   // 448일: 그레이
     const bbSeries = createMASeries('#9333ea', 1, true); // BB상단: 퍼플 점선
 
-    // 4. 데이터 세팅 (lightweight-charts는 'time' 필드가 필수)
-    const data = history.map(h => ({ time: h.date, value: h.price }));
+    // 4. 데이터 세팅 (lightweight-charts는 'time' 필드가 필수, 오름차순 정렬 및 중복 제거 필요)
+    const sortedHistory = [...history]
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .filter((h, i, arr) => i === 0 || h.date !== arr[i - 1].date);
+
+    const data = sortedHistory.map(h => ({ time: h.date, value: h.price }));
     mainSeries.setData(data);
-    
-    ma5Series.setData(history.filter(h => h.ma5).map(h => ({ time: h.date, value: h.ma5 })));
-    ma60Series.setData(history.filter(h => h.ma60).map(h => ({ time: h.date, value: h.ma60 })));
-    ma112Series.setData(history.filter(h => h.ma112).map(h => ({ time: h.date, value: h.ma112 })));
-    ma224Series.setData(history.filter(h => h.ma224).map(h => ({ time: h.date, value: h.ma224 })));
-    ma448Series.setData(history.filter(h => h.ma448).map(h => ({ time: h.date, value: h.ma448 })));
-    bbSeries.setData(history.filter(h => h.bbUpper).map(h => ({ time: h.date, value: h.bbUpper })));
+
+    ma5Series.setData(sortedHistory.filter(h => h.ma5).map(h => ({ time: h.date, value: h.ma5 })));
+    ma60Series.setData(sortedHistory.filter(h => h.ma60).map(h => ({ time: h.date, value: h.ma60 })));
+    ma112Series.setData(sortedHistory.filter(h => h.ma112).map(h => ({ time: h.date, value: h.ma112 })));
+    ma224Series.setData(sortedHistory.filter(h => h.ma224).map(h => ({ time: h.date, value: h.ma224 })));
+    ma448Series.setData(sortedHistory.filter(h => h.ma448).map(h => ({ time: h.date, value: h.ma448 })));
+    bbSeries.setData(sortedHistory.filter(h => h.bbUpper).map(h => ({ time: h.date, value: h.bbUpper })));
 
     // 5. 창 크기 조절 대응
     const handleResize = () => {
