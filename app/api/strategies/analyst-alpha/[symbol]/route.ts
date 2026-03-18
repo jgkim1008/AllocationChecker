@@ -451,11 +451,13 @@ export async function GET(
   }
 
   // 펀더멘탈선: 현재 EPS 기준
+  // 분기별 데이터가 없으면 현재 EPS 사용 (fallback)
+  const currentEps = eps != null && eps > 0 ? eps : null;
   const latestTtmEps = ttmEpsByDate.length > 0
     ? ttmEpsByDate[ttmEpsByDate.length - 1].ttmEps
-    : (eps ?? 0);
+    : currentEps;
 
-  const fundamentalLine = latestTtmEps > 0 ? {
+  const fundamentalLine = latestTtmEps != null && latestTtmEps > 0 ? {
     value: Math.round(latestTtmEps * basePER * 100) / 100,
     per: basePER,
     eps: Math.round(latestTtmEps * 100) / 100,
@@ -467,19 +469,21 @@ export async function GET(
     // 해당 날짜 이전의 가장 최근 TTM EPS 사용
     let applicableTtmEps = latestTtmEps;
 
-    for (let i = ttmEpsByDate.length - 1; i >= 0; i--) {
-      if (ttmEpsByDate[i].date <= h.date) {
-        applicableTtmEps = ttmEpsByDate[i].ttmEps;
-        break;
+    if (ttmEpsByDate.length > 0) {
+      for (let i = ttmEpsByDate.length - 1; i >= 0; i--) {
+        if (ttmEpsByDate[i].date <= h.date) {
+          applicableTtmEps = ttmEpsByDate[i].ttmEps;
+          break;
+        }
+      }
+
+      // TTM EPS 데이터가 없는 오래된 날짜는 가장 오래된 TTM EPS 사용
+      if (h.date < ttmEpsByDate[0].date) {
+        applicableTtmEps = ttmEpsByDate[0].ttmEps;
       }
     }
 
-    // TTM EPS 데이터가 없는 오래된 날짜는 가장 오래된 TTM EPS 사용
-    if (ttmEpsByDate.length > 0 && h.date < ttmEpsByDate[0].date) {
-      applicableTtmEps = ttmEpsByDate[0].ttmEps;
-    }
-
-    const fundValue = applicableTtmEps > 0
+    const fundValue = applicableTtmEps != null && applicableTtmEps > 0
       ? Math.round(applicableTtmEps * basePER * 100) / 100
       : null;
 
