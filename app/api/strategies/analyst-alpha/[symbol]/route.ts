@@ -180,6 +180,16 @@ function runMonteCarlo(prices: number[], simCount = 500, days = 252) {
 // ─────────────────────────────────────────────
 // Quarterly EPS History (분기별 EPS - 손익계산서 기반)
 // ─────────────────────────────────────────────
+// Yahoo API에서 숫자 값 추출 (객체 또는 숫자 처리)
+function extractNumber(val: unknown): number | null {
+  if (val == null) return null;
+  if (typeof val === 'number') return val;
+  if (typeof val === 'object' && 'raw' in (val as object)) {
+    return (val as { raw: number }).raw;
+  }
+  return null;
+}
+
 async function getQuarterlyEpsHistory(yahooTicker: string): Promise<{ date: string; eps: number }[]> {
   try {
     const session = await getYahooCrumb();
@@ -204,9 +214,11 @@ async function getQuarterlyEpsHistory(yahooTicker: string): Promise<{ date: stri
     const earningsHistory = result?.earningsHistory?.history ?? [];
     const earningsMap: Record<string, number> = {};
     for (const h of earningsHistory) {
-      if (h.epsActual != null && h.quarter?.raw) {
-        const qDate = new Date(h.quarter.raw * 1000).toISOString().split('T')[0];
-        earningsMap[qDate] = h.epsActual;
+      const epsActual = extractNumber(h.epsActual);
+      const quarterRaw = extractNumber(h.quarter);
+      if (epsActual != null && quarterRaw != null) {
+        const qDate = new Date(quarterRaw * 1000).toISOString().split('T')[0];
+        earningsMap[qDate] = epsActual;
       }
     }
 
@@ -215,16 +227,16 @@ async function getQuarterlyEpsHistory(yahooTicker: string): Promise<{ date: stri
     const quarterlyData: { date: string; eps: number }[] = [];
 
     for (const stmt of incomeHistory) {
-      const endDate = stmt.endDate?.raw;
-      const netIncome = stmt.netIncome?.raw;
-      const sharesOutstanding = stmt.dilutedAverageShares?.raw ?? stmt.basicAverageShares?.raw;
+      const endDate = extractNumber(stmt.endDate);
+      const netIncome = extractNumber(stmt.netIncome);
+      const sharesOutstanding = extractNumber(stmt.dilutedAverageShares) ?? extractNumber(stmt.basicAverageShares);
 
       if (endDate && netIncome != null && sharesOutstanding) {
         const dateStr = new Date(endDate * 1000).toISOString().split('T')[0];
         const eps = netIncome / sharesOutstanding;
 
         // earningsHistory의 실제 EPS가 있으면 그것 사용
-        if (earningsMap[dateStr]) {
+        if (earningsMap[dateStr] != null) {
           quarterlyData.push({ date: dateStr, eps: earningsMap[dateStr] });
         } else {
           quarterlyData.push({ date: dateStr, eps });
@@ -234,10 +246,12 @@ async function getQuarterlyEpsHistory(yahooTicker: string): Promise<{ date: stri
 
     // 3. earningsHistory에만 있는 데이터 추가
     for (const h of earningsHistory) {
-      if (h.epsActual != null && h.quarter?.raw) {
-        const qDate = new Date(h.quarter.raw * 1000).toISOString().split('T')[0];
+      const epsActual = extractNumber(h.epsActual);
+      const quarterRaw = extractNumber(h.quarter);
+      if (epsActual != null && quarterRaw != null) {
+        const qDate = new Date(quarterRaw * 1000).toISOString().split('T')[0];
         if (!quarterlyData.find(q => q.date === qDate)) {
-          quarterlyData.push({ date: qDate, eps: h.epsActual });
+          quarterlyData.push({ date: qDate, eps: epsActual });
         }
       }
     }
@@ -424,67 +438,68 @@ export async function GET(
   };
 
   const basePER = sectorPER[fundamentals.sector] ?? 15;
-  const eps = fundamentals.eps;
+  const currentEps = fundamentals.eps;
 
-  // 분기별 EPS 히스토리 가져오기
-  const earningsHistory = await getQuarterlyEpsHistory(yahooTicker);
+  // 분기별 EPS 히스토리 가져오기 (비동기, 실패해도 계속 진행)
+  let earningsHistory: { date: string; eps: number }[] = [];
+  try {
+    earningsHistory = await getQuarterlyEpsHistory(yahooTicker);
+  } catch {
+    // 실패 시 빈 배열 사용
+  }
 
   // TTM EPS를 각 날짜별로 미리 계산 (분기 발표일 기준)
-  // 각 분기 발표일에 해당하는 TTM EPS 계산
   const ttmEpsByDate: { date: string; ttmEps: number }[] = [];
   for (let i = 0; i < earningsHistory.length; i++) {
     let ttmEps = 0;
     let count = 0;
-    // 현재 분기 포함 최근 4분기 합산
     for (let j = i; j >= 0 && count < 4; j--) {
       ttmEps += earningsHistory[j].eps;
       count++;
     }
     if (count > 0) {
-      // count가 4 미만이면 연환산
       const annualizedEps = count === 4 ? ttmEps : (ttmEps / count) * 4;
-      ttmEpsByDate.push({
-        date: earningsHistory[i].date,
-        ttmEps: annualizedEps,
-      });
+      ttmEpsByDate.push({ date: earningsHistory[i].date, ttmEps: annualizedEps });
     }
   }
 
-  // 펀더멘탈선: 현재 EPS 기준
-  // 분기별 데이터가 없으면 현재 EPS 사용 (fallback)
-  const currentEps = eps != null && eps > 0 ? eps : null;
+  // 펀더멘탈선: 분기별 데이터가 있으면 TTM EPS, 없으면 현재 EPS 사용
   const latestTtmEps = ttmEpsByDate.length > 0
     ? ttmEpsByDate[ttmEpsByDate.length - 1].ttmEps
     : currentEps;
 
-  const fundamentalLine = latestTtmEps != null && latestTtmEps > 0 ? {
-    value: Math.round(latestTtmEps * basePER * 100) / 100,
+  // 펀더멘탈선 계산 (EPS × 섹터 PER)
+  const fundamentalLineValue = latestTtmEps != null && latestTtmEps > 0
+    ? Math.round(latestTtmEps * basePER * 100) / 100
+    : null;
+
+  const fundamentalLine = fundamentalLineValue != null ? {
+    value: fundamentalLineValue,
     per: basePER,
-    eps: Math.round(latestTtmEps * 100) / 100,
+    eps: Math.round((latestTtmEps ?? 0) * 100) / 100,
   } : null;
 
   // 가격 히스토리 (최근 2년, 차트용) + 펀더멘탈선 값 계산
   const priceHistory = history.slice(0, 504).map(h => {
     // 해당 날짜에 적용할 TTM EPS 찾기
-    // 해당 날짜 이전의 가장 최근 TTM EPS 사용
-    let applicableTtmEps = latestTtmEps;
+    let applicableEps = latestTtmEps;
 
     if (ttmEpsByDate.length > 0) {
+      // 분기별 TTM EPS 적용
       for (let i = ttmEpsByDate.length - 1; i >= 0; i--) {
         if (ttmEpsByDate[i].date <= h.date) {
-          applicableTtmEps = ttmEpsByDate[i].ttmEps;
+          applicableEps = ttmEpsByDate[i].ttmEps;
           break;
         }
       }
-
-      // TTM EPS 데이터가 없는 오래된 날짜는 가장 오래된 TTM EPS 사용
+      // 가장 오래된 분기보다 이전 날짜는 그 분기의 TTM EPS 사용
       if (h.date < ttmEpsByDate[0].date) {
-        applicableTtmEps = ttmEpsByDate[0].ttmEps;
+        applicableEps = ttmEpsByDate[0].ttmEps;
       }
     }
 
-    const fundValue = applicableTtmEps != null && applicableTtmEps > 0
-      ? Math.round(applicableTtmEps * basePER * 100) / 100
+    const fundValue = applicableEps != null && applicableEps > 0
+      ? Math.round(applicableEps * basePER * 100) / 100
       : null;
 
     return {
