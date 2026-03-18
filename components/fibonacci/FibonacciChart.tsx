@@ -71,8 +71,10 @@ export function FibonacciChart({
   useEffect(() => {
     if (!chartContainerRef.current || history.length < 2) return;
 
-    // 데이터 정렬 (오래된 순)
-    const sortedData = [...history].sort((a, b) => a.date.localeCompare(b.date));
+    // 데이터 정렬 (오래된 순) 및 중복 날짜 제거
+    const sortedData = [...history]
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .filter((item, index, arr) => index === 0 || item.date !== arr[index - 1].date);
 
     const chart = createChart(chartContainerRef.current, {
       width: chartContainerRef.current.clientWidth,
