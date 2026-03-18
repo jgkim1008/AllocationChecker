@@ -159,8 +159,8 @@ export async function getDailyHistory(
   market: 'US' | 'KR' = 'KR'
 ): Promise<{ date: string; open: number; high: number; low: number; price: number; volume: number }[]> {
   const ticker = market === 'KR' ? ensureSuffix(symbol) : toYahooUSTicker(symbol);
-  // 2년치 일봉 데이터 (이평선 448일 계산용)
-  const url = `${QUERY_URL}/v8/finance/chart/${encodeURIComponent(ticker)}?range=2y&interval=1d`;
+  // 5년치 일봉 데이터 (장기 차트 + 이평선 계산용)
+  const url = `${QUERY_URL}/v8/finance/chart/${encodeURIComponent(ticker)}?range=5y&interval=1d`;
 
   try {
     const res = await fetch(url, {
@@ -176,20 +176,25 @@ export async function getDailyHistory(
     const timestamps: number[] = result.timestamp ?? [];
     const quotes = result.indicators?.quote?.[0] ?? {};
     const adjClose = result.indicators?.adjclose?.[0]?.adjclose ?? [];
-    
-    const { open = [], high = [], low = [], volume = [] } = quotes;
+
+    const { open = [], high = [], low = [], close = [], volume = [] } = quotes;
 
     const history = [];
     // 최신 데이터가 앞에 오도록 역순 정렬을 위해 unshift 사용하거나 나중에 reverse
     for (let i = 0; i < timestamps.length; i++) {
-      if (adjClose[i] == null) continue;
+      if (adjClose[i] == null || close[i] == null) continue;
 
       const d = new Date(timestamps[i] * 1000);
+
+      // 조정 비율 계산 (배당/액면분할 반영)
+      // adjClose와 rawClose의 비율로 OHLC 모두 조정
+      const adjustmentFactor = adjClose[i] / close[i];
+
       history.push({
         date: d.toISOString().split('T')[0],
-        open: open[i] ?? adjClose[i],
-        high: high[i] ?? adjClose[i],
-        low: low[i] ?? adjClose[i],
+        open: (open[i] ?? close[i]) * adjustmentFactor,
+        high: (high[i] ?? close[i]) * adjustmentFactor,
+        low: (low[i] ?? close[i]) * adjustmentFactor,
         price: adjClose[i],
         volume: volume[i] ?? 0,
       });

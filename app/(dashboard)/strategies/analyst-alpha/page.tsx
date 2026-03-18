@@ -3,8 +3,11 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Search, Sparkles, ChevronRight } from 'lucide-react';
+import { ArrowLeft, Search, Sparkles, ChevronRight, ChevronUp, ChevronDown } from 'lucide-react';
 import { PremiumGate } from '@/components/PremiumGate';
+
+type SortKey = 'symbol' | 'current_price' | 'buffett_score' | 'dividend_yield';
+type SortDirection = 'asc' | 'desc';
 
 interface Stock {
   symbol: string;
@@ -68,6 +71,8 @@ export default function AnalystAlphaPage() {
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<'ALL' | 'US' | 'KR'>('ALL');
   const [query, setQuery] = useState('');
+  const [sortKey, setSortKey] = useState<SortKey>('buffett_score');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
 
   useEffect(() => {
     fetch('/api/stocks/list')
@@ -77,14 +82,76 @@ export default function AnalystAlphaPage() {
   }, []);
 
   const filtered = useMemo(() => {
-    return stocks
+    const list = stocks
       .filter(s => tab === 'ALL' || s.market === tab)
       .filter(s => {
         if (!query) return true;
         const q = query.toLowerCase();
         return s.symbol.toLowerCase().includes(q) || s.name.toLowerCase().includes(q);
       });
-  }, [stocks, tab, query]);
+
+    // 정렬
+    list.sort((a, b) => {
+      let aVal: number | string | null;
+      let bVal: number | string | null;
+
+      switch (sortKey) {
+        case 'symbol':
+          aVal = a.symbol;
+          bVal = b.symbol;
+          break;
+        case 'current_price':
+          aVal = a.current_price;
+          bVal = b.current_price;
+          break;
+        case 'buffett_score':
+          aVal = a.buffett_score;
+          bVal = b.buffett_score;
+          break;
+        case 'dividend_yield':
+          aVal = a.dividend_yield;
+          bVal = b.dividend_yield;
+          break;
+        default:
+          return 0;
+      }
+
+      // null 값 처리 (null은 항상 맨 뒤로)
+      if (aVal === null && bVal === null) return 0;
+      if (aVal === null) return 1;
+      if (bVal === null) return -1;
+
+      // 비교
+      let cmp: number;
+      if (typeof aVal === 'string' && typeof bVal === 'string') {
+        cmp = aVal.localeCompare(bVal);
+      } else {
+        cmp = (aVal as number) - (bVal as number);
+      }
+
+      return sortDirection === 'asc' ? cmp : -cmp;
+    });
+
+    return list;
+  }, [stocks, tab, query, sortKey, sortDirection]);
+
+  const handleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortKey(key);
+      setSortDirection(key === 'symbol' ? 'asc' : 'desc');
+    }
+  };
+
+  const SortIcon = ({ columnKey }: { columnKey: SortKey }) => {
+    if (sortKey !== columnKey) {
+      return <ChevronDown className="h-3 w-3 opacity-30" />;
+    }
+    return sortDirection === 'asc'
+      ? <ChevronUp className="h-3 w-3 text-indigo-600" />
+      : <ChevronDown className="h-3 w-3 text-indigo-600" />;
+  };
 
   const counts = useMemo(() => ({
     ALL: stocks.length,
@@ -168,10 +235,38 @@ export default function AnalystAlphaPage() {
             <table className="w-full text-sm">
               <thead className="bg-gray-50/80 border-b border-gray-100">
                 <tr>
-                  <th className="text-left px-5 py-3.5 text-[10px] font-black text-gray-400 uppercase tracking-widest">종목</th>
-                  <th className="text-right px-5 py-3.5 text-[10px] font-black text-gray-400 uppercase tracking-widest hidden sm:table-cell">현재가</th>
-                  <th className="text-left px-5 py-3.5 text-[10px] font-black text-gray-400 uppercase tracking-widest hidden sm:table-cell">버핏 기준</th>
-                  <th className="text-left px-5 py-3.5 text-[10px] font-black text-gray-400 uppercase tracking-widest hidden md:table-cell">배당</th>
+                  <th
+                    onClick={() => handleSort('symbol')}
+                    className="text-left px-5 py-3.5 text-[10px] font-black text-gray-400 uppercase tracking-widest cursor-pointer hover:text-gray-600 transition-colors"
+                  >
+                    <span className="flex items-center gap-1">
+                      종목 <SortIcon columnKey="symbol" />
+                    </span>
+                  </th>
+                  <th
+                    onClick={() => handleSort('current_price')}
+                    className="text-right px-5 py-3.5 text-[10px] font-black text-gray-400 uppercase tracking-widest hidden sm:table-cell cursor-pointer hover:text-gray-600 transition-colors"
+                  >
+                    <span className="flex items-center justify-end gap-1">
+                      현재가 <SortIcon columnKey="current_price" />
+                    </span>
+                  </th>
+                  <th
+                    onClick={() => handleSort('buffett_score')}
+                    className="text-left px-5 py-3.5 text-[10px] font-black text-gray-400 uppercase tracking-widest hidden sm:table-cell cursor-pointer hover:text-gray-600 transition-colors"
+                  >
+                    <span className="flex items-center gap-1">
+                      버핏 기준 <SortIcon columnKey="buffett_score" />
+                    </span>
+                  </th>
+                  <th
+                    onClick={() => handleSort('dividend_yield')}
+                    className="text-left px-5 py-3.5 text-[10px] font-black text-gray-400 uppercase tracking-widest hidden md:table-cell cursor-pointer hover:text-gray-600 transition-colors"
+                  >
+                    <span className="flex items-center gap-1">
+                      배당 <SortIcon columnKey="dividend_yield" />
+                    </span>
+                  </th>
                   <th className="px-4 py-3.5" />
                 </tr>
               </thead>

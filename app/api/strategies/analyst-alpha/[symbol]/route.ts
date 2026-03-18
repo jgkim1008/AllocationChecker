@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDailyHistory } from '@/lib/api/yahoo';
-import { getDividendHistory } from '@/lib/api/fmp';
 import { createServiceClient } from '@/lib/supabase/server';
 
 export const dynamic = 'force-dynamic';
@@ -105,23 +104,56 @@ async function getNaverFundamentals(symbol: string) {
 }
 
 // ─────────────────────────────────────────────
-// 배당 주기 결정 (FMP 역사 기반, US 전용)
+// Yahoo Finance 배당 히스토리 (10년)
 // ─────────────────────────────────────────────
-async function detectDividendFrequency(symbol: string): Promise<string | null> {
+interface DividendHistoryItem {
+  date: string;
+  amount: number;
+}
+
+async function getYahooDividendHistory(yahooTicker: string): Promise<DividendHistoryItem[]> {
   try {
-    const history = await getDividendHistory(symbol);
-    if (!history || history.length === 0) return null;
-    const oneYearAgo = new Date();
-    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
-    const recentCount = history.filter(d => d.exDividendDate && new Date(d.exDividendDate) > oneYearAgo).length;
-    if (recentCount >= 10) return 'monthly';
-    if (recentCount >= 3)  return 'quarterly';
-    if (recentCount >= 2)  return 'semi-annual';
-    if (recentCount >= 1)  return 'annual';
-    return null;
+    // 10년치 데이터
+    const tenYearsAgo = Math.floor(Date.now() / 1000) - 10 * 365 * 24 * 60 * 60;
+    const now = Math.floor(Date.now() / 1000);
+
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooTicker)}?period1=${tenYearsAgo}&period2=${now}&interval=1mo&events=div`;
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0' },
+      next: { revalidate: 86400 },
+    });
+
+    if (!res.ok) return [];
+
+    const data = await res.json();
+    const events = data?.chart?.result?.[0]?.events?.dividends;
+
+    if (!events) return [];
+
+    const dividends: DividendHistoryItem[] = Object.values(events as Record<string, { date: number; amount: number }>)
+      .map((d) => ({
+        date: new Date(d.date * 1000).toISOString().split('T')[0],
+        amount: d.amount,
+      }))
+      .sort((a, b) => b.date.localeCompare(a.date)); // 최신순 정렬
+
+    return dividends;
   } catch {
-    return null;
+    return [];
   }
+}
+
+// 배당 주기 결정 (Yahoo 역사 기반)
+function detectDividendFrequencyFromHistory(history: DividendHistoryItem[]): string | null {
+  if (!history || history.length === 0) return null;
+  const oneYearAgo = new Date();
+  oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+  const recentCount = history.filter(d => new Date(d.date) > oneYearAgo).length;
+  if (recentCount >= 10) return 'monthly';
+  if (recentCount >= 3)  return 'quarterly';
+  if (recentCount >= 2)  return 'semi-annual';
+  if (recentCount >= 1)  return 'annual';
+  return null;
 }
 
 // ─────────────────────────────────────────────
@@ -307,15 +339,18 @@ export async function GET(
     }
   } catch { /* ignore */ }
 
-  // 3. quoteSummary + Naver + 배당 주기(US) 병렬 호출
-  const [summary, krx, dividendFrequency] = await Promise.all([
+  // 3. quoteSummary + Naver + 배당 히스토리 병렬 호출
+  const [summary, krx, dividendHistory] = await Promise.all([
     fetchQuoteSummary(
       yahooTicker,
       'financialData,summaryDetail,defaultKeyStatistics,assetProfile,recommendationTrend,price'
     ),
     market === 'KR' ? getNaverFundamentals(upperSymbol) : Promise.resolve(null),
-    market === 'US' ? detectDividendFrequency(upperSymbol) : Promise.resolve(null),
+    getYahooDividendHistory(yahooTicker),
   ]);
+
+  // 배당 주기 결정
+  const dividendFrequency = detectDividendFrequencyFromHistory(dividendHistory);
 
   const sd = summary?.summaryDetail ?? {};
   const fd = summary?.financialData ?? {};
@@ -390,6 +425,7 @@ export async function GET(
     perShare: dividendPerShare,
     exDate: exDividendDate,
     frequency: finalDividendFrequency,
+    history: dividendHistory, // 10년 배당 히스토리
   };
 
   // 5-1. 버핏 스코어 계산 후 DB 저장 (fire-and-forget)
@@ -421,26 +457,10 @@ export async function GET(
   const prices = history.map(h => h.price).reverse();
   const monte = runMonteCarlo(prices);
 
-  // 7. 펀더멘탈선 계산 (EPS × 적정 PER)
-  const sectorPER: Record<string, number> = {
-    'Financial Services': 8,
-    'Financial': 8,
-    'Technology': 22,
-    'Healthcare': 18,
-    'Consumer Cyclical': 16,
-    'Consumer Defensive': 16,
-    'Energy': 10,
-    'Utilities': 13,
-    'Industrials': 15,
-    'Basic Materials': 12,
-    'Real Estate': 15,
-    'Communication Services': 18,
-  };
-
-  const basePER = sectorPER[fundamentals.sector] ?? 15;
+  // 7. 펀더멘탈선 계산 (EPS × 5년 평균 PER)
   const currentEps = fundamentals.eps;
 
-  // 분기별 EPS 히스토리 가져오기 (비동기, 실패해도 계속 진행)
+  // 분기별 EPS 히스토리 가져오기
   let earningsHistory: { date: string; eps: number }[] = [];
   try {
     earningsHistory = await getQuarterlyEpsHistory(yahooTicker);
@@ -463,24 +483,75 @@ export async function GET(
     }
   }
 
+  // 5년 평균 PER 계산: 각 분기별 TTM EPS 발표일의 주가로 PER 계산 후 평균
+  const priceMap: Record<string, number> = {};
+  for (const h of history) {
+    priceMap[h.date] = h.price;
+  }
+
+  const perHistory: number[] = [];
+  const fiveYearsAgo = new Date();
+  fiveYearsAgo.setFullYear(fiveYearsAgo.getFullYear() - 5);
+  const fiveYearsAgoStr = fiveYearsAgo.toISOString().split('T')[0];
+
+  for (const item of ttmEpsByDate) {
+    if (item.date < fiveYearsAgoStr) continue; // 5년 이내 데이터만
+    if (item.ttmEps <= 0) continue; // 양수 EPS만
+
+    // 해당 날짜 또는 가장 가까운 이전 날짜의 주가 찾기
+    let priceOnDate = priceMap[item.date];
+    if (!priceOnDate) {
+      // 정확한 날짜가 없으면 가장 가까운 날짜 찾기
+      const sortedDates = Object.keys(priceMap).sort();
+      for (let i = sortedDates.length - 1; i >= 0; i--) {
+        if (sortedDates[i] <= item.date) {
+          priceOnDate = priceMap[sortedDates[i]];
+          break;
+        }
+      }
+    }
+
+    if (priceOnDate && priceOnDate > 0) {
+      const per = priceOnDate / item.ttmEps;
+      // 비정상적인 PER 제외 (음수, 100 초과)
+      if (per > 0 && per < 100) {
+        perHistory.push(per);
+      }
+    }
+  }
+
+  // 5년 평균 PER 계산 (데이터 없으면 현재 PER 또는 기본값 15 사용)
+  let avgPER: number;
+  if (perHistory.length >= 4) {
+    // 이상치 제거: 상하위 10% 제외 후 평균
+    const sorted = [...perHistory].sort((a, b) => a - b);
+    const trimCount = Math.floor(sorted.length * 0.1);
+    const trimmed = sorted.slice(trimCount, sorted.length - trimCount);
+    avgPER = trimmed.length > 0
+      ? Math.round((trimmed.reduce((a, b) => a + b, 0) / trimmed.length) * 10) / 10
+      : fundamentals.pe ?? 15;
+  } else {
+    avgPER = fundamentals.pe ?? 15;
+  }
+
   // 펀더멘탈선: 분기별 데이터가 있으면 TTM EPS, 없으면 현재 EPS 사용
   const latestTtmEps = ttmEpsByDate.length > 0
     ? ttmEpsByDate[ttmEpsByDate.length - 1].ttmEps
     : currentEps;
 
-  // 펀더멘탈선 계산 (EPS × 섹터 PER)
+  // 펀더멘탈선 계산 (EPS × 5년 평균 PER)
   const fundamentalLineValue = latestTtmEps != null && latestTtmEps > 0
-    ? Math.round(latestTtmEps * basePER * 100) / 100
+    ? Math.round(latestTtmEps * avgPER * 100) / 100
     : null;
 
   const fundamentalLine = fundamentalLineValue != null ? {
     value: fundamentalLineValue,
-    per: basePER,
+    per: avgPER,
     eps: Math.round((latestTtmEps ?? 0) * 100) / 100,
   } : null;
 
-  // 가격 히스토리 (최근 2년, 차트용) + 펀더멘탈선 값 계산
-  const priceHistory = history.slice(0, 504).map(h => {
+  // 가격 히스토리 (최근 5년, 차트용) + 펀더멘탈선 값 계산
+  const priceHistory = history.slice(0, 1260).map(h => {
     // 해당 날짜에 적용할 TTM EPS 찾기
     let applicableEps = latestTtmEps;
 
@@ -499,7 +570,7 @@ export async function GET(
     }
 
     const fundValue = applicableEps != null && applicableEps > 0
-      ? Math.round(applicableEps * basePER * 100) / 100
+      ? Math.round(applicableEps * avgPER * 100) / 100
       : null;
 
     return {

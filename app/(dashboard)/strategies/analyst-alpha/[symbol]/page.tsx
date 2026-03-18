@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, use, useCallback, useRef } from 'react';
+import { useState, useEffect, use, useCallback, useRef, useMemo } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, RefreshCw, TrendingUp, AlertTriangle, BarChart3, Target, Info, Layers, Sparkles, BadgeDollarSign } from 'lucide-react';
@@ -44,12 +44,18 @@ interface Fundamentals {
   description: string;
 }
 
+interface DividendHistoryItem {
+  date: string;
+  amount: number;
+}
+
 interface DividendInfo {
   hasDividend: boolean;
   yield: number | null;
   perShare: number | null;
   exDate: string | null;
   frequency: string | null;
+  history: DividendHistoryItem[];
 }
 
 interface FundamentalLine {
@@ -270,7 +276,24 @@ function DividendCard({ info, fmtPrice, currency }: {
   fmtPrice: (n: number | null | undefined) => string;
   currency: string;
 }) {
-  if (!info.hasDividend) {
+  // 연도별로 배당 히스토리 그룹화
+  const { historyByYear, years, maxTotal } = useMemo(() => {
+    if (!info.history || info.history.length === 0) return { historyByYear: {}, years: [], maxTotal: 0 };
+    const grouped: Record<number, { total: number; count: number }> = {};
+    for (const item of info.history) {
+      const year = new Date(item.date).getFullYear();
+      if (!grouped[year]) {
+        grouped[year] = { total: 0, count: 0 };
+      }
+      grouped[year].total += item.amount;
+      grouped[year].count += 1;
+    }
+    const sortedYears = Object.keys(grouped).map(Number).sort((a, b) => a - b); // 오래된순 정렬 (차트용)
+    const max = Math.max(...Object.values(grouped).map(g => g.total));
+    return { historyByYear: grouped, years: sortedYears, maxTotal: max };
+  }, [info.history]);
+
+  if (!info.hasDividend && years.length === 0) {
     return (
       <div className="bg-white rounded-[24px] border border-gray-200 p-6">
         <div className="flex items-center gap-2 mb-4">
@@ -281,6 +304,7 @@ function DividendCard({ info, fmtPrice, currency }: {
       </div>
     );
   }
+
   return (
     <div className="bg-white rounded-[24px] border border-gray-200 p-6">
       <div className="flex items-center gap-2 mb-5">
@@ -292,7 +316,9 @@ function DividendCard({ info, fmtPrice, currency }: {
           </span>
         )}
       </div>
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+
+      {/* 현재 배당 정보 */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6">
         <div>
           <p className="text-xs text-gray-400 font-bold mb-1">배당 수익률</p>
           <p className="text-2xl font-black text-emerald-600">{info.yield != null ? `${info.yield.toFixed(2)}%` : 'N/A'}</p>
@@ -312,6 +338,64 @@ function DividendCard({ info, fmtPrice, currency }: {
           {info.exDate && <p className="text-[10px] text-gray-400 mt-0.5">{info.exDate}</p>}
         </div>
       </div>
+
+      {/* 연도별 바 차트 */}
+      {years.length > 0 && (
+        <div>
+          <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4">연간 배당금 추이</p>
+          <div className="flex items-end gap-2 h-40 px-2">
+            {years.map(year => {
+              const yearData = historyByYear[year];
+              const heightPct = maxTotal > 0 ? (yearData.total / maxTotal) * 100 : 0;
+              const isCurrentYear = year === new Date().getFullYear();
+              return (
+                <div
+                  key={year}
+                  className="flex-1 flex flex-col items-center gap-2 group min-w-[28px]"
+                >
+                  <div className="relative w-full h-full flex items-end justify-center">
+                    <div
+                      className={`w-full max-w-[48px] rounded-t-xl transition-all ${
+                        isCurrentYear ? 'bg-emerald-500' : 'bg-emerald-300 group-hover:bg-emerald-400'
+                      }`}
+                      style={{ height: `${Math.max(heightPct, 15)}%`, minHeight: '40px' }}
+                    />
+                    {/* 호버 툴팁 */}
+                    <div className="absolute bottom-full mb-2 hidden group-hover:block z-10">
+                      <div className="bg-gray-900 text-white text-xs font-bold px-3 py-1.5 rounded-lg whitespace-nowrap shadow-lg">
+                        {currency}{yearData.total.toFixed(currency === '₩' ? 0 : 2)}
+                        <span className="text-gray-400 ml-1.5">({yearData.count}회)</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex flex-col items-center">
+                    <span className={`text-xs font-bold ${isCurrentYear ? 'text-emerald-600' : 'text-gray-500'}`}>
+                      {String(year).slice(-2)}
+                    </span>
+                    <span className="text-[9px] text-gray-400">{yearData.count}회</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {/* 범례 */}
+          <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100">
+            <div className="flex items-center gap-4 text-[10px] text-gray-400">
+              <span className="flex items-center gap-1">
+                <div className="w-2 h-2 bg-emerald-500 rounded" />
+                올해
+              </span>
+              <span className="flex items-center gap-1">
+                <div className="w-2 h-2 bg-emerald-200 rounded" />
+                과거
+              </span>
+            </div>
+            <span className="text-[10px] text-gray-400">
+              최근 {years.length}년 기록
+            </span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -899,17 +983,34 @@ export default function AnalystAlphaDetailPage({ params }: { params: Promise<{ s
                 </div>
 
                 {data.fundamentalLine && (
-                  <div className="flex flex-wrap gap-4 mb-4 text-sm bg-gray-50 rounded-xl p-3">
+                  <div className="flex flex-wrap items-center gap-4 mb-4 text-sm bg-gray-50 rounded-xl p-3">
                     <div>
                       <span className="text-gray-500">현재가</span>
                       <span className="font-bold text-gray-900 ml-2">{fmtPrice(f.currentPrice)}</span>
                     </div>
-                    <div>
+                    <div className="relative group">
                       <span className="text-gray-500">펀더멘탈선</span>
                       <span className="font-bold text-gray-900 ml-2">{fmtPrice(data.fundamentalLine.value)}</span>
                       <span className="text-xs text-gray-400 ml-1">
                         (EPS {currency}{fmt(data.fundamentalLine.eps)} × PER {data.fundamentalLine.per}배)
                       </span>
+                      <Info className="inline-block h-3.5 w-3.5 text-gray-400 ml-1 cursor-help" />
+
+                      {/* 호버 툴팁 */}
+                      <div className="absolute left-0 top-full mt-2 hidden group-hover:block z-20 w-80">
+                        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 shadow-lg">
+                          <p className="text-[10px] font-black text-amber-700 uppercase tracking-wider mb-1.5">펀더멘탈선이란?</p>
+                          <p className="text-xs text-amber-800 leading-relaxed">
+                            <strong>적정 주가 = TTM EPS × 5년 평균 PER</strong>
+                          </p>
+                          <ul className="text-[11px] text-amber-700 mt-2 space-y-1">
+                            <li>• <strong>TTM EPS</strong>: 최근 4분기 주당순이익 합계</li>
+                            <li>• <strong>5년 평균 PER</strong>: 해당 종목의 5년간 평균 주가수익비율 ({data.fundamentalLine.per}배)</li>
+                            <li>• 주가가 펀더멘탈선 <strong>위</strong>면 고평가, <strong>아래</strong>면 저평가</li>
+                            <li>• 분기 실적마다 EPS 업데이트로 펀더멘탈선 변동</li>
+                          </ul>
+                        </div>
+                      </div>
                     </div>
                     <div>
                       {f.currentPrice > data.fundamentalLine.value ? (
