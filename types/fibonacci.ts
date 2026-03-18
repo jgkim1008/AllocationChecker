@@ -10,6 +10,7 @@ export interface FibonacciStock {
   fibonacciLevel: FibonacciLevel | null;
   fibonacciValue: number; // 0-1 사이 위치값
   distanceFromLevel: number; // 레벨과의 거리 (%)
+  changePercent: number | null; // 전일 대비 등락률 (%)
   marketCap: number;
   rank: number;
 }

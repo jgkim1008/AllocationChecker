@@ -102,12 +102,17 @@ async function updateStockData(symbol: string, name: string, market: 'US' | 'KR'
   let currentPrice = null;
   let yearHigh = null;
   let yearLow = null;
+  let previousClose = null;
+  let changePercent = null;
   let fetchedName = name;
 
   try {
     // Yahoo Finance 시도
     let ticker = cleanSymbol;
-    if (market === 'KR') ticker = symbol.includes('.KQ') ? `${cleanSymbol}.KQ` : `${cleanSymbol}.KS`;
+    // 지수(^로 시작)는 변환하지 않음
+    if (market === 'KR' && !cleanSymbol.startsWith('^')) {
+      ticker = symbol.includes('.KQ') ? `${cleanSymbol}.KQ` : `${cleanSymbol}.KS`;
+    }
 
     const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?range=1y&interval=1d`;
     const yahooRes = await fetch(yahooUrl, { 
@@ -122,11 +127,21 @@ async function updateStockData(symbol: string, name: string, market: 'US' | 'KR'
         const quote = result.indicators?.quote?.[0];
         const highs = (quote?.high ?? []).filter((h: any) => h !== null);
         const lows = (quote?.low ?? []).filter((l: any) => l !== null);
-        
+        const closes = (quote?.close ?? []).filter((c: any) => c !== null);
+
         currentPrice = meta.regularMarketPrice || meta.chartPreviousClose;
+        // 전일 종가: 차트 데이터의 마지막 이전 값 (더 정확함)
+        if (closes.length >= 2) {
+          previousClose = closes[closes.length - 2];
+        } else {
+          previousClose = meta.chartPreviousClose || meta.previousClose;
+        }
+        if (currentPrice && previousClose) {
+          changePercent = ((currentPrice - previousClose) / previousClose) * 100;
+        }
         if (highs.length > 0) yearHigh = Math.max(...highs);
         if (lows.length > 0) yearLow = Math.min(...lows);
-        
+
         // 이름이 기호와 같으면 야후에서 제공하는 이름 사용 시도
         if (fetchedName === cleanSymbol && meta.symbol) {
             // 야후는 이름을 메타데이터에 안 주는 경우가 많아 기존 이름 유지
@@ -158,6 +173,8 @@ async function updateStockData(symbol: string, name: string, market: 'US' | 'KR'
         current_price: Number(currentPrice),
         year_high: Number(yearHigh),
         year_low: Number(yearLow),
+        previous_close: previousClose ? Number(previousClose) : null,
+        change_percent: changePercent ? Number(changePercent.toFixed(2)) : null,
         last_fetched_at: new Date().toISOString()
       }, { onConflict: 'symbol' });
       console.log(`✅ [${market}] Updated: ${cleanSymbol}`);

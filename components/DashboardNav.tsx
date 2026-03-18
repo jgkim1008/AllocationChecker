@@ -1,6 +1,6 @@
 'use client';
 
-import { LogOut } from 'lucide-react';
+import { LogOut, ShieldCheck } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
@@ -12,12 +12,14 @@ const NAV_LINKS = [
   { href: '/backtesting', label: '백테스팅' },
 ];
 
+const ADMIN_USERNAME = 'rlawnsrjs100';
+
 export function DashboardNav() {
   const { user, logout } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
-
   const username = user?.email?.replace('@allocationchecker.local', '') ?? '';
+  const isAdmin = username === ADMIN_USERNAME;
 
   const handleLogout = async () => {
     await logout();
@@ -46,6 +48,19 @@ export function DashboardNav() {
                 </Link>
               );
             })}
+            {isAdmin && (
+              <Link
+                href="/admin"
+                className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                  pathname === '/admin'
+                    ? 'bg-amber-50 text-amber-700'
+                    : 'text-amber-600 hover:text-amber-700 hover:bg-amber-50'
+                }`}
+              >
+                <ShieldCheck className="h-3.5 w-3.5" />
+                관리자
+              </Link>
+            )}
           </nav>
         </div>
         <div className="flex items-center gap-3">

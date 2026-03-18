@@ -1,8 +1,12 @@
 'use client';
 
+import { useState, useMemo } from 'react';
 import Link from 'next/link';
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, ChevronUp, ChevronDown } from 'lucide-react';
 import type { FibonacciStock, FibonacciLevel } from '@/types/fibonacci';
+
+type SortKey = 'symbol' | 'currentPrice' | 'fibonacciLevel' | 'distanceFromLevel' | 'changePercent';
+type SortOrder = 'asc' | 'desc';
 
 interface FibonacciTableProps {
   stocks: FibonacciStock[];
@@ -79,7 +83,73 @@ function DistanceBadge({ distance }: { distance: number }) {
   );
 }
 
+function ChangeBadge({ change }: { change: number | null }) {
+  if (change === null) return <span className="text-gray-300">—</span>;
+  const color = change > 0 ? 'text-red-600' : change < 0 ? 'text-blue-600' : 'text-gray-500';
+  return (
+    <span className={`font-bold text-xs ${color}`}>
+      {change > 0 ? '+' : ''}{change.toFixed(2)}%
+    </span>
+  );
+}
+
+function SortIcon({ active, order }: { active: boolean; order: SortOrder }) {
+  if (!active) return <ChevronDown className="h-3 w-3 text-gray-300" />;
+  return order === 'asc'
+    ? <ChevronUp className="h-3 w-3 text-purple-600" />
+    : <ChevronDown className="h-3 w-3 text-purple-600" />;
+}
+
 export function FibonacciTable({ stocks, market }: FibonacciTableProps) {
+  const [sortKey, setSortKey] = useState<SortKey>('distanceFromLevel');
+  const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
+
+  const handleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortKey(key);
+      setSortOrder(key === 'changePercent' ? 'desc' : 'asc');
+    }
+  };
+
+  const sortedStocks = useMemo(() => {
+    return [...stocks].sort((a, b) => {
+      let aVal: number | string | null;
+      let bVal: number | string | null;
+
+      switch (sortKey) {
+        case 'symbol':
+          aVal = a.symbol;
+          bVal = b.symbol;
+          break;
+        case 'currentPrice':
+          aVal = a.currentPrice;
+          bVal = b.currentPrice;
+          break;
+        case 'fibonacciLevel':
+          aVal = a.fibonacciLevel ?? 999;
+          bVal = b.fibonacciLevel ?? 999;
+          break;
+        case 'distanceFromLevel':
+          aVal = Math.abs(a.distanceFromLevel);
+          bVal = Math.abs(b.distanceFromLevel);
+          break;
+        case 'changePercent':
+          aVal = a.changePercent ?? -999;
+          bVal = b.changePercent ?? -999;
+          break;
+        default:
+          return 0;
+      }
+
+      if (typeof aVal === 'string' && typeof bVal === 'string') {
+        return sortOrder === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+      }
+      return sortOrder === 'asc' ? (aVal as number) - (bVal as number) : (bVal as number) - (aVal as number);
+    });
+  }, [stocks, sortKey, sortOrder]);
+
   if (stocks.length === 0) {
     return (
       <div className="text-center py-10 text-sm text-gray-400">
@@ -93,16 +163,57 @@ export function FibonacciTable({ stocks, market }: FibonacciTableProps) {
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-gray-100 text-left">
-            <th className="px-5 py-3 text-[10px] font-black text-gray-400 uppercase tracking-widest">종목</th>
-            <th className="px-5 py-3 text-[10px] font-black text-gray-400 uppercase tracking-widest text-right">현재가</th>
+            <th
+              onClick={() => handleSort('symbol')}
+              className="px-5 py-3 text-[10px] font-black text-gray-400 uppercase tracking-widest cursor-pointer hover:text-gray-600 select-none"
+            >
+              <span className="flex items-center gap-1">
+                종목
+                <SortIcon active={sortKey === 'symbol'} order={sortOrder} />
+              </span>
+            </th>
+            <th
+              onClick={() => handleSort('currentPrice')}
+              className="px-5 py-3 text-[10px] font-black text-gray-400 uppercase tracking-widest text-right cursor-pointer hover:text-gray-600 select-none"
+            >
+              <span className="flex items-center justify-end gap-1">
+                현재가
+                <SortIcon active={sortKey === 'currentPrice'} order={sortOrder} />
+              </span>
+            </th>
+            <th
+              onClick={() => handleSort('changePercent')}
+              className="px-5 py-3 text-[10px] font-black text-gray-400 uppercase tracking-widest text-right cursor-pointer hover:text-gray-600 select-none"
+            >
+              <span className="flex items-center justify-end gap-1">
+                등락률
+                <SortIcon active={sortKey === 'changePercent'} order={sortOrder} />
+              </span>
+            </th>
             <th className="px-5 py-3 text-[10px] font-black text-gray-400 uppercase tracking-widest hidden md:table-cell">52주 레인지</th>
-            <th className="px-5 py-3 text-[10px] font-black text-gray-400 uppercase tracking-widest text-center">피보나치</th>
-            <th className="px-5 py-3 text-[10px] font-black text-gray-400 uppercase tracking-widest text-right hidden sm:table-cell">레벨 거리</th>
+            <th
+              onClick={() => handleSort('fibonacciLevel')}
+              className="px-5 py-3 text-[10px] font-black text-gray-400 uppercase tracking-widest text-center cursor-pointer hover:text-gray-600 select-none"
+            >
+              <span className="flex items-center justify-center gap-1">
+                피보나치
+                <SortIcon active={sortKey === 'fibonacciLevel'} order={sortOrder} />
+              </span>
+            </th>
+            <th
+              onClick={() => handleSort('distanceFromLevel')}
+              className="px-5 py-3 text-[10px] font-black text-gray-400 uppercase tracking-widest text-right hidden sm:table-cell cursor-pointer hover:text-gray-600 select-none"
+            >
+              <span className="flex items-center justify-end gap-1">
+                레벨 거리
+                <SortIcon active={sortKey === 'distanceFromLevel'} order={sortOrder} />
+              </span>
+            </th>
             <th className="px-4 py-3" />
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-50">
-          {stocks.map((stock) => {
+          {sortedStocks.map((stock) => {
             const meta = stock.fibonacciLevel != null ? LEVEL_COLOR[stock.fibonacciLevel] : null;
             return (
               <tr
@@ -130,6 +241,11 @@ export function FibonacciTable({ stocks, market }: FibonacciTableProps) {
                 {/* 현재가 */}
                 <td className="px-5 py-4 text-right">
                   <span className="font-black text-gray-900">{formatPrice(stock.currentPrice, market)}</span>
+                </td>
+
+                {/* 등락률 */}
+                <td className="px-5 py-4 text-right">
+                  <ChangeBadge change={stock.changePercent} />
                 </td>
 
                 {/* 레인지 바 */}

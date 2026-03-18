@@ -46,6 +46,7 @@ export async function analyzeStocksFromDB(market: 'US' | 'KR' | 'INDEX'): Promis
       fibonacciLevel: level,
       fibonacciValue: position,
       distanceFromLevel: distance,
+      changePercent: s.change_percent != null ? Number(s.change_percent) : null,
       marketCap: 0,
       rank: i + 1,
     });
