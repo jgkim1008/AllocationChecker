@@ -9,31 +9,40 @@ interface PriceData {
 }
 
 async function fetchUSStockHistory(symbol: string): Promise<PriceData[]> {
-  const apiKey = process.env.FMP_API_KEY;
-  if (!apiKey) return [];
-
   try {
-    const url = `https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=${symbol}&apikey=${apiKey}`;
-    const res = await fetch(url, { cache: 'no-store' });
+    // Yahoo Finance API 사용 (FMP API 키 불필요)
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=1y&interval=1d`;
+
+    const res = await fetch(url, {
+      cache: 'no-store',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      },
+    });
+
     if (!res.ok) return [];
 
     const data = await res.json();
-    if (!Array.isArray(data)) return [];
+    const chart = data?.chart?.result?.[0];
+    if (!chart) return [];
 
-    // 최근 1년 데이터만
-    const oneYearAgo = new Date();
-    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+    const timestamps = chart.timestamp ?? [];
+    const quote = chart.indicators?.quote?.[0];
+    if (!quote) return [];
 
-    return data
-      .filter((d: { date: string }) => new Date(d.date) >= oneYearAgo)
-      .map((d: { date: string; open: number; close: number; high: number; low: number }) => ({
-        date: d.date,
-        open: d.open,
-        high: d.high,
-        low: d.low,
-        price: d.close,
-      }))
-      .reverse();
+    const result: PriceData[] = [];
+    for (let i = 0; i < timestamps.length; i++) {
+      const open = quote.open?.[i];
+      const close = quote.close?.[i];
+      const high = quote.high?.[i];
+      const low = quote.low?.[i];
+      if (close == null || high == null || low == null) continue;
+
+      const date = new Date(timestamps[i] * 1000).toISOString().split('T')[0];
+      result.push({ date, open: open ?? close, high, low, price: close });
+    }
+
+    return result;
   } catch {
     return [];
   }
