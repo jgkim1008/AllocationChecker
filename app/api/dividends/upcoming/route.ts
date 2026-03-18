@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 
 export const dynamic = 'force-dynamic';
@@ -56,8 +56,16 @@ async function fetchDividendInfo(symbol: string, market: 'US' | 'KR'): Promise<{
   }
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const { searchParams } = new URL(request.url);
+    const yearParam = searchParams.get('year');
+    const monthParam = searchParams.get('month');
+
+    const now = new Date();
+    const targetYear = yearParam ? parseInt(yearParam) : now.getFullYear();
+    const targetMonth = monthParam ? parseInt(monthParam) : now.getMonth();
+
     const supabase = await createServiceClient();
 
     const { data: stocks, error } = await supabase
@@ -68,12 +76,9 @@ export async function GET() {
 
     if (error) throw error;
 
-    const now = new Date();
-    const currentMonth = now.getMonth();
-    const currentYear = now.getFullYear();
-
-    const thisMonthStart = new Date(currentYear, currentMonth, 1);
-    const nextMonthEnd = new Date(currentYear, currentMonth + 2, 0);
+    // 요청된 월 기준으로 전후 1개월씩 범위 설정
+    const rangeStart = new Date(targetYear, targetMonth - 1, 1);
+    const rangeEnd = new Date(targetYear, targetMonth + 2, 0);
 
     const results: DividendStock[] = [];
     const updates: { symbol: string; ex_dividend_date: string | null; dividend_yield: number | null; dividend_per_share: number | null }[] = [];
@@ -87,7 +92,7 @@ export async function GET() {
         let divYield = stock.dividend_yield;
         let divPerShare = stock.dividend_per_share;
 
-        if (!exDate || new Date(exDate) < thisMonthStart) {
+        if (!exDate || new Date(exDate) < rangeStart) {
           const info = await fetchDividendInfo(stock.symbol, stock.market as 'US' | 'KR');
           if (info) {
             exDate = info.exDividendDate;
@@ -107,7 +112,7 @@ export async function GET() {
 
         if (exDate) {
           const exDateObj = new Date(exDate);
-          if (exDateObj >= thisMonthStart && exDateObj <= nextMonthEnd) {
+          if (exDateObj >= rangeStart && exDateObj <= rangeEnd) {
             results.push({
               symbol: stock.symbol,
               name: stock.name,
@@ -137,8 +142,8 @@ export async function GET() {
     return NextResponse.json({
       stocks: results,
       period: {
-        start: thisMonthStart.toISOString().split('T')[0],
-        end: nextMonthEnd.toISOString().split('T')[0],
+        start: rangeStart.toISOString().split('T')[0],
+        end: rangeEnd.toISOString().split('T')[0],
       },
       totalStocksScanned: stocks.length,
       updatedAt: new Date().toISOString(),

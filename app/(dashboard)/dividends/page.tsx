@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { RefreshCw, Calendar, DollarSign, TrendingUp } from 'lucide-react';
+import { RefreshCw, Calendar, DollarSign, ChevronLeft, ChevronRight } from 'lucide-react';
 
 interface DividendStock {
   symbol: string;
@@ -64,16 +64,174 @@ function DaysUntilBadge({ days }: { days: number }) {
   return <span className="text-xs font-medium text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">D-{days}</span>;
 }
 
+// 캘린더 컴포넌트
+function DividendCalendar({
+  year,
+  month,
+  stocks,
+  onPrevMonth,
+  onNextMonth,
+}: {
+  year: number;
+  month: number;
+  stocks: DividendStock[];
+  onPrevMonth: () => void;
+  onNextMonth: () => void;
+}) {
+  const today = new Date();
+  const todayStr = today.toISOString().split('T')[0];
+
+  // 해당 월의 첫 날과 마지막 날
+  const firstDay = new Date(year, month, 1);
+  const lastDay = new Date(year, month + 1, 0);
+  const daysInMonth = lastDay.getDate();
+  const startDayOfWeek = firstDay.getDay();
+
+  // 배당락일 맵 생성
+  const dividendMap = useMemo(() => {
+    const map: Record<string, DividendStock[]> = {};
+    stocks.forEach(stock => {
+      const date = stock.exDividendDate;
+      if (!map[date]) map[date] = [];
+      map[date].push(stock);
+    });
+    return map;
+  }, [stocks]);
+
+  const weeks: (number | null)[][] = [];
+  let currentWeek: (number | null)[] = [];
+
+  // 첫 주 빈 칸
+  for (let i = 0; i < startDayOfWeek; i++) {
+    currentWeek.push(null);
+  }
+
+  // 날짜 채우기
+  for (let day = 1; day <= daysInMonth; day++) {
+    currentWeek.push(day);
+    if (currentWeek.length === 7) {
+      weeks.push(currentWeek);
+      currentWeek = [];
+    }
+  }
+
+  // 마지막 주 빈 칸
+  if (currentWeek.length > 0) {
+    while (currentWeek.length < 7) {
+      currentWeek.push(null);
+    }
+    weeks.push(currentWeek);
+  }
+
+  const monthNames = ['1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월', '11월', '12월'];
+  const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-200 p-5 mb-6">
+      {/* 월 네비게이션 */}
+      <div className="flex items-center justify-between mb-4">
+        <button
+          onClick={onPrevMonth}
+          className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+        >
+          <ChevronLeft className="h-5 w-5 text-gray-600" />
+        </button>
+        <h2 className="text-lg font-black text-gray-900">
+          {year}년 {monthNames[month]}
+        </h2>
+        <button
+          onClick={onNextMonth}
+          className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+        >
+          <ChevronRight className="h-5 w-5 text-gray-600" />
+        </button>
+      </div>
+
+      {/* 요일 헤더 */}
+      <div className="grid grid-cols-7 mb-2">
+        {dayNames.map((name, i) => (
+          <div
+            key={name}
+            className={`text-center text-xs font-bold py-2 ${
+              i === 0 ? 'text-red-400' : i === 6 ? 'text-blue-400' : 'text-gray-400'
+            }`}
+          >
+            {name}
+          </div>
+        ))}
+      </div>
+
+      {/* 날짜 그리드 */}
+      <div className="grid grid-cols-7 gap-1">
+        {weeks.flat().map((day, idx) => {
+          if (day === null) {
+            return <div key={idx} className="h-16 sm:h-20" />;
+          }
+
+          const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+          const isToday = dateStr === todayStr;
+          const dividends = dividendMap[dateStr] || [];
+          const hasDividend = dividends.length > 0;
+          const dayOfWeek = (startDayOfWeek + day - 1) % 7;
+
+          return (
+            <div
+              key={idx}
+              className={`h-16 sm:h-20 p-1 rounded-lg border transition-colors ${
+                isToday
+                  ? 'border-emerald-400 bg-emerald-50'
+                  : hasDividend
+                  ? 'border-orange-200 bg-orange-50'
+                  : 'border-transparent hover:bg-gray-50'
+              }`}
+            >
+              <div className={`text-xs font-bold mb-1 ${
+                dayOfWeek === 0 ? 'text-red-500' : dayOfWeek === 6 ? 'text-blue-500' : 'text-gray-700'
+              }`}>
+                {day}
+              </div>
+              {hasDividend && (
+                <div className="space-y-0.5 overflow-hidden">
+                  {dividends.slice(0, 2).map(stock => (
+                    <div
+                      key={stock.symbol}
+                      className={`text-[9px] sm:text-[10px] font-bold px-1 py-0.5 rounded truncate ${
+                        stock.market === 'US' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'
+                      }`}
+                      title={`${stock.symbol} - ${stock.name}`}
+                    >
+                      {stock.symbol}
+                    </div>
+                  ))}
+                  {dividends.length > 2 && (
+                    <div className="text-[9px] text-gray-400 font-medium">
+                      +{dividends.length - 2}개
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function DividendsPage() {
   const [data, setData] = useState<DividendData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchData = async () => {
+  const now = new Date();
+  const [viewYear, setViewYear] = useState(now.getFullYear());
+  const [viewMonth, setViewMonth] = useState(now.getMonth());
+
+  const fetchData = async (year: number, month: number) => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/dividends/upcoming');
+      const res = await fetch(`/api/dividends/upcoming?year=${year}&month=${month}`);
       if (!res.ok) throw new Error('Failed to fetch');
       const json = await res.json();
       setData(json);
@@ -85,18 +243,35 @@ export default function DividendsPage() {
   };
 
   useEffect(() => {
-    fetchData();
-  }, []);
+    fetchData(viewYear, viewMonth);
+  }, [viewYear, viewMonth]);
 
-  const thisMonth = data?.stocks.filter(s => {
-    const date = new Date(s.exDividendDate);
-    return date.getMonth() === new Date().getMonth();
-  }) ?? [];
+  const handlePrevMonth = () => {
+    if (viewMonth === 0) {
+      setViewYear(viewYear - 1);
+      setViewMonth(11);
+    } else {
+      setViewMonth(viewMonth - 1);
+    }
+  };
 
-  const nextMonth = data?.stocks.filter(s => {
-    const date = new Date(s.exDividendDate);
-    return date.getMonth() === (new Date().getMonth() + 1) % 12;
-  }) ?? [];
+  const handleNextMonth = () => {
+    if (viewMonth === 11) {
+      setViewYear(viewYear + 1);
+      setViewMonth(0);
+    } else {
+      setViewMonth(viewMonth + 1);
+    }
+  };
+
+  // 현재 보고 있는 월의 종목만 필터링
+  const currentMonthStocks = useMemo(() => {
+    if (!data) return [];
+    return data.stocks.filter(s => {
+      const date = new Date(s.exDividendDate);
+      return date.getFullYear() === viewYear && date.getMonth() === viewMonth;
+    });
+  }, [data, viewYear, viewMonth]);
 
   return (
     <div className="min-h-screen bg-gray-50/50">
@@ -110,11 +285,11 @@ export default function DividendsPage() {
             </div>
             <h1 className="text-3xl font-black text-gray-900 tracking-tight">배당락일 캘린더</h1>
             <p className="text-gray-500 text-sm mt-1">
-              추적 중인 종목의 이번 달 · 다음 달 배당락일
+              추적 중인 종목의 배당락일 확인
             </p>
           </div>
           <button
-            onClick={fetchData}
+            onClick={() => fetchData(viewYear, viewMonth)}
             disabled={loading}
             className="flex items-center gap-2 bg-gray-900 hover:bg-emerald-600 disabled:bg-gray-300 text-white font-bold text-sm px-4 py-2.5 rounded-xl transition-all"
           >
@@ -124,44 +299,48 @@ export default function DividendsPage() {
         </div>
 
         {/* 로딩 */}
-        {loading && (
+        {loading && !data && (
           <div className="space-y-3">
-            {[1, 2, 3, 4].map(i => (
-              <div key={i} className="h-20 bg-white rounded-2xl border border-gray-200 animate-pulse" />
+            <div className="h-80 bg-white rounded-2xl border border-gray-200 animate-pulse" />
+            {[1, 2, 3].map(i => (
+              <div key={i} className="h-16 bg-white rounded-2xl border border-gray-200 animate-pulse" />
             ))}
           </div>
         )}
 
         {/* 에러 */}
         {error && (
-          <div className="bg-red-50 border border-red-200 rounded-2xl p-5">
+          <div className="bg-red-50 border border-red-200 rounded-2xl p-5 mb-6">
             <p className="text-sm font-bold text-red-700">{error}</p>
           </div>
         )}
 
         {/* 데이터 */}
-        {!loading && data && (
+        {data && (
           <>
+            {/* 캘린더 */}
+            <DividendCalendar
+              year={viewYear}
+              month={viewMonth}
+              stocks={data.stocks}
+              onPrevMonth={handlePrevMonth}
+              onNextMonth={handleNextMonth}
+            />
+
             {/* 요약 */}
-            <div className="grid grid-cols-3 gap-4 mb-8">
-              <div className="bg-white rounded-2xl border border-gray-200 p-5">
-                <p className="text-xs text-gray-400 font-bold mb-1">스캔 종목</p>
-                <p className="text-2xl font-black text-gray-900">{data.totalStocksScanned}개</p>
-              </div>
-              <div className="bg-emerald-50 rounded-2xl border border-emerald-200 p-5">
-                <p className="text-xs text-emerald-600 font-bold mb-1">이번 달</p>
-                <p className="text-2xl font-black text-emerald-700">{thisMonth.length}개</p>
-              </div>
-              <div className="bg-blue-50 rounded-2xl border border-blue-200 p-5">
-                <p className="text-xs text-blue-600 font-bold mb-1">다음 달</p>
-                <p className="text-2xl font-black text-blue-700">{nextMonth.length}개</p>
-              </div>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-black text-gray-900">
+                {viewYear}년 {viewMonth + 1}월 배당락 종목
+              </h3>
+              <span className="text-sm font-bold text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full">
+                {currentMonthStocks.length}개
+              </span>
             </div>
 
-            {data.stocks.length === 0 ? (
+            {currentMonthStocks.length === 0 ? (
               <div className="bg-white rounded-2xl border border-gray-200 p-10 text-center">
                 <DollarSign className="h-12 w-12 text-gray-300 mx-auto mb-3" />
-                <p className="text-gray-500 font-bold">이번 달 · 다음 달 배당락일이 있는 종목이 없습니다.</p>
+                <p className="text-gray-500 font-bold">이 달에 배당락일이 있는 종목이 없습니다.</p>
               </div>
             ) : (
               <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
@@ -176,7 +355,7 @@ export default function DividendsPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
-                    {data.stocks.map((stock) => {
+                    {currentMonthStocks.map((stock) => {
                       const daysUntil = getDaysUntil(stock.exDividendDate);
                       return (
                         <tr key={stock.symbol} className="hover:bg-emerald-50/30 transition-colors">
