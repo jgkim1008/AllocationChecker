@@ -1,20 +1,14 @@
 'use client';
 
-import {
-  ComposedChart,
-  Area,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  ReferenceLine,
-} from 'recharts';
+import { useRef, useEffect } from 'react';
+import { createChart, ColorType, CrosshairMode, CandlestickSeries, LineSeries } from 'lightweight-charts';
 
 interface PriceData {
   date: string;
   price: number;
+  high: number;
+  low: number;
+  open?: number;
 }
 
 interface FibLevels {
@@ -72,104 +66,129 @@ export function FibonacciChart({
   yearLow,
   market,
 }: FibonacciChartProps) {
-  const padding = (yearHigh - yearLow) * 0.05;
-  const yMin = yearLow - padding;
-  const yMax = yearHigh + padding;
+  const chartContainerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!chartContainerRef.current || history.length < 2) return;
+
+    // 데이터 정렬 (오래된 순)
+    const sortedData = [...history].sort((a, b) => a.date.localeCompare(b.date));
+
+    const chart = createChart(chartContainerRef.current, {
+      width: chartContainerRef.current.clientWidth,
+      height: 450,
+      layout: {
+        background: { type: ColorType.Solid, color: '#ffffff' },
+        textColor: '#6b7280',
+        fontFamily: 'Inter, system-ui, sans-serif',
+      },
+      grid: {
+        vertLines: { color: '#f3f4f6' },
+        horzLines: { color: '#f3f4f6' },
+      },
+      crosshair: { mode: CrosshairMode.Normal },
+      rightPriceScale: {
+        borderColor: '#e5e7eb',
+        scaleMargins: { top: 0.1, bottom: 0.1 },
+      },
+      timeScale: {
+        borderColor: '#e5e7eb',
+        timeVisible: false,
+      },
+    });
+
+    // 캔들스틱 차트
+    const candleSeries = chart.addSeries(CandlestickSeries, {
+      upColor: '#ef4444',
+      downColor: '#3b82f6',
+      borderUpColor: '#ef4444',
+      borderDownColor: '#3b82f6',
+      wickUpColor: '#ef4444',
+      wickDownColor: '#3b82f6',
+    });
+
+    const candleData = sortedData.map((h) => ({
+      time: h.date as string,
+      open: h.open ?? h.price,
+      high: h.high,
+      low: h.low,
+      close: h.price,
+    }));
+    candleSeries.setData(candleData);
+
+    // 피보나치 레벨 라인들
+    const fibLevelEntries = Object.entries(fibLevels) as [keyof FibLevels, number][];
+
+    fibLevelEntries.forEach(([level, price]) => {
+      const lineSeries = chart.addSeries(LineSeries, {
+        color: FIB_COLORS[level],
+        lineWidth: level === '0.618' ? 2 : 1,
+        lineStyle: level === '0.618' ? 0 : 2, // 0 = solid, 2 = dashed
+        priceLineVisible: false,
+        lastValueVisible: true,
+        crosshairMarkerVisible: false,
+      });
+
+      // 전체 기간에 걸쳐 수평선 생성
+      const lineData = [
+        { time: sortedData[0].date as string, value: price },
+        { time: sortedData[sortedData.length - 1].date as string, value: price },
+      ];
+      lineSeries.setData(lineData);
+    });
+
+    // 리사이즈 핸들러
+    const handleResize = () => {
+      if (chartContainerRef.current) {
+        chart.applyOptions({ width: chartContainerRef.current.clientWidth });
+      }
+    };
+    window.addEventListener('resize', handleResize);
+
+    chart.timeScale().fitContent();
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      chart.remove();
+    };
+  }, [history, fibLevels]);
+
+  if (history.length < 2) {
+    return (
+      <div className="h-[450px] flex items-center justify-center text-gray-400">
+        차트 데이터가 부족합니다.
+      </div>
+    );
+  }
 
   return (
     <div className="w-full">
-      <ResponsiveContainer width="100%" height={400}>
-        <ComposedChart data={history} margin={{ top: 20, right: 80, left: 20, bottom: 20 }}>
-          <defs>
-            <linearGradient id="priceGradient" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3} />
-              <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0} />
-            </linearGradient>
-          </defs>
+      <div ref={chartContainerRef} className="w-full" />
 
-          <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-
-          <XAxis
-            dataKey="date"
-            tick={{ fontSize: 11, fill: '#6b7280' }}
-            tickFormatter={(date) => {
-              const d = new Date(date);
-              return `${d.getMonth() + 1}/${d.getDate()}`;
-            }}
-            interval="preserveStartEnd"
-            minTickGap={50}
-          />
-
-          <YAxis
-            domain={[yMin, yMax]}
-            tick={{ fontSize: 11, fill: '#6b7280' }}
-            tickFormatter={(v) => (market === 'US' ? `$${v.toFixed(0)}` : `${(v / 1000).toFixed(0)}K`)}
-            width={60}
-          />
-
-          <Tooltip
-            content={({ active, payload }) => {
-              if (!active || !payload || payload.length === 0) return null;
-              const data = payload[0].payload as PriceData;
-              return (
-                <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-3">
-                  <p className="text-xs text-gray-500">{data.date}</p>
-                  <p className="text-sm font-bold text-gray-900">
-                    {formatPrice(data.price, market)}
-                  </p>
-                </div>
-              );
-            }}
-          />
-
-          {/* 피보나치 레벨 라인 */}
-          {Object.entries(fibLevels).map(([level, price]) => (
-            <ReferenceLine
-              key={level}
-              y={price}
-              stroke={FIB_COLORS[level]}
-              strokeDasharray={level === '0.618' ? '0' : '5 5'}
-              strokeWidth={level === '0.618' ? 2 : 1}
-              label={{
-                value: `${FIB_LABELS[level]} ${formatPrice(price, market)}`,
-                position: 'right',
-                fill: FIB_COLORS[level],
-                fontSize: 10,
+      {/* 피보나치 레벨 범례 */}
+      <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2">
+        {(['0', '0.236', '0.382', '0.5', '0.618', '0.786', '0.886', '1'] as const).map((level) => (
+          <div
+            key={level}
+            className={`flex items-center gap-2 px-3 py-2 rounded-lg ${
+              level === '0.618' ? 'bg-green-50 border border-green-200' : 'bg-gray-50'
+            }`}
+          >
+            <div
+              className="w-4 h-0.5"
+              style={{
+                backgroundColor: FIB_COLORS[level],
+                borderStyle: level === '0.618' ? 'solid' : 'dashed',
               }}
             />
-          ))}
-
-          {/* 가격 영역 */}
-          <Area
-            type="monotone"
-            dataKey="price"
-            stroke="#8b5cf6"
-            strokeWidth={2}
-            fill="url(#priceGradient)"
-          />
-
-          {/* 가격 라인 */}
-          <Line
-            type="monotone"
-            dataKey="price"
-            stroke="#8b5cf6"
-            strokeWidth={2}
-            dot={false}
-          />
-        </ComposedChart>
-      </ResponsiveContainer>
-
-      {/* 레벨 범례 */}
-      <div className="mt-4 flex flex-wrap gap-3 justify-center">
-        {['0.382', '0.5', '0.618', '0.886'].map((level) => (
-          <div key={level} className="flex items-center gap-1.5">
-            <div
-              className="w-3 h-0.5"
-              style={{ backgroundColor: FIB_COLORS[level] }}
-            />
-            <span className="text-xs text-gray-600">
-              {FIB_LABELS[level]}: {formatPrice(fibLevels[level as keyof FibLevels], market)}
-            </span>
+            <div className="flex-1 min-w-0">
+              <p className={`text-xs font-medium truncate ${level === '0.618' ? 'text-green-700' : 'text-gray-600'}`}>
+                {FIB_LABELS[level]}
+              </p>
+              <p className={`text-xs font-bold ${level === '0.618' ? 'text-green-800' : 'text-gray-900'}`}>
+                {formatPrice(fibLevels[level], market)}
+              </p>
+            </div>
           </div>
         ))}
       </div>

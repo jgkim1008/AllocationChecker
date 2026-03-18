@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 
 interface PriceData {
   date: string;
-  price: number;
+  open: number;
   high: number;
   low: number;
+  price: number;
 }
 
 async function fetchUSStockHistory(symbol: string): Promise<PriceData[]> {
@@ -25,11 +26,12 @@ async function fetchUSStockHistory(symbol: string): Promise<PriceData[]> {
 
     return data
       .filter((d: { date: string }) => new Date(d.date) >= oneYearAgo)
-      .map((d: { date: string; close: number; high: number; low: number }) => ({
+      .map((d: { date: string; open: number; close: number; high: number; low: number }) => ({
         date: d.date,
-        price: d.close,
+        open: d.open,
         high: d.high,
         low: d.low,
+        price: d.close,
       }))
       .reverse();
   } catch {
@@ -39,9 +41,18 @@ async function fetchUSStockHistory(symbol: string): Promise<PriceData[]> {
 
 async function fetchKRStockHistory(symbol: string): Promise<PriceData[]> {
   try {
-    // 코스피 시도
-    let yahooSymbol = `${symbol}.KS`;
-    let url = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSymbol}?range=1y&interval=1d`;
+    // 인덱스 심볼(^KS11, ^KQ11 등)인 경우 그대로 사용
+    let yahooSymbol: string;
+    if (symbol.startsWith('^') || symbol.startsWith('%5E')) {
+      yahooSymbol = symbol.startsWith('%5E') ? `^${symbol.slice(3)}` : symbol;
+    } else if (symbol.endsWith('.KS') || symbol.endsWith('.KQ')) {
+      yahooSymbol = symbol;
+    } else {
+      // 일반 종목: 코스피 시도
+      yahooSymbol = `${symbol}.KS`;
+    }
+
+    let url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?range=1y&interval=1d`;
 
     let res = await fetch(url, {
       cache: 'no-store',
@@ -50,10 +61,10 @@ async function fetchKRStockHistory(symbol: string): Promise<PriceData[]> {
       },
     });
 
-    if (!res.ok) {
-      // 코스닥 시도
+    // 코스피 실패 시 코스닥 시도 (인덱스가 아닌 경우만)
+    if (!res.ok && !symbol.startsWith('^') && !symbol.startsWith('%5E')) {
       yahooSymbol = `${symbol}.KQ`;
-      url = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSymbol}?range=1y&interval=1d`;
+      url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?range=1y&interval=1d`;
       res = await fetch(url, {
         cache: 'no-store',
         headers: {
@@ -62,6 +73,8 @@ async function fetchKRStockHistory(symbol: string): Promise<PriceData[]> {
       });
       if (!res.ok) return [];
     }
+
+    if (!res.ok) return [];
 
     const data = await res.json();
     const chart = data?.chart?.result?.[0];
@@ -73,13 +86,14 @@ async function fetchKRStockHistory(symbol: string): Promise<PriceData[]> {
 
     const result: PriceData[] = [];
     for (let i = 0; i < timestamps.length; i++) {
+      const open = quote.open?.[i];
       const close = quote.close?.[i];
       const high = quote.high?.[i];
       const low = quote.low?.[i];
       if (close == null || high == null || low == null) continue;
 
       const date = new Date(timestamps[i] * 1000).toISOString().split('T')[0];
-      result.push({ date, price: close, high, low });
+      result.push({ date, open: open ?? close, high, low, price: close });
     }
 
     return result;
