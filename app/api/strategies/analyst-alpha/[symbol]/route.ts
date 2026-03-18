@@ -305,10 +305,10 @@ export async function GET(
   const upperSymbol = symbol.toUpperCase();
   const market = (request.nextUrl.searchParams.get('market') ?? 'US') as 'US' | 'KR';
 
-  // 한국 주식은 .KS 접미사 필요 (없으면 추가)
-  const yahooTicker = market === 'KR' && !upperSymbol.endsWith('.KS') && !upperSymbol.endsWith('.KQ')
-    ? `${upperSymbol}.KS`
-    : upperSymbol;
+  // KR: .KS 접미사 / US: BRK.B → BRK-B (Yahoo Finance dot-to-dash)
+  const yahooTicker = market === 'KR'
+    ? (!upperSymbol.endsWith('.KS') && !upperSymbol.endsWith('.KQ') ? `${upperSymbol}.KS` : upperSymbol)
+    : upperSymbol.replace(/\./g, '-');
 
   // 1. 기본 가격 정보 (Yahoo v8/chart — 인증 불필요)
   const chartRes = await fetch(
