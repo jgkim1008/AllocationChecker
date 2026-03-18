@@ -278,7 +278,7 @@ export default function FibonacciPage() {
                 <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
                   <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
                     <h3 className="font-bold text-gray-900 text-sm">
-                      한국 시총 상위 30
+                      한국 시총 상위 50
                       <span className="ml-2 text-xs font-normal text-gray-500">
                         {filteredKR.length}개 종목
                       </span>

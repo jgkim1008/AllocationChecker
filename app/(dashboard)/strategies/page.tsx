@@ -28,7 +28,7 @@ const STRATEGIES = [
   {
     id: 'inverse-alignment',
     title: '이평선 역배열 전략',
-    description: '주요 우량주(미국 100위, 한국 30위) 전체를 대상으로, 448, 224, 112일선 역배열 상태에서 60일선을 돌파하며 강력한 추세 전환이 일어나는 종목을 포착합니다.',
+    description: '주요 우량주(미국 100위, 한국 50위) 전체를 대상으로, 448, 224, 112일선 역배열 상태에서 60일선을 돌파하며 강력한 추세 전환이 일어나는 종목을 포착합니다.',
     icon: TrendingUp,
     href: '/strategies/inverse-alignment',
     color: 'bg-orange-50 text-orange-600',
