@@ -200,7 +200,7 @@ function DividendCalendar({
                       }`}
                       title={`${stock.symbol} - ${stock.name}`}
                     >
-                      {stock.symbol}
+                      {stock.name.length > 6 ? stock.name.slice(0, 6) + '..' : stock.name}
                     </div>
                   ))}
                   {dividends.length > 2 && (
