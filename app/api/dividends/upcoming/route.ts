@@ -12,6 +12,7 @@ interface DividendStock {
   dividendYield: number | null;
   dividendPerShare: number | null;
   currentPrice: number | null;
+  dividendFrequency: string | null;
 }
 
 // Yahoo Finance에서 배당 정보 가져오기
@@ -70,7 +71,7 @@ export async function GET(request: NextRequest) {
 
     const { data: stocks, error } = await supabase
       .from('stocks')
-      .select('symbol, name, market, current_price, ex_dividend_date, dividend_yield, dividend_per_share')
+      .select('symbol, name, market, current_price, ex_dividend_date, dividend_yield, dividend_per_share, dividend_frequency')
       .not('symbol', 'like', '^%')
       .order('symbol');
 
@@ -121,6 +122,7 @@ export async function GET(request: NextRequest) {
               dividendYield: divYield,
               dividendPerShare: divPerShare,
               currentPrice: stock.current_price,
+              dividendFrequency: stock.dividend_frequency ?? null,
             });
           }
         }

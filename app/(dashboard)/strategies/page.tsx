@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { TrendingUp, Infinity, BarChart3, ChevronRight, Activity, Zap } from 'lucide-react';
+import { TrendingUp, Infinity, BarChart3, ChevronRight, Activity, Zap, BookOpen } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
 const STRATEGIES = [
@@ -24,6 +24,16 @@ const STRATEGIES = [
     color: 'bg-purple-50 text-purple-600',
     tag: '활성',
     tagColor: 'bg-purple-100 text-purple-700',
+  },
+  {
+    id: 'ma-alignment',
+    title: '이평선 정배열 전략',
+    description: '주요 우량주(미국 100위, 한국 50위) 전체를 대상으로 20일, 60일, 120일 이동평균선이 단기>중기>장기 순서로 정배열될 때 상승 추세 진입 신호를 포착합니다.',
+    icon: TrendingUp,
+    href: '/strategies/ma-alignment',
+    color: 'bg-green-50 text-green-600',
+    tag: '신규',
+    tagColor: 'bg-green-100 text-green-700',
   },
   {
     id: 'inverse-alignment',
@@ -54,6 +64,16 @@ const STRATEGIES = [
     color: 'bg-green-50 text-green-600',
     tag: '검증',
     tagColor: 'bg-green-100 text-green-700',
+  },
+  {
+    id: 'value-scan',
+    title: '오일전문가 가치투자',
+    description: '가속화 장기투자 법칙 기반 100점 채점표 — S&P 500 + KOSPI 200 전종목을 저PER·고배당·자사주소각·브랜드 기준으로 주 1회 자동 스캔합니다.',
+    icon: BookOpen,
+    href: '/strategies/value-scan',
+    color: 'bg-amber-50 text-amber-700',
+    tag: '신규',
+    tagColor: 'bg-amber-100 text-amber-700',
   },
   {
     id: 'new-strategy',

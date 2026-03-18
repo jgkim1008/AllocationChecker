@@ -11,6 +11,10 @@
     {
       "path": "/api/fibonacci/scan?market=INDEX",
       "schedule": "30 7 * * 1-5"
+    },
+    {
+      "path": "/api/strategies/value-scan/run",
+      "schedule": "0 0 * * 0"
     }
   ]
 }

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { RefreshCw, Calendar, DollarSign, ChevronLeft, ChevronRight } from 'lucide-react';
+import { RefreshCw, Calendar, DollarSign, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, X } from 'lucide-react';
 
 interface DividendStock {
   symbol: string;
@@ -12,6 +12,25 @@ interface DividendStock {
   dividendYield: number | null;
   dividendPerShare: number | null;
   currentPrice: number | null;
+  dividendFrequency: string | null;
+}
+
+const FREQ_LABEL: Record<string, { label: string; className: string }> = {
+  monthly:     { label: '월',   className: 'bg-blue-50 text-blue-600' },
+  quarterly:   { label: '분기', className: 'bg-emerald-50 text-emerald-600' },
+  'semi-annual': { label: '반기', className: 'bg-purple-50 text-purple-600' },
+  annual:      { label: '년',   className: 'bg-orange-50 text-orange-600' },
+};
+
+function FreqBadge({ freq }: { freq: string | null }) {
+  if (!freq) return <span className="text-gray-300">-</span>;
+  const f = FREQ_LABEL[freq];
+  if (!f) return <span className="text-gray-300">-</span>;
+  return (
+    <span className={`text-[10px] font-black px-1.5 py-0.5 rounded ${f.className}`}>
+      {f.label}
+    </span>
+  );
 }
 
 interface DividendData {
@@ -80,6 +99,7 @@ function DividendCalendar({
 }) {
   const today = new Date();
   const todayStr = today.toISOString().split('T')[0];
+  const [expandedDate, setExpandedDate] = useState<string | null>(null);
 
   // 해당 월의 첫 날과 마지막 날
   const firstDay = new Date(year, month, 1);
@@ -126,95 +146,192 @@ function DividendCalendar({
   const monthNames = ['1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월', '11월', '12월'];
   const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
 
+  const expandedStocks = expandedDate ? (dividendMap[expandedDate] || []) : [];
+
   return (
-    <div className="bg-white rounded-2xl border border-gray-200 p-5 mb-6">
-      {/* 월 네비게이션 */}
-      <div className="flex items-center justify-between mb-4">
-        <button
-          onClick={onPrevMonth}
-          className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-        >
-          <ChevronLeft className="h-5 w-5 text-gray-600" />
-        </button>
-        <h2 className="text-lg font-black text-gray-900">
-          {year}년 {monthNames[month]}
-        </h2>
-        <button
-          onClick={onNextMonth}
-          className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-        >
-          <ChevronRight className="h-5 w-5 text-gray-600" />
-        </button>
-      </div>
-
-      {/* 요일 헤더 */}
-      <div className="grid grid-cols-7 mb-2">
-        {dayNames.map((name, i) => (
-          <div
-            key={name}
-            className={`text-center text-xs font-bold py-2 ${
-              i === 0 ? 'text-red-400' : i === 6 ? 'text-blue-400' : 'text-gray-400'
-            }`}
+    <>
+      <div className="bg-white rounded-2xl border border-gray-200 p-5 mb-6">
+        {/* 월 네비게이션 */}
+        <div className="flex items-center justify-between mb-4">
+          <button
+            onClick={onPrevMonth}
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
           >
-            {name}
-          </div>
-        ))}
-      </div>
+            <ChevronLeft className="h-5 w-5 text-gray-600" />
+          </button>
+          <h2 className="text-lg font-black text-gray-900">
+            {year}년 {monthNames[month]}
+          </h2>
+          <button
+            onClick={onNextMonth}
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+          >
+            <ChevronRight className="h-5 w-5 text-gray-600" />
+          </button>
+        </div>
 
-      {/* 날짜 그리드 */}
-      <div className="grid grid-cols-7 gap-1">
-        {weeks.flat().map((day, idx) => {
-          if (day === null) {
-            return <div key={idx} className="h-16 sm:h-20" />;
-          }
-
-          const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-          const isToday = dateStr === todayStr;
-          const dividends = dividendMap[dateStr] || [];
-          const hasDividend = dividends.length > 0;
-          const dayOfWeek = (startDayOfWeek + day - 1) % 7;
-
-          return (
+        {/* 요일 헤더 */}
+        <div className="grid grid-cols-7 mb-2">
+          {dayNames.map((name, i) => (
             <div
-              key={idx}
-              className={`h-16 sm:h-20 p-1 rounded-lg border transition-colors ${
-                isToday
-                  ? 'border-emerald-400 bg-emerald-50'
-                  : hasDividend
-                  ? 'border-orange-200 bg-orange-50'
-                  : 'border-transparent hover:bg-gray-50'
+              key={name}
+              className={`text-center text-xs font-bold py-2 ${
+                i === 0 ? 'text-red-400' : i === 6 ? 'text-blue-400' : 'text-gray-400'
               }`}
             >
-              <div className={`text-xs font-bold mb-1 ${
-                dayOfWeek === 0 ? 'text-red-500' : dayOfWeek === 6 ? 'text-blue-500' : 'text-gray-700'
-              }`}>
-                {day}
-              </div>
-              {hasDividend && (
-                <div className="space-y-0.5 overflow-hidden">
-                  {dividends.slice(0, 2).map(stock => (
-                    <div
-                      key={stock.symbol}
-                      className={`text-[9px] sm:text-[10px] font-bold px-1 py-0.5 rounded truncate ${
-                        stock.market === 'US' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'
-                      }`}
-                      title={`${stock.symbol} - ${stock.name}`}
-                    >
-                      {stock.name.length > 6 ? stock.name.slice(0, 6) + '..' : stock.name}
-                    </div>
-                  ))}
-                  {dividends.length > 2 && (
-                    <div className="text-[9px] text-gray-400 font-medium">
-                      +{dividends.length - 2}개
-                    </div>
-                  )}
-                </div>
-              )}
+              {name}
             </div>
-          );
-        })}
+          ))}
+        </div>
+
+        {/* 날짜 그리드 */}
+        <div className="grid grid-cols-7 gap-1">
+          {weeks.flat().map((day, idx) => {
+            if (day === null) {
+              return <div key={idx} className="h-16 sm:h-20" />;
+            }
+
+            const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+            const isToday = dateStr === todayStr;
+            const dividends = dividendMap[dateStr] || [];
+            const hasDividend = dividends.length > 0;
+            const dayOfWeek = (startDayOfWeek + day - 1) % 7;
+            const hiddenCount = dividends.length - 2;
+
+            return (
+              <div
+                key={idx}
+                className={`h-16 sm:h-20 p-1 rounded-lg border transition-colors overflow-hidden ${
+                  isToday
+                    ? 'border-emerald-400 bg-emerald-50'
+                    : hasDividend
+                    ? 'border-orange-200 bg-orange-50'
+                    : 'border-transparent hover:bg-gray-50'
+                }`}
+              >
+                <div className={`text-xs font-bold mb-1 ${
+                  dayOfWeek === 0 ? 'text-red-500' : dayOfWeek === 6 ? 'text-blue-500' : 'text-gray-700'
+                }`}>
+                  {day}
+                </div>
+                {hasDividend && (
+                  <div className="space-y-0.5 overflow-hidden">
+                    {dividends.slice(0, 2).map(stock => (
+                      <div
+                        key={stock.symbol}
+                        className={`text-[9px] sm:text-[10px] font-bold px-1 py-0.5 rounded truncate ${
+                          stock.market === 'US' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'
+                        }`}
+                        title={`${stock.symbol} - ${stock.name}`}
+                      >
+                        {stock.market === 'US'
+                          ? stock.symbol
+                          : stock.name.length > 5 ? stock.name.slice(0, 5) + '.' : stock.name}
+                      </div>
+                    ))}
+                    {hiddenCount > 0 && (
+                      <div
+                        onClick={() => setExpandedDate(dateStr)}
+                        className="text-[9px] text-orange-500 font-bold hover:text-orange-700 cursor-pointer truncate leading-tight"
+                      >
+                        +{hiddenCount}개 더보기
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
-    </div>
+
+      {/* 팝업 오버레이 */}
+      {expandedDate && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm"
+          onClick={() => setExpandedDate(null)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl border border-gray-100 p-5 w-full max-w-sm"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-black text-gray-900 text-base">
+                {expandedDate.slice(5).replace('-', '/')} 배당락 종목
+                <span className="ml-2 text-xs font-bold text-orange-500 bg-orange-50 px-2 py-0.5 rounded-full">
+                  {expandedStocks.length}개
+                </span>
+              </h3>
+              <button
+                onClick={() => setExpandedDate(null)}
+                className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X className="h-4 w-4 text-gray-500" />
+              </button>
+            </div>
+            <div className="space-y-2 max-h-80 overflow-y-auto">
+              {expandedStocks.map(stock => (
+                <Link
+                  key={stock.symbol}
+                  href={`/strategies/analyst-alpha/${stock.symbol}?market=${stock.market}`}
+                  onClick={() => setExpandedDate(null)}
+                  className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-gray-50 transition-colors"
+                >
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-black shrink-0 ${
+                    stock.market === 'US' ? 'bg-blue-50 text-blue-600' : 'bg-green-50 text-green-700'
+                  }`}>
+                    {stock.market}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-black text-gray-900 text-sm">{stock.symbol}</p>
+                    <p className="text-xs text-gray-400 truncate">{stock.name}</p>
+                  </div>
+                  {stock.dividendYield != null && (
+                    <span className="text-xs font-bold text-emerald-600 shrink-0">
+                      {stock.dividendYield.toFixed(2)}%
+                    </span>
+                  )}
+                </Link>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+type SortKey = 'exDividendDate' | 'symbol' | 'dividendYield' | 'currentPrice';
+
+function SortHeader({
+  label,
+  sortKey,
+  currentKey,
+  dir,
+  onSort,
+  className,
+}: {
+  label: string;
+  sortKey: SortKey;
+  currentKey: SortKey;
+  dir: 'asc' | 'desc';
+  onSort: (key: SortKey) => void;
+  className?: string;
+}) {
+  const active = sortKey === currentKey;
+  return (
+    <th
+      className={`px-4 py-3 text-xs font-black text-gray-400 uppercase cursor-pointer select-none hover:text-gray-700 transition-colors ${className ?? ''}`}
+      onClick={() => onSort(sortKey)}
+    >
+      <span className="inline-flex items-center gap-1">
+        {label}
+        <span className="flex flex-col">
+          <ChevronUp className={`h-2.5 w-2.5 -mb-0.5 ${active && dir === 'asc' ? 'text-emerald-500' : 'text-gray-300'}`} />
+          <ChevronDown className={`h-2.5 w-2.5 ${active && dir === 'desc' ? 'text-emerald-500' : 'text-gray-300'}`} />
+        </span>
+      </span>
+    </th>
   );
 }
 
@@ -222,6 +339,8 @@ export default function DividendsPage() {
   const [data, setData] = useState<DividendData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [sortKey, setSortKey] = useState<SortKey>('exDividendDate');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
 
   const now = new Date();
   const [viewYear, setViewYear] = useState(now.getFullYear());
@@ -264,14 +383,70 @@ export default function DividendsPage() {
     }
   };
 
-  // 현재 보고 있는 월의 종목만 필터링
+  const handleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortKey(key);
+      setSortDir('asc');
+    }
+  };
+
+  // 현재 보고 있는 월의 종목만 필터링 + 정렬
   const currentMonthStocks = useMemo(() => {
     if (!data) return [];
-    return data.stocks.filter(s => {
+    const filtered = data.stocks.filter(s => {
       const date = new Date(s.exDividendDate);
       return date.getFullYear() === viewYear && date.getMonth() === viewMonth;
     });
-  }, [data, viewYear, viewMonth]);
+
+    return [...filtered].sort((a, b) => {
+      // 배당락일 정렬: 오늘 기준으로 미래(가까운 순) → 오늘 → 과거(가까운 순)
+      if (sortKey === 'exDividendDate') {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const aDate = new Date(a.exDividendDate);
+        const bDate = new Date(b.exDividendDate);
+        const aDiff = aDate.getTime() - today.getTime(); // 양수=미래, 음수=과거
+        const bDiff = bDate.getTime() - today.getTime();
+        const aFuture = aDiff >= 0;
+        const bFuture = bDiff >= 0;
+
+        if (sortDir === 'asc') {
+          // 기본: 미래(가까운 순) 먼저, 과거는 뒤에(가까운 순)
+          if (aFuture && !bFuture) return -1;
+          if (!aFuture && bFuture) return 1;
+          return aDate.getTime() - bDate.getTime();
+        } else {
+          // 내림차순: 먼 미래 먼저, 과거는 오래된 순
+          if (aFuture && !bFuture) return -1;
+          if (!aFuture && bFuture) return 1;
+          return bDate.getTime() - aDate.getTime();
+        }
+      }
+
+      let aVal: string | number | null;
+      let bVal: string | number | null;
+
+      if (sortKey === 'symbol') {
+        aVal = a.symbol;
+        bVal = b.symbol;
+      } else if (sortKey === 'dividendYield') {
+        aVal = a.dividendYield;
+        bVal = b.dividendYield;
+      } else {
+        aVal = a.currentPrice;
+        bVal = b.currentPrice;
+      }
+
+      if (aVal == null && bVal == null) return 0;
+      if (aVal == null) return 1;
+      if (bVal == null) return -1;
+
+      const cmp = aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+  }, [data, viewYear, viewMonth, sortKey, sortDir]);
 
   return (
     <div className="min-h-screen bg-gray-50/50">
@@ -347,11 +522,40 @@ export default function DividendsPage() {
                 <table className="w-full text-sm">
                   <thead className="bg-gray-50 border-b border-gray-100">
                     <tr>
-                      <th className="text-left px-5 py-3 text-xs font-black text-gray-400 uppercase">종목</th>
-                      <th className="text-center px-4 py-3 text-xs font-black text-gray-400 uppercase">배당락일</th>
+                      <SortHeader
+                        label="종목"
+                        sortKey="symbol"
+                        currentKey={sortKey}
+                        dir={sortDir}
+                        onSort={handleSort}
+                        className="text-left px-5"
+                      />
+                      <SortHeader
+                        label="배당락일"
+                        sortKey="exDividendDate"
+                        currentKey={sortKey}
+                        dir={sortDir}
+                        onSort={handleSort}
+                        className="text-center"
+                      />
                       <th className="text-center px-4 py-3 text-xs font-black text-gray-400 uppercase hidden sm:table-cell">D-Day</th>
-                      <th className="text-right px-5 py-3 text-xs font-black text-gray-400 uppercase hidden md:table-cell">배당수익률</th>
-                      <th className="text-right px-5 py-3 text-xs font-black text-gray-400 uppercase hidden md:table-cell">현재가</th>
+                      <th className="text-center px-4 py-3 text-xs font-black text-gray-400 uppercase hidden sm:table-cell">주기</th>
+                      <SortHeader
+                        label="배당수익률"
+                        sortKey="dividendYield"
+                        currentKey={sortKey}
+                        dir={sortDir}
+                        onSort={handleSort}
+                        className="text-right px-5 hidden md:table-cell"
+                      />
+                      <SortHeader
+                        label="현재가"
+                        sortKey="currentPrice"
+                        currentKey={sortKey}
+                        dir={sortDir}
+                        onSort={handleSort}
+                        className="text-right px-5 hidden md:table-cell"
+                      />
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
@@ -380,6 +584,9 @@ export default function DividendsPage() {
                           </td>
                           <td className="px-4 py-4 text-center hidden sm:table-cell">
                             <DaysUntilBadge days={daysUntil} />
+                          </td>
+                          <td className="px-4 py-4 text-center hidden sm:table-cell">
+                            <FreqBadge freq={stock.dividendFrequency} />
                           </td>
                           <td className="px-5 py-4 text-right hidden md:table-cell">
                             {stock.dividendYield != null ? (
