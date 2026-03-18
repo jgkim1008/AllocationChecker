@@ -64,6 +64,14 @@ interface FundamentalLine {
   eps: number;
 }
 
+interface FibonacciLevels {
+  levels: { level: string; price: number }[];
+  currentLevel: string;
+  currentPercent: number;
+  support: { level: string; price: number } | null;
+  resistance: { level: string; price: number } | null;
+}
+
 interface PriceHistoryItem {
   date: string;
   open: number;
@@ -82,6 +90,7 @@ interface AnalystAlphaData {
   monteCarlo: MonteCarloResult | null;
   dividendInfo: DividendInfo | null;
   fundamentalLine: FundamentalLine | null;
+  fibonacciLevels: FibonacciLevels | null;
   priceHistory: PriceHistoryItem[];
   updatedAt: string;
 }
@@ -640,14 +649,29 @@ function InvestmentAnalysis({ f, monte, currency, fmtPrice }: {
   );
 }
 
+// ─── 피보나치 레벨 색상 ─────────────────────────
+const FIB_COLORS: Record<string, string> = {
+  '0': '#22c55e',
+  '23.6': '#f97316',
+  '38.2': '#3b82f6',
+  '50': '#8b5cf6',
+  '61.8': '#16a34a',
+  '78.6': '#14b8a6',
+  '100': '#ef4444',
+};
+
 // ─── 펀더멘탈선 차트 (Lightweight Charts) ─────
 function FundamentalChart({
   priceHistory,
   fundamentalLine,
+  fibonacciLevels,
+  showFibonacci,
   currency,
 }: {
   priceHistory: PriceHistoryItem[];
   fundamentalLine: FundamentalLine | null;
+  fibonacciLevels: FibonacciLevels | null;
+  showFibonacci: boolean;
   currency: string;
 }) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
@@ -702,7 +726,22 @@ function FundamentalChart({
     }));
     candleSeries.setData(candleData);
 
-    // 2. 펀더멘탈선 (검은색 굵은 선)
+    // 2. 피보나치 레벨 (토글 시)
+    if (showFibonacci && fibonacciLevels) {
+      for (const { level, price } of fibonacciLevels.levels) {
+        const isGoldenRatio = level === '61.8';
+        candleSeries.createPriceLine({
+          price,
+          color: FIB_COLORS[level] ?? '#9ca3af',
+          lineWidth: isGoldenRatio ? 2 : 1,
+          lineStyle: isGoldenRatio ? 0 : 2, // solid : dashed
+          axisLabelVisible: true,
+          title: `${level}%`,
+        });
+      }
+    }
+
+    // 3. 펀더멘탈선 (검은색 굵은 선)
     const fundSeries = chart.addSeries(LineSeries, {
       color: '#000000',
       lineWidth: 3,
@@ -717,7 +756,7 @@ function FundamentalChart({
       fundSeries.setData(fundData);
     }
 
-    // 3. 이동평균선들
+    // 4. 이동평균선들
     const calcMA = (data: typeof sortedData, period: number) => {
       const result: { time: string; value: number }[] = [];
       for (let i = period - 1; i < data.length; i++) {
@@ -746,7 +785,7 @@ function FundamentalChart({
     const ma120Series = chart.addSeries(LineSeries, { color: '#60a5fa', lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
     ma120Series.setData(calcMA(sortedData, 120));
 
-    // 4. 거래량 차트
+    // 5. 거래량 차트
     const volumeSeries = chart.addSeries(HistogramSeries, {
       priceFormat: { type: 'volume' },
       priceScaleId: 'volume',
@@ -777,7 +816,7 @@ function FundamentalChart({
       window.removeEventListener('resize', handleResize);
       chart.remove();
     };
-  }, [priceHistory]);
+  }, [priceHistory, showFibonacci, fibonacciLevels]);
 
   if (priceHistory.length < 10) return null;
 
@@ -823,6 +862,7 @@ export default function AnalystAlphaDetailPage({ params }: { params: Promise<{ s
   const [data, setData] = useState<AnalystAlphaData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showFibonacci, setShowFibonacci] = useState(true);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -1029,8 +1069,114 @@ export default function AnalystAlphaDetailPage({ params }: { params: Promise<{ s
                 <FundamentalChart
                   priceHistory={data.priceHistory}
                   fundamentalLine={data.fundamentalLine}
+                  fibonacciLevels={data.fibonacciLevels}
+                  showFibonacci={showFibonacci}
                   currency={currency}
                 />
+              </div>
+            )}
+
+            {/* 피보나치 레벨 요약 */}
+            {data.fibonacciLevels && (
+              <div className="bg-white rounded-[24px] border border-gray-200 p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <TrendingUp className="h-4 w-4 text-indigo-500" />
+                    <h2 className="font-black text-gray-900">피보나치 되돌림</h2>
+                    <span className="text-[10px] text-gray-400 font-medium">52주 고/저 기준</span>
+                  </div>
+                  <button
+                    onClick={() => setShowFibonacci(!showFibonacci)}
+                    className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-colors ${
+                      showFibonacci
+                        ? 'bg-indigo-100 text-indigo-700'
+                        : 'bg-gray-100 text-gray-500'
+                    }`}
+                  >
+                    차트 {showFibonacci ? 'ON' : 'OFF'}
+                  </button>
+                </div>
+
+                {/* 현재 위치 시각화 */}
+                <div className="mb-4">
+                  <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
+                    <span>52주 저가</span>
+                    <span>52주 고가</span>
+                  </div>
+                  <div className="relative h-8 bg-gradient-to-r from-green-100 via-yellow-100 to-red-100 rounded-lg">
+                    {/* 피보나치 레벨 마커 */}
+                    {data.fibonacciLevels.levels.map(({ level, price }) => {
+                      const pct = parseFloat(level);
+                      return (
+                        <div
+                          key={level}
+                          className="absolute top-0 h-full w-px bg-gray-400 opacity-50"
+                          style={{ left: `${pct}%` }}
+                          title={`${level}%: ${fmtPrice(price)}`}
+                        />
+                      );
+                    })}
+                    {/* 현재가 마커 */}
+                    <div
+                      className="absolute top-1/2 -translate-y-1/2 w-4 h-4 bg-indigo-600 rounded-full border-2 border-white shadow-lg"
+                      style={{ left: `${Math.min(100, Math.max(0, data.fibonacciLevels.currentPercent))}%`, transform: 'translate(-50%, -50%)' }}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between text-xs mt-1">
+                    <span className="text-green-600 font-bold">{fmtPrice(data.fibonacciLevels.levels[0]?.price)}</span>
+                    <span className="text-indigo-600 font-black">현재 {data.fibonacciLevels.currentPercent}%</span>
+                    <span className="text-red-600 font-bold">{fmtPrice(data.fibonacciLevels.levels[6]?.price)}</span>
+                  </div>
+                </div>
+
+                {/* 지지/저항 */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-green-50 rounded-xl p-3">
+                    <p className="text-[10px] font-black text-green-700 uppercase tracking-wider mb-1">지지선</p>
+                    {data.fibonacciLevels.support ? (
+                      <>
+                        <p className="text-lg font-black text-green-700">{fmtPrice(data.fibonacciLevels.support.price)}</p>
+                        <p className="text-xs text-green-600">{data.fibonacciLevels.support.level}% 레벨</p>
+                      </>
+                    ) : (
+                      <p className="text-sm text-green-600">52주 저가 근처</p>
+                    )}
+                  </div>
+                  <div className="bg-red-50 rounded-xl p-3">
+                    <p className="text-[10px] font-black text-red-700 uppercase tracking-wider mb-1">저항선</p>
+                    {data.fibonacciLevels.resistance ? (
+                      <>
+                        <p className="text-lg font-black text-red-700">{fmtPrice(data.fibonacciLevels.resistance.price)}</p>
+                        <p className="text-xs text-red-600">{data.fibonacciLevels.resistance.level}% 레벨</p>
+                      </>
+                    ) : (
+                      <p className="text-sm text-red-600">52주 고가 근처</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* 레벨 상세 (접히는 형태) */}
+                <details className="mt-4">
+                  <summary className="text-xs text-gray-500 font-bold cursor-pointer hover:text-gray-700">
+                    모든 레벨 보기
+                  </summary>
+                  <div className="mt-2 grid grid-cols-4 sm:grid-cols-7 gap-2">
+                    {data.fibonacciLevels.levels.map(({ level, price }) => {
+                      const isNear = level === data.fibonacciLevels!.currentLevel;
+                      return (
+                        <div
+                          key={level}
+                          className={`text-center p-2 rounded-lg ${isNear ? 'bg-indigo-100 ring-2 ring-indigo-400' : 'bg-gray-50'}`}
+                        >
+                          <p className={`text-[10px] font-black ${isNear ? 'text-indigo-700' : 'text-gray-500'}`}>{level}%</p>
+                          <p className={`text-xs font-bold ${isNear ? 'text-indigo-900' : 'text-gray-700'}`}>
+                            {fmtPrice(price)}
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </details>
               </div>
             )}
 

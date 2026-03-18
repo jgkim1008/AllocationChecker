@@ -584,6 +584,64 @@ export async function GET(
     };
   });
 
+  // 8. 피보나치 레벨 계산 (52주 고가/저가 기준)
+  const yearHigh = fundamentals.yearHigh;
+  const yearLow = fundamentals.yearLow;
+
+  let fibonacciLevels: {
+    levels: { level: string; price: number }[];
+    currentLevel: string;
+    currentPercent: number;
+    support: { level: string; price: number } | null;
+    resistance: { level: string; price: number } | null;
+  } | null = null;
+
+  if (yearHigh != null && yearLow != null && yearHigh > yearLow) {
+    const range = yearHigh - yearLow;
+    const fibLevels = [
+      { level: '0', pct: 0 },
+      { level: '23.6', pct: 0.236 },
+      { level: '38.2', pct: 0.382 },
+      { level: '50', pct: 0.5 },
+      { level: '61.8', pct: 0.618 },
+      { level: '78.6', pct: 0.786 },
+      { level: '100', pct: 1 },
+    ];
+
+    const levels = fibLevels.map(f => ({
+      level: f.level,
+      price: Math.round((yearLow + range * f.pct) * 100) / 100,
+    }));
+
+    // 현재가 위치 계산
+    const currentPct = (currentPrice - yearLow) / range;
+    const currentPctRounded = Math.round(currentPct * 1000) / 10;
+
+    // 가장 가까운 레벨 찾기
+    let closestLevel = '0';
+    let minDiff = Math.abs(currentPct - 0);
+    for (const f of fibLevels) {
+      const diff = Math.abs(currentPct - f.pct);
+      if (diff < minDiff) {
+        minDiff = diff;
+        closestLevel = f.level;
+      }
+    }
+
+    // 지지선 (현재가 아래 가장 가까운 레벨)
+    const support = levels.filter(l => l.price < currentPrice).pop() ?? null;
+    // 저항선 (현재가 위 가장 가까운 레벨)
+    const resistance = levels.find(l => l.price > currentPrice) ?? null;
+
+    fibonacciLevels = {
+      levels,
+      currentLevel: closestLevel,
+      currentPercent: currentPctRounded,
+      support,
+      resistance,
+    };
+  }
+
   return NextResponse.json({
     symbol: upperSymbol,
     fundamentals,
@@ -592,6 +650,7 @@ export async function GET(
     monteCarlo: monte,
     dividendInfo,
     fundamentalLine,
+    fibonacciLevels,
     priceHistory,
     updatedAt: new Date().toISOString(),
   });
