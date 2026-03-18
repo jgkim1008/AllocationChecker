@@ -223,7 +223,7 @@ export function FibonacciTable({ stocks, market }: FibonacciTableProps) {
                 {/* 종목 */}
                 <td className="px-5 py-4">
                   <Link
-                    href={`/strategies/fibonacci/${stock.symbol}?market=${market}&name=${encodeURIComponent(stock.name)}`}
+                    href={`/strategies/fibonacci/${encodeURIComponent(stock.symbol)}?market=${market}&name=${encodeURIComponent(stock.name)}`}
                     className="flex items-center gap-3"
                   >
                     <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-[10px] font-black shrink-0 ${
@@ -277,7 +277,7 @@ export function FibonacciTable({ stocks, market }: FibonacciTableProps) {
 
                 {/* 화살표 */}
                 <td className="px-4 py-4">
-                  <Link href={`/strategies/fibonacci/${stock.symbol}?market=${market}&name=${encodeURIComponent(stock.name)}`}>
+                  <Link href={`/strategies/fibonacci/${encodeURIComponent(stock.symbol)}?market=${market}&name=${encodeURIComponent(stock.name)}`}>
                     <div className="w-7 h-7 rounded-xl bg-gray-50 group-hover:bg-purple-600 flex items-center justify-center transition-colors">
                       <ChevronRight className="h-3.5 w-3.5 text-gray-400 group-hover:text-white transition-colors" />
                     </div>
