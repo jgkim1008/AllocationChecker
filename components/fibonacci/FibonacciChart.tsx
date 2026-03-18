@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useEffect } from 'react';
-import { createChart, ColorType, CrosshairMode, CandlestickSeries, LineSeries } from 'lightweight-charts';
+import { createChart, ColorType, CrosshairMode, CandlestickSeries } from 'lightweight-charts';
 
 interface PriceData {
   date: string;
@@ -35,21 +35,21 @@ const FIB_COLORS: Record<string, string> = {
   '0.236': '#f97316',
   '0.382': '#3b82f6',
   '0.5': '#8b5cf6',
-  '0.618': '#22c55e',
+  '0.618': '#16a34a',
   '0.786': '#14b8a6',
   '0.886': '#f59e0b',
   '1': '#22c55e',
 };
 
 const FIB_LABELS: Record<string, string> = {
-  '0': '0% (저점)',
+  '0': '0%',
   '0.236': '23.6%',
   '0.382': '38.2%',
   '0.5': '50%',
-  '0.618': '61.8% (황금비)',
+  '0.618': '61.8%',
   '0.786': '78.6%',
   '0.886': '88.6%',
-  '1': '100% (고점)',
+  '1': '100%',
 };
 
 function formatPrice(price: number, market: 'US' | 'KR'): string {
@@ -76,7 +76,7 @@ export function FibonacciChart({
 
     const chart = createChart(chartContainerRef.current, {
       width: chartContainerRef.current.clientWidth,
-      height: 450,
+      height: 500,
       layout: {
         background: { type: ColorType.Solid, color: '#ffffff' },
         textColor: '#6b7280',
@@ -89,7 +89,7 @@ export function FibonacciChart({
       crosshair: { mode: CrosshairMode.Normal },
       rightPriceScale: {
         borderColor: '#e5e7eb',
-        scaleMargins: { top: 0.1, bottom: 0.1 },
+        scaleMargins: { top: 0.05, bottom: 0.05 },
       },
       timeScale: {
         borderColor: '#e5e7eb',
@@ -116,25 +116,21 @@ export function FibonacciChart({
     }));
     candleSeries.setData(candleData);
 
-    // 피보나치 레벨 라인들
+    // 피보나치 레벨 Price Lines 추가
     const fibLevelEntries = Object.entries(fibLevels) as [keyof FibLevels, number][];
 
     fibLevelEntries.forEach(([level, price]) => {
-      const lineSeries = chart.addSeries(LineSeries, {
-        color: FIB_COLORS[level],
-        lineWidth: level === '0.618' ? 2 : 1,
-        lineStyle: level === '0.618' ? 0 : 2, // 0 = solid, 2 = dashed
-        priceLineVisible: false,
-        lastValueVisible: true,
-        crosshairMarkerVisible: false,
-      });
+      const isGoldenRatio = level === '0.618';
+      const isKeyLevel = ['0', '0.382', '0.5', '0.618', '1'].includes(level);
 
-      // 전체 기간에 걸쳐 수평선 생성
-      const lineData = [
-        { time: sortedData[0].date as string, value: price },
-        { time: sortedData[sortedData.length - 1].date as string, value: price },
-      ];
-      lineSeries.setData(lineData);
+      candleSeries.createPriceLine({
+        price: price,
+        color: FIB_COLORS[level],
+        lineWidth: isGoldenRatio ? 2 : 1,
+        lineStyle: isGoldenRatio ? 0 : 2, // 0 = solid, 2 = dashed
+        axisLabelVisible: isKeyLevel,
+        title: FIB_LABELS[level],
+      });
     });
 
     // 리사이즈 핸들러
@@ -155,7 +151,7 @@ export function FibonacciChart({
 
   if (history.length < 2) {
     return (
-      <div className="h-[450px] flex items-center justify-center text-gray-400">
+      <div className="h-[500px] flex items-center justify-center text-gray-400">
         차트 데이터가 부족합니다.
       </div>
     );
@@ -175,15 +171,14 @@ export function FibonacciChart({
             }`}
           >
             <div
-              className="w-4 h-0.5"
+              className="w-4 h-1"
               style={{
                 backgroundColor: FIB_COLORS[level],
-                borderStyle: level === '0.618' ? 'solid' : 'dashed',
               }}
             />
             <div className="flex-1 min-w-0">
               <p className={`text-xs font-medium truncate ${level === '0.618' ? 'text-green-700' : 'text-gray-600'}`}>
-                {FIB_LABELS[level]}
+                {FIB_LABELS[level]} {level === '0.618' && '(황금비)'}
               </p>
               <p className={`text-xs font-bold ${level === '0.618' ? 'text-green-800' : 'text-gray-900'}`}>
                 {formatPrice(fibLevels[level], market)}
