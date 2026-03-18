@@ -7,6 +7,7 @@ import { useAuth } from '@/components/AuthProvider';
 
 const NAV_LINKS = [
   { href: '/portfolio', label: '포트폴리오' },
+  { href: '/dividends', label: '배당캘린더' },
   { href: '/investors', label: '기관투자자' },
   { href: '/strategies', label: '전략' },
   { href: '/backtesting', label: '백테스팅' },
