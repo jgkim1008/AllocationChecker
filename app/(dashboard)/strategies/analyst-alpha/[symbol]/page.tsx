@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useEffect, use, useCallback } from 'react';
+import { useState, useEffect, use, useCallback, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, RefreshCw, TrendingUp, AlertTriangle, BarChart3, Target, Info, Layers, Sparkles, BadgeDollarSign } from 'lucide-react';
 import { PremiumGate } from '@/components/PremiumGate';
+import { createChart, ColorType, CrosshairMode, CandlestickSeries, LineSeries, HistogramSeries } from 'lightweight-charts';
 
 interface MonteCarloResult {
   currentPrice: number;
@@ -51,6 +52,22 @@ interface DividendInfo {
   frequency: string | null;
 }
 
+interface FundamentalLine {
+  value: number;
+  per: number;
+  eps: number;
+}
+
+interface PriceHistoryItem {
+  date: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  fundamentalValue: number | null;
+}
+
 interface AnalystAlphaData {
   symbol: string;
   fundamentals: Fundamentals;
@@ -58,6 +75,8 @@ interface AnalystAlphaData {
   priceTarget: PriceTarget | null;
   monteCarlo: MonteCarloResult | null;
   dividendInfo: DividendInfo | null;
+  fundamentalLine: FundamentalLine | null;
+  priceHistory: PriceHistoryItem[];
   updatedAt: string;
 }
 
@@ -537,6 +556,150 @@ function InvestmentAnalysis({ f, monte, currency, fmtPrice }: {
   );
 }
 
+// ─── 펀더멘탈선 차트 (Lightweight Charts) ─────
+function FundamentalChart({
+  priceHistory,
+  fundamentalLine,
+  currency,
+}: {
+  priceHistory: PriceHistoryItem[];
+  fundamentalLine: FundamentalLine | null;
+  currency: string;
+}) {
+  const chartContainerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!chartContainerRef.current || priceHistory.length < 10) return;
+
+    // 데이터 정렬 및 중복 제거 (오래된 순)
+    const sortedData = [...priceHistory]
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .filter((h, i, arr) => i === 0 || h.date !== arr[i - 1].date);
+
+    const chart = createChart(chartContainerRef.current, {
+      width: chartContainerRef.current.clientWidth,
+      height: 400,
+      layout: {
+        background: { type: ColorType.Solid, color: '#ffffff' },
+        textColor: '#6b7280',
+        fontFamily: 'Inter, system-ui, sans-serif',
+      },
+      grid: {
+        vertLines: { color: '#f3f4f6' },
+        horzLines: { color: '#f3f4f6' },
+      },
+      crosshair: { mode: CrosshairMode.Normal },
+      rightPriceScale: {
+        borderColor: '#e5e7eb',
+        scaleMargins: { top: 0.1, bottom: 0.2 },
+      },
+      timeScale: {
+        borderColor: '#e5e7eb',
+        timeVisible: false,
+      },
+    });
+
+    // 1. 캔들스틱 차트
+    const candleSeries = chart.addSeries(CandlestickSeries, {
+      upColor: '#ef4444',
+      downColor: '#3b82f6',
+      borderUpColor: '#ef4444',
+      borderDownColor: '#3b82f6',
+      wickUpColor: '#ef4444',
+      wickDownColor: '#3b82f6',
+    });
+
+    const candleData = sortedData.map(h => ({
+      time: h.date as string,
+      open: h.open,
+      high: h.high,
+      low: h.low,
+      close: h.close,
+    }));
+    candleSeries.setData(candleData);
+
+    // 2. 펀더멘탈선 (검은색 굵은 선)
+    const fundSeries = chart.addSeries(LineSeries, {
+      color: '#000000',
+      lineWidth: 3,
+      priceLineVisible: false,
+      lastValueVisible: true,
+    });
+
+    const fundData = sortedData
+      .filter(h => h.fundamentalValue !== null)
+      .map(h => ({ time: h.date as string, value: h.fundamentalValue! }));
+    if (fundData.length > 0) {
+      fundSeries.setData(fundData);
+    }
+
+    // 3. 이동평균선들
+    const calcMA = (data: typeof sortedData, period: number) => {
+      const result: { time: string; value: number }[] = [];
+      for (let i = period - 1; i < data.length; i++) {
+        let sum = 0;
+        for (let j = 0; j < period; j++) {
+          sum += data[i - j].close;
+        }
+        result.push({ time: data[i].date, value: sum / period });
+      }
+      return result;
+    };
+
+    // MA5 (빨간색)
+    const ma5Series = chart.addSeries(LineSeries, { color: '#f472b6', lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
+    ma5Series.setData(calcMA(sortedData, 5));
+
+    // MA20 (노란색)
+    const ma20Series = chart.addSeries(LineSeries, { color: '#fbbf24', lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
+    ma20Series.setData(calcMA(sortedData, 20));
+
+    // MA60 (녹색)
+    const ma60Series = chart.addSeries(LineSeries, { color: '#34d399', lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
+    ma60Series.setData(calcMA(sortedData, 60));
+
+    // MA120 (파란색)
+    const ma120Series = chart.addSeries(LineSeries, { color: '#60a5fa', lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
+    ma120Series.setData(calcMA(sortedData, 120));
+
+    // 4. 거래량 차트
+    const volumeSeries = chart.addSeries(HistogramSeries, {
+      priceFormat: { type: 'volume' },
+      priceScaleId: 'volume',
+    });
+
+    chart.priceScale('volume').applyOptions({
+      scaleMargins: { top: 0.85, bottom: 0 },
+    });
+
+    const volumeData = sortedData.map(h => ({
+      time: h.date as string,
+      value: h.volume,
+      color: h.close >= h.open ? 'rgba(239, 68, 68, 0.5)' : 'rgba(59, 130, 246, 0.5)',
+    }));
+    volumeSeries.setData(volumeData);
+
+    // 리사이즈 핸들러
+    const handleResize = () => {
+      if (chartContainerRef.current) {
+        chart.applyOptions({ width: chartContainerRef.current.clientWidth });
+      }
+    };
+    window.addEventListener('resize', handleResize);
+
+    chart.timeScale().fitContent();
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      chart.remove();
+    };
+  }, [priceHistory]);
+
+  if (priceHistory.length < 10) return null;
+
+  return <div ref={chartContainerRef} className="w-full" />;
+}
+
 function MonteCarloChart({ monte }: { monte: MonteCarloResult }) {
   const days = monte.p50Path?.length ?? 0;
   if (days < 2) return null;
@@ -694,6 +857,81 @@ export default function AnalystAlphaDetailPage({ params }: { params: Promise<{ s
                 </div>
               </div>
             </div>
+
+            {/* 펀더멘탈선 차트 */}
+            {data.priceHistory && data.priceHistory.length > 0 && (
+              <div className="bg-white rounded-[24px] border border-gray-200 p-6">
+                <div className="flex items-center gap-2 mb-4">
+                  <BarChart3 className="h-4 w-4 text-gray-900" />
+                  <h2 className="font-black text-gray-900">주가 vs 펀더멘탈선</h2>
+                </div>
+
+                {/* 레전드 */}
+                <div className="flex flex-wrap gap-4 mb-4 text-xs">
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-3 h-3 bg-red-500 rounded-sm" />
+                    <span className="text-gray-500">상승</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-3 h-3 bg-blue-500 rounded-sm" />
+                    <span className="text-gray-500">하락</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-4 h-0.5 bg-black" style={{ height: 3 }} />
+                    <span className="text-gray-500">펀더멘탈선</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-4 h-0.5 bg-pink-400" />
+                    <span className="text-gray-500">MA5</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-4 h-0.5 bg-yellow-400" />
+                    <span className="text-gray-500">MA20</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-4 h-0.5 bg-emerald-400" />
+                    <span className="text-gray-500">MA60</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-4 h-0.5 bg-blue-400" />
+                    <span className="text-gray-500">MA120</span>
+                  </div>
+                </div>
+
+                {data.fundamentalLine && (
+                  <div className="flex flex-wrap gap-4 mb-4 text-sm bg-gray-50 rounded-xl p-3">
+                    <div>
+                      <span className="text-gray-500">현재가</span>
+                      <span className="font-bold text-gray-900 ml-2">{fmtPrice(f.currentPrice)}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">펀더멘탈선</span>
+                      <span className="font-bold text-gray-900 ml-2">{fmtPrice(data.fundamentalLine.value)}</span>
+                      <span className="text-xs text-gray-400 ml-1">
+                        (EPS {currency}{fmt(data.fundamentalLine.eps)} × PER {data.fundamentalLine.per}배)
+                      </span>
+                    </div>
+                    <div>
+                      {f.currentPrice > data.fundamentalLine.value ? (
+                        <span className="font-bold text-red-600">
+                          +{((f.currentPrice / data.fundamentalLine.value - 1) * 100).toFixed(1)}% 고평가
+                        </span>
+                      ) : (
+                        <span className="font-bold text-green-600">
+                          -{((1 - f.currentPrice / data.fundamentalLine.value) * 100).toFixed(1)}% 저평가
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                <FundamentalChart
+                  priceHistory={data.priceHistory}
+                  fundamentalLine={data.fundamentalLine}
+                  currency={currency}
+                />
+              </div>
+            )}
 
             {/* 배당 정보 */}
             {data.dividendInfo && (

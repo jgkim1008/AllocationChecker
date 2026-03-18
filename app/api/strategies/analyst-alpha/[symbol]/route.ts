@@ -178,6 +178,40 @@ function runMonteCarlo(prices: number[], simCount = 500, days = 252) {
 }
 
 // ─────────────────────────────────────────────
+// Earnings History (분기별 EPS)
+// ─────────────────────────────────────────────
+async function getEarningsHistory(yahooTicker: string): Promise<{ date: string; eps: number }[]> {
+  try {
+    const session = await getYahooCrumb();
+    if (!session) return [];
+
+    const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${yahooTicker}?modules=earningsHistory&crumb=${encodeURIComponent(session.crumb)}&formatted=false`;
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+        'Cookie': session.cookie,
+      },
+      next: { revalidate: 86400 },
+    });
+
+    if (!res.ok) return [];
+
+    const data = await res.json();
+    const history = data?.quoteSummary?.result?.[0]?.earningsHistory?.history ?? [];
+
+    return history
+      .filter((h: any) => h.epsActual != null && h.quarter)
+      .map((h: any) => ({
+        date: h.quarter.fmt ?? new Date(h.quarter.raw * 1000).toISOString().split('T')[0],
+        eps: h.epsActual,
+      }))
+      .sort((a: { date: string }, b: { date: string }) => a.date.localeCompare(b.date));
+  } catch {
+    return [];
+  }
+}
+
+// ─────────────────────────────────────────────
 // GET /api/strategies/analyst-alpha/[symbol]
 // ─────────────────────────────────────────────
 export async function GET(
@@ -336,6 +370,73 @@ export async function GET(
   const prices = history.map(h => h.price).reverse();
   const monte = runMonteCarlo(prices);
 
+  // 7. 펀더멘탈선 계산 (EPS × 적정 PER)
+  const sectorPER: Record<string, number> = {
+    'Financial Services': 8,
+    'Financial': 8,
+    'Technology': 22,
+    'Healthcare': 18,
+    'Consumer Cyclical': 16,
+    'Consumer Defensive': 16,
+    'Energy': 10,
+    'Utilities': 13,
+    'Industrials': 15,
+    'Basic Materials': 12,
+    'Real Estate': 15,
+    'Communication Services': 18,
+  };
+
+  const basePER = sectorPER[fundamentals.sector] ?? 15;
+  const eps = fundamentals.eps;
+
+  // 분기별 EPS 히스토리 가져오기
+  const earningsHistory = await getEarningsHistory(yahooTicker);
+
+  // 펀더멘탈선: 현재 EPS 기준
+  const fundamentalLine = eps != null && eps > 0 ? {
+    value: Math.round(eps * basePER * 100) / 100,
+    per: basePER,
+    eps: eps,
+  } : null;
+
+  // 가격 히스토리 (최근 2년, 차트용) + 펀더멘탈선 값 계산
+  const priceHistory = history.slice(0, 504).map(h => {
+    // 해당 날짜에 적용할 EPS 찾기 (가장 최근 발표된 분기 EPS)
+    let applicableEps = eps;
+    for (let i = earningsHistory.length - 1; i >= 0; i--) {
+      if (earningsHistory[i].date <= h.date) {
+        // 분기별 EPS를 연환산 (TTM: Trailing Twelve Months)
+        // 최근 4분기 합산
+        let ttmEps = 0;
+        let count = 0;
+        for (let j = i; j >= 0 && count < 4; j--) {
+          ttmEps += earningsHistory[j].eps;
+          count++;
+        }
+        if (count === 4) {
+          applicableEps = ttmEps;
+        } else if (count > 0) {
+          applicableEps = (ttmEps / count) * 4; // 연환산
+        }
+        break;
+      }
+    }
+
+    const fundValue = applicableEps != null && applicableEps > 0
+      ? Math.round(applicableEps * basePER * 100) / 100
+      : null;
+
+    return {
+      date: h.date,
+      open: Math.round(h.open * 100) / 100,
+      high: Math.round(h.high * 100) / 100,
+      low: Math.round(h.low * 100) / 100,
+      close: Math.round(h.price * 100) / 100,
+      volume: h.volume ?? 0,
+      fundamentalValue: fundValue,
+    };
+  });
+
   return NextResponse.json({
     symbol: upperSymbol,
     fundamentals,
@@ -343,6 +444,8 @@ export async function GET(
     priceTarget: priceTargetData,
     monteCarlo: monte,
     dividendInfo,
+    fundamentalLine,
+    priceHistory,
     updatedAt: new Date().toISOString(),
   });
 }

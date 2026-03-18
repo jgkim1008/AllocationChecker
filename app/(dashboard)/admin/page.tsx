@@ -155,13 +155,13 @@ export default function AdminPage() {
                 value={newSymbol}
                 onChange={(e) => setNewSymbol(e.target.value.toUpperCase())}
                 placeholder="티커 입력 (예: AAPL, 005930)"
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
               />
             </div>
             <select
               value={newMarket}
               onChange={(e) => setNewMarket(e.target.value as 'US' | 'KR')}
-              className="px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+              className="px-4 py-2.5 border border-gray-300 rounded-xl text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
             >
               <option value="US">미국</option>
               <option value="KR">한국</option>
