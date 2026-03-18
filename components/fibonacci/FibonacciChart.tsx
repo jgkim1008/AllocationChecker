@@ -123,14 +123,13 @@ export function FibonacciChart({
 
     fibLevelEntries.forEach(([level, price]) => {
       const isGoldenRatio = level === '0.618';
-      const isKeyLevel = ['0', '0.382', '0.5', '0.618', '1'].includes(level);
 
       candleSeries.createPriceLine({
         price: price,
         color: FIB_COLORS[level],
         lineWidth: isGoldenRatio ? 2 : 1,
         lineStyle: isGoldenRatio ? 0 : 2, // 0 = solid, 2 = dashed
-        axisLabelVisible: isKeyLevel,
+        axisLabelVisible: true,
         title: FIB_LABELS[level],
       });
     });
