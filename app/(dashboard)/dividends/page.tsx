@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { RefreshCw, Calendar, DollarSign, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, X } from 'lucide-react';
+import { RefreshCw, Calendar, DollarSign, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, X, Sparkles, Brain, Loader2, TrendingUp } from 'lucide-react';
 
 interface DividendStock {
   symbol: string;
@@ -59,6 +59,30 @@ function formatDate(dateStr: string): string {
   return `${month}/${day} (${weekday})`;
 }
 
+// 매수 마감일 계산 (배당락일 N영업일 전)
+function getSettlementDeadline(exDividendDateStr: string, businessDaysBack: number): string {
+  const exDate = new Date(exDividendDateStr);
+  let remaining = businessDaysBack;
+  const result = new Date(exDate);
+
+  while (remaining > 0) {
+    result.setDate(result.getDate() - 1);
+    const dayOfWeek = result.getDay();
+    // 주말(토,일) 제외
+    if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+      remaining--;
+    }
+  }
+
+  return result.toISOString().split('T')[0];
+}
+
+// 한국/미국 모두 배당락일 1영업일 전이 매수 마감일
+// (한국은 T+2지만 배당락일이 이미 배당기준일 1일 전으로 설정됨)
+function getBuyDeadline(exDividendDateStr: string): string {
+  return getSettlementDeadline(exDividendDateStr, 1);
+}
+
 function getDaysUntil(dateStr: string): number {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -107,11 +131,12 @@ function DividendCalendar({
   const daysInMonth = lastDay.getDate();
   const startDayOfWeek = firstDay.getDay();
 
-  // 배당락일 맵 생성
+  // 배당락일/결제마감일 맵 생성 (한국: 결제마감일, 미국: 배당락일)
   const dividendMap = useMemo(() => {
     const map: Record<string, DividendStock[]> = {};
     stocks.forEach(stock => {
-      const date = stock.exDividendDate;
+      // 한국 T+2, 미국 T+1 매수 마감일 기준
+      const date = getBuyDeadline(stock.exDividendDate);
       if (!map[date]) map[date] = [];
       map[date].push(stock);
     });
@@ -257,7 +282,7 @@ function DividendCalendar({
           >
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-black text-gray-900 text-base">
-                {expandedDate.slice(5).replace('-', '/')} 배당락 종목
+                {expandedDate.slice(5).replace('-', '/')} 매수/배당락
                 <span className="ml-2 text-xs font-bold text-orange-500 bg-orange-50 px-2 py-0.5 rounded-full">
                   {expandedStocks.length}개
                 </span>
@@ -332,6 +357,144 @@ function SortHeader({
         </span>
       </span>
     </th>
+  );
+}
+
+// AI 배당 추천 인터페이스
+interface AIDividendPick {
+  symbol: string;
+  name: string;
+  market: 'US' | 'KR';
+  dividendYield: number | null;
+  exDividendDate: string;
+  buffettScore?: number;
+}
+
+interface AIDividendPicksData {
+  period: string;
+  picks: AIDividendPick[];
+  analysis: string;
+  cached: boolean;
+  generatedAt: string;
+}
+
+// AI 배당 추천 컴포넌트
+function AIDividendPicks({ year, month }: { year: number; month: number }) {
+  const [data, setData] = useState<AIDividendPicksData | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchPicks = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/ai/dividend-picks?year=${year}&month=${month + 1}`);
+      if (!res.ok) throw new Error('AI 추천 생성 실패');
+      setData(await res.json());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '알 수 없는 오류');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 페이지 로드 및 월 변경 시 캐시된 데이터 자동 로드
+  useEffect(() => {
+    fetchPicks();
+  }, [year, month]);
+
+  return (
+    <div className="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-2xl border border-emerald-100 p-5 mb-6">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <Sparkles className="h-5 w-5 text-emerald-600" />
+          <h2 className="font-black text-gray-900">AI 배당주 추천</h2>
+          <span className="text-[10px] font-bold text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded-full">
+            Powered by Gemini
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          {data?.cached && (
+            <span className="text-[10px] font-bold text-gray-400">캐시됨</span>
+          )}
+          <button
+            onClick={fetchPicks}
+            disabled={loading}
+            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-300 text-white font-bold text-sm px-4 py-2 rounded-xl transition-all"
+          >
+            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+            {loading ? '분석 중...' : '새로 분석'}
+          </button>
+        </div>
+      </div>
+
+      {error && (
+        <div className="bg-red-50 border border-red-100 rounded-xl p-3 mb-4">
+          <p className="text-sm text-red-600">{error}</p>
+        </div>
+      )}
+
+      {data && (
+        <div className="space-y-4">
+          {/* 추천 종목 카드 */}
+          {data.picks.length > 0 && (
+            <div className="grid sm:grid-cols-3 gap-3">
+              {data.picks.map((pick, i) => (
+                <Link
+                  key={pick.symbol}
+                  href={`/strategies/analyst-alpha/${pick.symbol}?market=${pick.market}`}
+                  className="bg-white rounded-xl p-4 border border-emerald-100 hover:border-emerald-300 hover:shadow-md transition-all group"
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
+                      #{i + 1} 추천
+                    </span>
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                      pick.market === 'US' ? 'bg-blue-50 text-blue-600' : 'bg-green-50 text-green-600'
+                    }`}>
+                      {pick.market}
+                    </span>
+                  </div>
+                  <p className="font-black text-gray-900 text-lg group-hover:text-emerald-600 transition-colors">
+                    {pick.symbol}
+                  </p>
+                  <p className="text-xs text-gray-500 truncate mb-2">{pick.name}</p>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1">
+                      <TrendingUp className="h-3.5 w-3.5 text-emerald-500" />
+                      <span className="text-sm font-bold text-emerald-600">
+                        {pick.dividendYield?.toFixed(2) ?? '-'}%
+                      </span>
+                    </div>
+                    {pick.buffettScore != null && (
+                      <span className="text-[10px] font-bold text-gray-400">
+                        버핏 {pick.buffettScore}/6
+                      </span>
+                    )}
+                  </div>
+                </Link>
+              ))}
+            </div>
+          )}
+
+          {/* AI 분석 내용 */}
+          <div className="bg-white rounded-xl p-4 border border-emerald-100">
+            <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{data.analysis}</p>
+            <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100">
+              <span className="text-[10px] text-gray-400">
+                {data.cached ? '캐시됨' : '새로 생성'} · {new Date(data.generatedAt).toLocaleString('ko-KR')}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {!data && !loading && !error && (
+        <p className="text-sm text-emerald-600/70 text-center py-4">
+          버튼을 클릭하면 AI가 이번 달 배당주 중 매력적인 종목을 추천합니다
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -458,9 +621,9 @@ export default function DividendsPage() {
               <Calendar className="h-5 w-5 text-emerald-600" />
               <span className="text-xs font-black text-emerald-600 uppercase tracking-widest">Dividend Calendar</span>
             </div>
-            <h1 className="text-3xl font-black text-gray-900 tracking-tight">배당락일 캘린더</h1>
+            <h1 className="text-3xl font-black text-gray-900 tracking-tight">배당 캘린더</h1>
             <p className="text-gray-500 text-sm mt-1">
-              추적 중인 종목의 배당락일 확인
+              매수 마감일 기준 (배당락일 1영업일 전)
             </p>
           </div>
           <button
@@ -493,6 +656,32 @@ export default function DividendsPage() {
         {/* 데이터 */}
         {data && (
           <>
+            {/* 초보자 가이드 */}
+            <details className="bg-gradient-to-r from-emerald-50 to-blue-50 border border-emerald-200 rounded-2xl p-4 mb-6">
+              <summary className="font-bold text-emerald-800 cursor-pointer flex items-center gap-2">
+                <span className="text-lg">💡</span>
+                <span>배당 받으려면 언제까지 사야 하나요?</span>
+              </summary>
+              <div className="mt-3 text-sm text-gray-700 space-y-2">
+                <p>
+                  <strong className="text-emerald-700">매수 마감일</strong>까지 주식을 매수해야 배당금을 받을 수 있어요.
+                </p>
+                <p>
+                  주식을 사면 바로 내 것이 되는 게 아니라, 결제가 완료되어야 주주명부에 등록돼요.
+                  그래서 <strong>배당락일 하루 전</strong>까지는 매수를 완료해야 합니다.
+                </p>
+                <div className="bg-white/60 rounded-xl p-3 mt-2">
+                  <p className="font-bold text-gray-800 mb-1">예시</p>
+                  <p className="text-xs text-gray-600">
+                    배당락일이 11/26(화)이면 → <strong className="text-emerald-600">11/25(월)까지 매수</strong> → 배당 OK ✓
+                  </p>
+                </div>
+              </div>
+            </details>
+
+            {/* AI 배당 추천 */}
+            <AIDividendPicks year={viewYear} month={viewMonth} />
+
             {/* 캘린더 */}
             <DividendCalendar
               year={viewYear}
@@ -530,15 +719,17 @@ export default function DividendsPage() {
                         onSort={handleSort}
                         className="text-left px-5"
                       />
-                      <SortHeader
-                        label="배당락일"
-                        sortKey="exDividendDate"
-                        currentKey={sortKey}
-                        dir={sortDir}
-                        onSort={handleSort}
-                        className="text-center"
-                      />
-                      <th className="text-center px-4 py-3 text-xs font-black text-gray-400 uppercase hidden sm:table-cell">D-Day</th>
+                      <th className="text-center px-4 py-3 text-xs font-black text-gray-400 uppercase">
+                        <button
+                          onClick={() => handleSort('exDividendDate')}
+                          className="flex items-center justify-center gap-1 w-full"
+                        >
+                          <span>매수마감</span>
+                          {sortKey === 'exDividendDate' && (
+                            sortDir === 'asc' ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />
+                          )}
+                        </button>
+                      </th>
                       <th className="text-center px-4 py-3 text-xs font-black text-gray-400 uppercase hidden sm:table-cell">주기</th>
                       <SortHeader
                         label="배당수익률"
@@ -560,7 +751,9 @@ export default function DividendsPage() {
                   </thead>
                   <tbody className="divide-y divide-gray-50">
                     {currentMonthStocks.map((stock) => {
-                      const daysUntil = getDaysUntil(stock.exDividendDate);
+                      // 한국 T+2, 미국 T+1 매수 마감일 기준
+                      const targetDate = getBuyDeadline(stock.exDividendDate);
+                      const daysUntil = getDaysUntil(targetDate);
                       return (
                         <tr key={stock.symbol} className="hover:bg-emerald-50/30 transition-colors">
                           <td className="px-5 py-4">
@@ -580,10 +773,10 @@ export default function DividendsPage() {
                             </Link>
                           </td>
                           <td className="px-4 py-4 text-center">
-                            <span className="font-bold text-gray-900">{formatDate(stock.exDividendDate)}</span>
-                          </td>
-                          <td className="px-4 py-4 text-center hidden sm:table-cell">
-                            <DaysUntilBadge days={daysUntil} />
+                            <div className="flex items-center justify-center gap-2">
+                              <span className="font-bold text-gray-900">{formatDate(getBuyDeadline(stock.exDividendDate))}</span>
+                              <DaysUntilBadge days={daysUntil} />
+                            </div>
                           </td>
                           <td className="px-4 py-4 text-center hidden sm:table-cell">
                             <FreqBadge freq={stock.dividendFrequency} />

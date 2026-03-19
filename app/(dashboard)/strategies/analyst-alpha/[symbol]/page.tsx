@@ -3,8 +3,9 @@
 import { useState, useEffect, use, useCallback, useRef, useMemo } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, RefreshCw, TrendingUp, AlertTriangle, BarChart3, Target, Info, Layers, Sparkles, BadgeDollarSign } from 'lucide-react';
+import { ArrowLeft, RefreshCw, TrendingUp, AlertTriangle, BarChart3, Target, Info, Layers, Sparkles, BadgeDollarSign, Brain, GitCompare, Newspaper, Loader2, ThumbsUp, ThumbsDown, Minus } from 'lucide-react';
 import { PremiumGate } from '@/components/PremiumGate';
+import { ChatBot } from '@/components/ai/ChatBot';
 import { createChart, ColorType, CrosshairMode, CandlestickSeries, LineSeries, HistogramSeries } from 'lightweight-charts';
 
 interface MonteCarloResult {
@@ -93,6 +94,40 @@ interface AnalystAlphaData {
   fibonacciLevels: FibonacciLevels | null;
   priceHistory: PriceHistoryItem[];
   updatedAt: string;
+}
+
+// AI 관련 인터페이스
+interface AIReportData {
+  report: string;
+  cached: boolean;
+  generatedAt: string;
+}
+
+interface AICompareData {
+  comparison: string;
+  stocks: Array<{
+    symbol: string;
+    name: string;
+    pe: number | null;
+    pb: number | null;
+    roe: number | null;
+    revenueGrowth: number | null;
+    dividendYield: number | null;
+  }>;
+  cached: boolean;
+  generatedAt: string;
+}
+
+interface AISentimentData {
+  overallScore: number;
+  overallSentiment: 'positive' | 'negative' | 'neutral';
+  newsAnalysis: Array<{ index: number; sentiment: string; reason: string }>;
+  keyThemes: string[];
+  summary: string;
+  news: Array<{ title: string; pubDate: string; sentiment: string }>;
+  newsCount: number;
+  cached: boolean;
+  generatedAt: string;
 }
 
 function fmt(n: number | null | undefined, decimals = 2) {
@@ -855,6 +890,283 @@ function MonteCarloChart({ monte }: { monte: MonteCarloResult }) {
   );
 }
 
+// ─── AI 투자 리포트 컴포넌트 ──────────────────
+function AIReportSection({ symbol, market }: { symbol: string; market: string }) {
+  const [report, setReport] = useState<AIReportData | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchReport = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/ai/report/${symbol}?market=${market}`);
+      if (!res.ok) throw new Error('리포트 생성 실패');
+      setReport(await res.json());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '알 수 없는 오류');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-[24px] border border-indigo-100 p-6">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <Brain className="h-5 w-5 text-indigo-600" />
+          <h2 className="font-black text-gray-900">AI 투자 리포트</h2>
+          <span className="text-[10px] font-bold text-indigo-500 bg-indigo-100 px-2 py-0.5 rounded-full">
+            Powered by Claude
+          </span>
+        </div>
+        <button
+          onClick={fetchReport}
+          disabled={loading}
+          className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white font-bold text-sm px-4 py-2 rounded-xl transition-all"
+        >
+          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Brain className="h-4 w-4" />}
+          {loading ? '분석 중...' : report ? '재분석' : 'AI 분석'}
+        </button>
+      </div>
+
+      {error && (
+        <div className="bg-red-50 border border-red-100 rounded-xl p-3 mb-4">
+          <p className="text-sm text-red-600">{error}</p>
+        </div>
+      )}
+
+      {report && (
+        <div className="bg-white rounded-xl p-4 border border-indigo-100">
+          <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{report.report}</p>
+          <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100">
+            <span className="text-[10px] text-gray-400">
+              {report.cached ? '캐시됨' : '새로 생성'} · {new Date(report.generatedAt).toLocaleString('ko-KR')}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {!report && !loading && !error && (
+        <p className="text-sm text-indigo-600/70 text-center py-6">
+          버튼을 클릭하면 AI가 이 종목을 분석합니다
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ─── AI 비교 분석 컴포넌트 ────────────────────
+function AICompareSection({ symbol, market }: { symbol: string; market: string }) {
+  const [compare, setCompare] = useState<AICompareData | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchCompare = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/ai/compare?symbol=${symbol}&market=${market}`);
+      if (!res.ok) throw new Error('비교 분석 실패');
+      setCompare(await res.json());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '알 수 없는 오류');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-[24px] border border-gray-200 p-6">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <GitCompare className="h-4 w-4 text-purple-500" />
+          <h2 className="font-black text-gray-900">AI 섹터 비교 분석</h2>
+        </div>
+        <button
+          onClick={fetchCompare}
+          disabled={loading}
+          className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 disabled:bg-purple-300 text-white font-bold text-xs px-3 py-1.5 rounded-lg transition-all"
+        >
+          {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <GitCompare className="h-3.5 w-3.5" />}
+          {loading ? '분석 중...' : '유사 종목 비교'}
+        </button>
+      </div>
+
+      {error && (
+        <div className="bg-red-50 border border-red-100 rounded-xl p-3 mb-4">
+          <p className="text-sm text-red-600">{error}</p>
+        </div>
+      )}
+
+      {compare && (
+        <div className="space-y-4">
+          {/* 비교 종목 테이블 */}
+          {compare.stocks.length > 0 && (
+            <div className="overflow-x-auto bg-white rounded-xl border border-gray-200">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-200 bg-gray-100">
+                    <th className="text-left px-3 py-2.5 font-bold text-gray-700">종목</th>
+                    <th className="text-right px-3 py-2.5 font-bold text-gray-700">PER</th>
+                    <th className="text-right px-3 py-2.5 font-bold text-gray-700">PBR</th>
+                    <th className="text-right px-3 py-2.5 font-bold text-gray-700">ROE</th>
+                    <th className="text-right px-3 py-2.5 font-bold text-gray-700">배당</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {compare.stocks.map((s, i) => (
+                    <tr key={s.symbol} className={`border-b border-gray-100 ${i === 0 ? 'bg-purple-50' : 'bg-white'}`}>
+                      <td className="px-3 py-2.5">
+                        <span className="font-bold text-gray-900">{s.name || s.symbol}</span>
+                        <span className="text-xs text-purple-500 font-medium ml-1">{i === 0 ? '(기준)' : ''}</span>
+                      </td>
+                      <td className="text-right px-3 py-2.5 text-gray-800">{s.pe?.toFixed(1) ?? '-'}</td>
+                      <td className="text-right px-3 py-2.5 text-gray-800">{s.pb?.toFixed(2) ?? '-'}</td>
+                      <td className="text-right px-3 py-2.5 text-gray-800">{s.roe?.toFixed(1) ?? '-'}%</td>
+                      <td className="text-right px-3 py-2.5 text-gray-800">{s.dividendYield?.toFixed(2) ?? '-'}%</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* AI 분석 결과 */}
+          <div className="bg-gray-50 rounded-xl p-4">
+            <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{compare.comparison}</p>
+          </div>
+        </div>
+      )}
+
+      {!compare && !loading && !error && (
+        <p className="text-sm text-gray-400 text-center py-4">
+          같은 섹터 내 유사 종목과 비교 분석합니다
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ─── 뉴스 센티먼트 분석 컴포넌트 ──────────────
+function AISentimentSection({ symbol, market }: { symbol: string; market: string }) {
+  const [sentiment, setSentiment] = useState<AISentimentData | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchSentiment = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/ai/sentiment/${symbol}?market=${market}`);
+      if (!res.ok) throw new Error('센티먼트 분석 실패');
+      setSentiment(await res.json());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '알 수 없는 오류');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getSentimentIcon = (s: string) => {
+    if (s === 'positive') return <ThumbsUp className="h-3.5 w-3.5 text-green-500" />;
+    if (s === 'negative') return <ThumbsDown className="h-3.5 w-3.5 text-red-500" />;
+    return <Minus className="h-3.5 w-3.5 text-gray-400" />;
+  };
+
+  const getScoreColor = (score: number) => {
+    if (score >= 30) return 'text-green-600 bg-green-50';
+    if (score <= -30) return 'text-red-600 bg-red-50';
+    return 'text-yellow-600 bg-yellow-50';
+  };
+
+  return (
+    <div className="bg-white rounded-[24px] border border-gray-200 p-6">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <Newspaper className="h-4 w-4 text-blue-500" />
+          <h2 className="font-black text-gray-900">뉴스 센티먼트</h2>
+        </div>
+        <button
+          onClick={fetchSentiment}
+          disabled={loading}
+          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-bold text-xs px-3 py-1.5 rounded-lg transition-all"
+        >
+          {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Newspaper className="h-3.5 w-3.5" />}
+          {loading ? '분석 중...' : '뉴스 분석'}
+        </button>
+      </div>
+
+      {error && (
+        <div className="bg-red-50 border border-red-100 rounded-xl p-3 mb-4">
+          <p className="text-sm text-red-600">{error}</p>
+        </div>
+      )}
+
+      {sentiment && (
+        <div className="space-y-4">
+          {/* 종합 점수 */}
+          <div className="flex items-center gap-4">
+            <div className={`px-4 py-2 rounded-xl font-black text-2xl ${getScoreColor(sentiment.overallScore)}`}>
+              {sentiment.overallScore > 0 ? '+' : ''}{sentiment.overallScore}
+            </div>
+            <div>
+              <p className="text-sm font-bold text-gray-900">
+                {sentiment.overallSentiment === 'positive' ? '긍정적' : sentiment.overallSentiment === 'negative' ? '부정적' : '중립'}
+              </p>
+              <p className="text-xs text-gray-400">{sentiment.newsCount}개 뉴스 분석</p>
+            </div>
+          </div>
+
+          {/* 키 테마 */}
+          {sentiment.keyThemes.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {sentiment.keyThemes.map((theme, i) => (
+                <span key={i} className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded-lg">
+                  {theme}
+                </span>
+              ))}
+            </div>
+          )}
+
+          {/* 요약 */}
+          <div className="bg-gray-50 rounded-xl p-3">
+            <p className="text-sm text-gray-700">{sentiment.summary}</p>
+          </div>
+
+          {/* 뉴스 목록 */}
+          {sentiment.news && sentiment.news.length > 0 && (
+            <details className="mt-2">
+              <summary className="text-xs text-gray-500 font-bold cursor-pointer hover:text-gray-700">
+                뉴스 상세 보기 ({sentiment.news.length}개)
+              </summary>
+              <div className="mt-2 space-y-2">
+                {sentiment.news.map((n, i) => (
+                  <div key={i} className="flex items-start gap-2 p-2 bg-gray-50 rounded-lg">
+                    {getSentimentIcon(n.sentiment)}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs text-gray-700 line-clamp-2">{n.title}</p>
+                      <p className="text-[10px] text-gray-400 mt-0.5">
+                        {new Date(n.pubDate).toLocaleDateString('ko-KR')}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
+        </div>
+      )}
+
+      {!sentiment && !loading && !error && (
+        <p className="text-sm text-gray-400 text-center py-4">
+          최근 뉴스를 분석하여 시장 센티먼트를 파악합니다
+        </p>
+      )}
+    </div>
+  );
+}
+
 export default function AnalystAlphaDetailPage({ params }: { params: Promise<{ symbol: string }> }) {
   const { symbol } = use(params);
   const searchParams = useSearchParams();
@@ -1262,11 +1574,29 @@ export default function AnalystAlphaDetailPage({ params }: { params: Promise<{ s
             {/* 퀀트 투자 분석 */}
             <InvestmentAnalysis f={f} monte={data.monteCarlo} currency={currency} fmtPrice={fmtPrice} />
 
+            {/* AI 투자 리포트 */}
+            <AIReportSection symbol={symbol.toUpperCase()} market={market} />
+
+            {/* AI 비교 분석 & 센티먼트 */}
+            <div className="grid sm:grid-cols-2 gap-4">
+              <AICompareSection symbol={symbol.toUpperCase()} market={market} />
+              <AISentimentSection symbol={symbol.toUpperCase()} market={market} />
+            </div>
+
             <p className="text-center text-[11px] text-gray-400 pt-2">
               분석 시각: {new Date(data.updatedAt).toLocaleString('ko-KR')} · 투자 참고용이며 실제 투자 결과를 보장하지 않습니다.
             </p>
           </div>
           </PremiumGate>
+        )}
+
+        {/* AI 챗봇 */}
+        {!loading && data && f && (
+          <ChatBot
+            symbol={symbol.toUpperCase()}
+            market={market as 'US' | 'KR'}
+            stockName={f.name}
+          />
         )}
       </div>
     </div>
