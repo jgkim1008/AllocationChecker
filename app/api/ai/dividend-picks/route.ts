@@ -1,11 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { createServiceClient } from '@/lib/supabase/server';
+import { createGitHubModelsClient, GITHUB_MODEL } from '@/lib/ai/github-models';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
 interface DividendStock {
   symbol: string;
@@ -165,11 +163,14 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // 5. Gemini API 호출
+    // 5. GitHub Models API 호출
     const prompt = buildPrompt(topStocks);
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-    const result = await model.generateContent(prompt);
-    const analysis = result.response.text();
+    const client = createGitHubModelsClient();
+    const result = await client.chat.completions.create({
+      model: GITHUB_MODEL,
+      messages: [{ role: 'user', content: prompt }],
+    });
+    const analysis = result.choices[0]?.message?.content ?? '';
 
     // 6. 추천 종목 추출 (상위 3개)
     const picks = topStocks.slice(0, 3).map(s => ({

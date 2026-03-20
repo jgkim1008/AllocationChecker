@@ -1,11 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { createServiceClient } from '@/lib/supabase/server';
+import { createGitHubModelsClient, GITHUB_MODEL } from '@/lib/ai/github-models';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
 interface StockData {
   symbol: string;
@@ -174,11 +172,14 @@ export async function GET(
       );
     }
 
-    // 3. Gemini API 호출
+    // 3. GitHub Models API 호출
     const prompt = buildPrompt(stockData, market);
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-    const result = await model.generateContent(prompt);
-    const report = result.response.text();
+    const client = createGitHubModelsClient();
+    const result = await client.chat.completions.create({
+      model: GITHUB_MODEL,
+      messages: [{ role: 'user', content: prompt }],
+    });
+    const report = result.choices[0]?.message?.content ?? '';
 
     // 4. 캐시 저장 (실패해도 무시)
     try {

@@ -1,10 +1,8 @@
 import { NextRequest } from 'next/server';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { createGitHubModelsClient, GITHUB_MODEL } from '@/lib/ai/github-models';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
 interface StockContext {
   symbol: string;
@@ -28,7 +26,6 @@ interface ChatMessage {
 
 async function fetchStockContext(symbol: string, market: string): Promise<StockContext | null> {
   try {
-    // Yahoo Finance에서 직접 데이터 가져오기
     const yahooTicker = market === 'KR'
       ? (!symbol.endsWith('.KS') && !symbol.endsWith('.KQ') ? `${symbol}.KS` : symbol)
       : symbol.replace(/\./g, '-');
@@ -44,7 +41,6 @@ async function fetchStockContext(symbol: string, market: string): Promise<StockC
     const meta = chartJson?.chart?.result?.[0]?.meta;
     if (!meta) return null;
 
-    // quote API에서 추가 데이터
     let summary = null;
     try {
       const summaryRes = await fetch(
@@ -83,7 +79,6 @@ function buildSystemPrompt(context: StockContext | null, market: string): string
 
   if (!context) {
     return `당신은 전문 주식 투자 어드바이저입니다. 사용자의 투자 관련 질문에 전문적이고 객관적으로 답변해주세요.
-
 중요:
 - 투자 조언은 일반적인 교육 목적임을 인지하세요.
 - 특정 투자 결정을 강요하지 마세요.
@@ -94,7 +89,6 @@ function buildSystemPrompt(context: StockContext | null, market: string): string
   return `당신은 전문 주식 투자 어드바이저입니다. 현재 ${context.name} (${context.symbol}) 종목에 대해 상담 중입니다.
 
 ## 종목 컨텍스트
-
 - 종목명: ${context.name} (${context.symbol})
 - 섹터: ${context.sector} / 산업: ${context.industry}
 - 현재가: ${context.currentPrice?.toLocaleString()} ${currency}
@@ -107,14 +101,11 @@ function buildSystemPrompt(context: StockContext | null, market: string): string
 - 매출 성장률: ${context.revenueGrowth?.toFixed(1) ?? 'N/A'}%
 
 ## 응답 지침
-
 1. 위 종목 정보를 바탕으로 질문에 답변하세요.
 2. 전문적이고 객관적인 톤을 유지하세요.
-3. 투자 결정은 사용자 본인의 판단임을 인지하세요.
-4. 불확실한 정보는 솔직하게 모른다고 하세요.
-5. 간결하게 답변하되, 필요시 상세히 설명하세요.
-6. 한국어로 답변하세요.
-7. 3-5문장 정도로 간결하게 답변하세요.`;
+3. 불확실한 정보는 솔직하게 모른다고 하세요.
+4. 3-5문장 정도로 간결하게 답변하세요.
+5. 한국어로 답변하세요.`;
 }
 
 export async function POST(request: NextRequest) {
@@ -140,36 +131,29 @@ export async function POST(request: NextRequest) {
       context = await fetchStockContext(symbol.toUpperCase(), market);
     }
 
-    // 시스템 프롬프트 생성
-    const systemPrompt = buildSystemPrompt(context, market);
+    // 메시지 배열 구성 (OpenAI 형식)
+    const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
+      { role: 'system', content: buildSystemPrompt(context, market) },
+      ...history.slice(-10).map(msg => ({
+        role: msg.role as 'user' | 'assistant',
+        content: msg.content,
+      })),
+      { role: 'user', content: message },
+    ];
 
-    // 대화 히스토리 구성
-    const historyForGemini = history.slice(-10).map(msg => ({
-      role: msg.role === 'user' ? 'user' : 'model',
-      parts: [{ text: msg.content }],
-    }));
-
-    // Gemini 모델 초기화
-    const model = genAI.getGenerativeModel({
-      model: 'gemini-2.5-flash',
-      systemInstruction: systemPrompt,
+    const client = createGitHubModelsClient();
+    const stream = await client.chat.completions.create({
+      model: GITHUB_MODEL,
+      messages,
+      stream: true,
     });
 
-    // 스트리밍 응답 생성
-    const chat = model.startChat({
-      history: historyForGemini as Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }>,
-    });
-
-    const result = await chat.sendMessageStream(message);
-
-    // ReadableStream으로 변환
     const encoder = new TextEncoder();
-
     const readable = new ReadableStream({
       async start(controller) {
         try {
-          for await (const chunk of result.stream) {
-            const text = chunk.text();
+          for await (const chunk of stream) {
+            const text = chunk.choices[0]?.delta?.content ?? '';
             if (text) {
               controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text })}\n\n`));
             }

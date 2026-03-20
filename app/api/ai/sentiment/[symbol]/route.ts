@@ -1,11 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { createServiceClient } from '@/lib/supabase/server';
+import { createGitHubModelsClient, GITHUB_MODEL } from '@/lib/ai/github-models';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
 interface NewsItem {
   title: string;
@@ -157,11 +155,15 @@ export async function GET(
     // 3. 종목명 가져오기
     const stockName = await getStockName(upperSymbol, market);
 
-    // 4. Gemini API 호출
+    // 4. GitHub Models API 호출
     const prompt = buildSentimentPrompt(upperSymbol, stockName, news);
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-    const result = await model.generateContent(prompt);
-    const responseText = result.response.text();
+    const client = createGitHubModelsClient();
+    const result = await client.chat.completions.create({
+      model: GITHUB_MODEL,
+      messages: [{ role: 'user', content: prompt }],
+      response_format: { type: 'json_object' },
+    });
+    const responseText = result.choices[0]?.message?.content ?? '{}';
 
     // 5. JSON 파싱
     let analysis;

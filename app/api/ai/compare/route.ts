@@ -1,11 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { createServiceClient } from '@/lib/supabase/server';
+import { createGitHubModelsClient, GITHUB_MODEL } from '@/lib/ai/github-models';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 45;
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
 interface StockData {
   symbol: string;
@@ -244,11 +242,14 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // 5. Gemini API 호출
+    // 5. GitHub Models API 호출
     const prompt = buildComparisonPrompt(mainStock, peers, market);
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-    const result = await model.generateContent(prompt);
-    const comparison = result.response.text();
+    const client = createGitHubModelsClient();
+    const result = await client.chat.completions.create({
+      model: GITHUB_MODEL,
+      messages: [{ role: 'user', content: prompt }],
+    });
+    const comparison = result.choices[0]?.message?.content ?? '';
 
     // 6. 응답 데이터 구성
     const stocks = [mainStock, ...peers].map(s => ({
