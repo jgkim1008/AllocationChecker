@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
+import ReactMarkdown from 'react-markdown';
 import Link from 'next/link';
 import { RefreshCw, Calendar, DollarSign, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, X, Sparkles, Brain, Loader2, TrendingUp } from 'lucide-react';
 
@@ -480,7 +481,7 @@ function AIDividendPicks({ year, month }: { year: number; month: number }) {
 
           {/* AI 분석 내용 */}
           <div className="bg-white rounded-xl p-4 border border-emerald-100">
-            <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{data.analysis}</p>
+            <div className="prose prose-sm prose-gray max-w-none text-sm text-gray-700 leading-relaxed"><ReactMarkdown>{data.analysis}</ReactMarkdown></div>
             <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100">
               <span className="text-[10px] text-gray-400">
                 {data.cached ? '캐시됨' : '새로 생성'} · {new Date(data.generatedAt).toLocaleString('ko-KR')}

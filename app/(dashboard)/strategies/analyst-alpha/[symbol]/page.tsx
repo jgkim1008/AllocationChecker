@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, use, useCallback, useRef, useMemo } from 'react';
+import ReactMarkdown from 'react-markdown';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, RefreshCw, TrendingUp, AlertTriangle, BarChart3, Target, Info, Layers, Sparkles, BadgeDollarSign, Brain, GitCompare, Newspaper, Loader2, ThumbsUp, ThumbsDown, Minus } from 'lucide-react';
@@ -939,7 +940,7 @@ function AIReportSection({ symbol, market }: { symbol: string; market: string })
 
       {report && (
         <div className="bg-white rounded-xl p-4 border border-indigo-100">
-          <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{report.report}</p>
+          <div className="prose prose-sm prose-gray max-w-none text-sm text-gray-700 leading-relaxed"><ReactMarkdown>{report.report}</ReactMarkdown></div>
           <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100">
             <span className="text-[10px] text-gray-400">
               {report.cached ? '캐시됨' : '새로 생성'} · {new Date(report.generatedAt).toLocaleString('ko-KR')}
@@ -1035,7 +1036,7 @@ function AICompareSection({ symbol, market }: { symbol: string; market: string }
 
           {/* AI 분석 결과 */}
           <div className="bg-gray-50 rounded-xl p-4">
-            <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{compare.comparison}</p>
+            <div className="prose prose-sm prose-gray max-w-none text-sm text-gray-700 leading-relaxed"><ReactMarkdown>{compare.comparison}</ReactMarkdown></div>
           </div>
         </div>
       )}
