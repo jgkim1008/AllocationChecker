@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { RefreshCw, Calendar, DollarSign, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, X, Sparkles, Brain, Loader2, TrendingUp } from 'lucide-react';
 
 interface DividendStock {
@@ -243,17 +244,19 @@ function DividendCalendar({
                 {hasDividend && (
                   <div className="space-y-0.5 overflow-hidden">
                     {dividends.slice(0, 2).map(stock => (
-                      <div
+                      <Link
                         key={stock.symbol}
-                        className={`text-[9px] sm:text-[10px] font-bold px-1 py-0.5 rounded truncate ${
+                        href={`/strategies/analyst-alpha/${stock.symbol}?market=${stock.market}`}
+                        className={`block text-[9px] sm:text-[10px] font-bold px-1 py-0.5 rounded truncate hover:opacity-70 transition-opacity ${
                           stock.market === 'US' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'
                         }`}
                         title={`${stock.symbol} - ${stock.name}`}
+                        onClick={e => e.stopPropagation()}
                       >
                         {stock.market === 'US'
                           ? stock.symbol
                           : stock.name.length > 5 ? stock.name.slice(0, 5) + '.' : stock.name}
-                      </div>
+                      </Link>
                     ))}
                     {hiddenCount > 0 && (
                       <div
@@ -501,6 +504,7 @@ function AIDividendPicks({ year, month }: { year: number; month: number }) {
 }
 
 export default function DividendsPage() {
+  const router = useRouter();
   const [data, setData] = useState<DividendData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -757,12 +761,13 @@ export default function DividendsPage() {
                       const targetDate = getBuyDeadline(stock.exDividendDate);
                       const daysUntil = getDaysUntil(targetDate);
                       return (
-                        <tr key={stock.symbol} className="hover:bg-emerald-50/30 transition-colors">
+                        <tr
+                          key={stock.symbol}
+                          className="hover:bg-emerald-50/30 transition-colors cursor-pointer"
+                          onClick={() => router.push(`/strategies/analyst-alpha/${stock.symbol}?market=${stock.market}`)}
+                        >
                           <td className="px-5 py-4">
-                            <Link
-                              href={`/strategies/analyst-alpha/${stock.symbol}?market=${stock.market}`}
-                              className="flex items-center gap-3"
-                            >
+                            <div className="flex items-center gap-3">
                               <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-[10px] font-black shrink-0 ${
                                 stock.market === 'US' ? 'bg-blue-50 text-blue-600' : 'bg-green-50 text-green-700'
                               }`}>
@@ -772,7 +777,7 @@ export default function DividendsPage() {
                                 <p className="font-black text-gray-900">{stock.symbol}</p>
                                 <p className="text-xs text-gray-400 truncate max-w-[150px]">{stock.name}</p>
                               </div>
-                            </Link>
+                            </div>
                           </td>
                           <td className="px-4 py-4 text-center">
                             <div className="flex items-center justify-center gap-2">
