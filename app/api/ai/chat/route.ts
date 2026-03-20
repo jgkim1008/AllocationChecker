@@ -17,6 +17,8 @@ interface StockContext {
   dividendYield: number | null;
   beta: number | null;
   revenueGrowth: number | null;
+  priceTargetAvg: number | null;
+  marketCap: number | null;
 }
 
 interface ChatMessage {
@@ -26,48 +28,31 @@ interface ChatMessage {
 
 async function fetchStockContext(symbol: string, market: string): Promise<StockContext | null> {
   try {
-    const yahooTicker = market === 'KR'
-      ? (!symbol.endsWith('.KS') && !symbol.endsWith('.KQ') ? `${symbol}.KS` : symbol)
-      : symbol.replace(/\./g, '-');
+    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
+    const res = await fetch(`${baseUrl}/api/strategies/analyst-alpha/${symbol}?market=${market}`, {
+      next: { revalidate: 300 },
+    });
+    if (!res.ok) return null;
 
-    const chartRes = await fetch(
-      `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooTicker)}?range=1d&interval=1d`,
-      { headers: { 'User-Agent': 'Mozilla/5.0' } }
-    );
-
-    if (!chartRes.ok) return null;
-
-    const chartJson = await chartRes.json();
-    const meta = chartJson?.chart?.result?.[0]?.meta;
-    if (!meta) return null;
-
-    let summary = null;
-    try {
-      const summaryRes = await fetch(
-        `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(yahooTicker)}`,
-        { headers: { 'User-Agent': 'Mozilla/5.0' } }
-      );
-      if (summaryRes.ok) {
-        const summaryJson = await summaryRes.json();
-        summary = summaryJson?.quoteResponse?.result?.[0];
-      }
-    } catch {
-      // 무시
-    }
+    const data = await res.json();
+    const f = data?.fundamentals;
+    if (!f) return null;
 
     return {
       symbol,
-      name: meta.longName ?? meta.shortName ?? symbol,
-      sector: summary?.sector ?? '',
-      industry: summary?.industry ?? '',
-      currentPrice: meta.regularMarketPrice ?? 0,
-      pe: summary?.trailingPE ?? null,
-      pb: summary?.priceToBook ?? null,
-      roe: null,
-      eps: summary?.epsTrailingTwelveMonths ?? null,
-      dividendYield: summary?.dividendYield ? summary.dividendYield * 100 : null,
-      beta: summary?.beta ?? null,
-      revenueGrowth: null,
+      name: f.name ?? symbol,
+      sector: f.sector ?? '',
+      industry: f.industry ?? '',
+      currentPrice: f.currentPrice ?? 0,
+      pe: f.pe ?? null,
+      pb: f.pb ?? null,
+      roe: f.roe ?? null,
+      eps: f.eps ?? null,
+      dividendYield: data.dividendInfo?.yield ?? null,
+      beta: f.beta ?? null,
+      revenueGrowth: f.revenueGrowth ?? null,
+      priceTargetAvg: data.priceTarget?.avg ?? null,
+      marketCap: f.marketCap ?? null,
     };
   } catch {
     return null;
@@ -86,12 +71,19 @@ function buildSystemPrompt(context: StockContext | null, market: string): string
 - 한국어로 답변하세요.`;
   }
 
+  const mcap = context.marketCap
+    ? context.marketCap >= 1e12 ? `${(context.marketCap / 1e12).toFixed(2)}T ${currency}`
+    : context.marketCap >= 1e9 ? `${(context.marketCap / 1e9).toFixed(1)}B ${currency}`
+    : `${(context.marketCap / 1e6).toFixed(0)}M ${currency}`
+    : 'N/A';
+
   return `당신은 전문 주식 투자 어드바이저입니다. 현재 ${context.name} (${context.symbol}) 종목에 대해 상담 중입니다.
 
 ## 종목 컨텍스트
 - 종목명: ${context.name} (${context.symbol})
 - 섹터: ${context.sector} / 산업: ${context.industry}
 - 현재가: ${context.currentPrice?.toLocaleString()} ${currency}
+- 시가총액: ${mcap}
 - PER: ${context.pe?.toFixed(1) ?? 'N/A'}배
 - PBR: ${context.pb?.toFixed(2) ?? 'N/A'}배
 - ROE: ${context.roe?.toFixed(1) ?? 'N/A'}%
@@ -99,6 +91,7 @@ function buildSystemPrompt(context: StockContext | null, market: string): string
 - 배당수익률: ${context.dividendYield?.toFixed(2) ?? 'N/A'}%
 - Beta: ${context.beta?.toFixed(2) ?? 'N/A'}
 - 매출 성장률: ${context.revenueGrowth?.toFixed(1) ?? 'N/A'}%
+- 애널리스트 목표주가: ${context.priceTargetAvg ? `${context.priceTargetAvg.toLocaleString()} ${currency}` : 'N/A'}
 
 ## 응답 지침
 1. 위 종목 정보를 바탕으로 질문에 답변하세요.
