@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
-import { createGitHubModelsClient, GITHUB_MODEL } from '@/lib/ai/github-models';
+import { createCompletion } from '@/lib/ai/github-models';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
@@ -127,6 +127,7 @@ export async function GET(
         return NextResponse.json({
           symbol: upperSymbol,
           ...cached.content,
+          modelUsed: cached.content.modelUsed ?? 'gpt-4o-mini',
           cached: true,
           generatedAt: cached.generated_at,
         });
@@ -155,11 +156,9 @@ export async function GET(
     // 3. 종목명 가져오기
     const stockName = await getStockName(upperSymbol, market);
 
-    // 4. GitHub Models API 호출
+    // 4. GitHub Models API 호출 (자동 폴백)
     const prompt = buildSentimentPrompt(upperSymbol, stockName, news);
-    const client = createGitHubModelsClient();
-    const result = await client.chat.completions.create({
-      model: GITHUB_MODEL,
+    const { result, modelUsed } = await createCompletion({
       messages: [{ role: 'user', content: prompt }],
       response_format: { type: 'json_object' },
     });
@@ -206,7 +205,7 @@ export async function GET(
       await supabase.from('ai_reports').insert({
         symbol: upperSymbol,
         report_type: 'sentiment',
-        content: resultData,
+        content: { ...resultData, modelUsed },
         expires_at: expiresAt,
       });
     } catch {
@@ -216,6 +215,7 @@ export async function GET(
     return NextResponse.json({
       symbol: upperSymbol,
       ...resultData,
+      modelUsed,
       cached: false,
       generatedAt: new Date().toISOString(),
     });

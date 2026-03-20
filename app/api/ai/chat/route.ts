@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { createGitHubModelsClient, GITHUB_MODEL } from '@/lib/ai/github-models';
+import { createStreamingCompletion } from '@/lib/ai/github-models';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -141,17 +141,13 @@ export async function POST(request: NextRequest) {
       { role: 'user', content: message },
     ];
 
-    const client = createGitHubModelsClient();
-    const stream = await client.chat.completions.create({
-      model: GITHUB_MODEL,
-      messages,
-      stream: true,
-    });
+    const { stream, modelUsed } = await createStreamingCompletion({ messages });
 
     const encoder = new TextEncoder();
     const readable = new ReadableStream({
       async start(controller) {
         try {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ modelUsed })}\n\n`));
           for await (const chunk of stream) {
             const text = chunk.choices[0]?.delta?.content ?? '';
             if (text) {

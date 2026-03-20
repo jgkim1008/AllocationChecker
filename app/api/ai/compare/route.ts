@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
-import { createGitHubModelsClient, GITHUB_MODEL } from '@/lib/ai/github-models';
+import { createCompletion } from '@/lib/ai/github-models';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 45;
@@ -205,6 +205,7 @@ export async function GET(request: NextRequest) {
           symbol,
           comparison: cached.content.comparison,
           stocks: cached.content.stocks,
+          modelUsed: cached.content.modelUsed ?? 'gpt-4o-mini',
           cached: true,
           generatedAt: cached.generated_at,
         });
@@ -242,11 +243,9 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // 5. GitHub Models API 호출
+    // 5. GitHub Models API 호출 (자동 폴백)
     const prompt = buildComparisonPrompt(mainStock, peers, market);
-    const client = createGitHubModelsClient();
-    const result = await client.chat.completions.create({
-      model: GITHUB_MODEL,
+    const { result, modelUsed } = await createCompletion({
       messages: [{ role: 'user', content: prompt }],
     });
     const comparison = result.choices[0]?.message?.content ?? '';
@@ -268,7 +267,7 @@ export async function GET(request: NextRequest) {
       await supabase.from('ai_reports').insert({
         symbol: cacheKey,
         report_type: 'compare',
-        content: { comparison, stocks },
+        content: { comparison, stocks, modelUsed },
         expires_at: expiresAt,
       });
     } catch {
@@ -279,6 +278,7 @@ export async function GET(request: NextRequest) {
       symbol,
       comparison,
       stocks,
+      modelUsed,
       cached: false,
       generatedAt: new Date().toISOString(),
     });

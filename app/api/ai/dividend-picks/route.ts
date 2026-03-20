@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
-import { createGitHubModelsClient, GITHUB_MODEL } from '@/lib/ai/github-models';
+import { createCompletion } from '@/lib/ai/github-models';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
@@ -119,6 +119,7 @@ export async function GET(request: NextRequest) {
           period: cacheKey,
           picks: cached.content.picks,
           analysis: cached.content.analysis,
+          modelUsed: cached.content.modelUsed ?? 'gpt-4o-mini',
           cached: true,
           generatedAt: cached.generated_at,
         });
@@ -163,11 +164,9 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // 5. GitHub Models API 호출
+    // 5. GitHub Models API 호출 (자동 폴백)
     const prompt = buildPrompt(topStocks);
-    const client = createGitHubModelsClient();
-    const result = await client.chat.completions.create({
-      model: GITHUB_MODEL,
+    const { result, modelUsed } = await createCompletion({
       messages: [{ role: 'user', content: prompt }],
     });
     const analysis = result.choices[0]?.message?.content ?? '';
@@ -188,7 +187,7 @@ export async function GET(request: NextRequest) {
       await supabase.from('ai_reports').insert({
         symbol: cacheKey,
         report_type: 'dividend_picks',
-        content: { picks, analysis },
+        content: { picks, analysis, modelUsed },
         expires_at: expiresAt,
       });
     } catch {
@@ -199,6 +198,7 @@ export async function GET(request: NextRequest) {
       period: cacheKey,
       picks,
       analysis,
+      modelUsed,
       cached: false,
       generatedAt: new Date().toISOString(),
     });

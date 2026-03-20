@@ -182,7 +182,7 @@ export default function AnalystAlphaPage() {
             <div className="px-2.5 py-1 bg-indigo-600 text-white text-[10px] font-black rounded uppercase tracking-widest">AI Quant</div>
             <div className="flex items-center gap-1 text-indigo-500">
               <Sparkles className="h-3.5 w-3.5" />
-              <span className="text-xs font-bold uppercase">Powered by Claude</span>
+              <span className="text-xs font-bold uppercase">Powered by GitHub Models</span>
             </div>
           </div>
           <h1 className="text-4xl font-black text-gray-900 tracking-tighter mb-2">Analyst Alpha</h1>

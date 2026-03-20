@@ -374,6 +374,7 @@ interface AIDividendPicksData {
   period: string;
   picks: AIDividendPick[];
   analysis: string;
+  modelUsed?: string;
   cached: boolean;
   generatedAt: string;
 }
@@ -410,7 +411,7 @@ function AIDividendPicks({ year, month }: { year: number; month: number }) {
           <Sparkles className="h-5 w-5 text-emerald-600" />
           <h2 className="font-black text-gray-900">AI 배당주 추천</h2>
           <span className="text-[10px] font-bold text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded-full">
-            Powered by Gemini
+            {data?.modelUsed ? `Powered by ${data.modelUsed}` : 'Powered by AI'}
           </span>
         </div>
         <div className="flex items-center gap-2">

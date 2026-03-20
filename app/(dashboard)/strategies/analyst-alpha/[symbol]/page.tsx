@@ -99,6 +99,7 @@ interface AnalystAlphaData {
 // AI 관련 인터페이스
 interface AIReportData {
   report: string;
+  modelUsed?: string;
   cached: boolean;
   generatedAt: string;
 }
@@ -917,7 +918,7 @@ function AIReportSection({ symbol, market }: { symbol: string; market: string })
           <Brain className="h-5 w-5 text-indigo-600" />
           <h2 className="font-black text-gray-900">AI 투자 리포트</h2>
           <span className="text-[10px] font-bold text-indigo-500 bg-indigo-100 px-2 py-0.5 rounded-full">
-            Powered by Claude
+            {report?.modelUsed ? `Powered by ${report.modelUsed}` : 'Powered by AI'}
           </span>
         </div>
         <button
