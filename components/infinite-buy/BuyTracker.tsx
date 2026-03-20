@@ -9,9 +9,15 @@ interface BuyTrackerProps {
   capital: number;
   n: number;
   targetRate: number;
+  market?: 'US' | 'KR';
 }
 
-export function BuyTracker({ symbol, capital, n, targetRate }: BuyTrackerProps) {
+function fmtP(price: number, market: 'US' | 'KR' = 'US'): string {
+  if (market === 'KR') return `₩${Math.round(price).toLocaleString('ko-KR')}`;
+  return `$${price.toFixed(2)}`;
+}
+
+export function BuyTracker({ symbol, capital, n, targetRate, market = 'US' }: BuyTrackerProps) {
   const { records, loading: recordsLoading, addRecord, updateRecord, deleteRecord, deleteAllRecords } =
     useInfiniteBuyRecords(symbol);
 
@@ -189,7 +195,7 @@ export function BuyTracker({ symbol, capital, n, targetRate }: BuyTrackerProps) 
         <div className="bg-white border border-gray-200 rounded-xl p-4">
           <p className="text-xs text-gray-500 mb-1">평균단가</p>
           <p className="text-lg font-bold text-gray-900">
-            {avgCost > 0 ? `$${avgCost.toFixed(2)}` : '-'}
+            {avgCost > 0 ? fmtP(avgCost, market) : '-'}
           </p>
           <p className="text-xs text-gray-400 mt-0.5">
             보유 {totalShares > 0 ? `${totalShares.toFixed(4)}주` : '-'}
@@ -207,7 +213,7 @@ export function BuyTracker({ symbol, capital, n, targetRate }: BuyTrackerProps) 
             {loadingPrice ? (
               <span className="inline-block h-6 w-16 bg-gray-200 animate-pulse rounded" />
             ) : currentPrice ? (
-              `$${currentPrice.toFixed(2)}`
+              fmtP(currentPrice, market)
             ) : (
               '-'
             )}
@@ -224,7 +230,7 @@ export function BuyTracker({ symbol, capital, n, targetRate }: BuyTrackerProps) 
                   unrealizedPnl >= 0 ? 'text-green-600' : 'text-red-600'
                 }`}
               >
-                {unrealizedPnl >= 0 ? '+' : ''}${unrealizedPnl.toFixed(2)}
+                {unrealizedPnl >= 0 ? '+' : ''}{fmtP(unrealizedPnl, market)}
               </p>
               <p
                 className={`text-xs mt-0.5 ${
@@ -253,7 +259,7 @@ export function BuyTracker({ symbol, capital, n, targetRate }: BuyTrackerProps) 
                 {(targetAchievePct * 100).toFixed(1)}%
               </p>
               <p className="text-xs text-gray-400 mt-0.5">
-                목표 ${targetValue.toFixed(2)}
+                목표 {fmtP(targetValue, market)}
               </p>
             </>
           ) : (
@@ -329,7 +335,7 @@ export function BuyTracker({ symbol, capital, n, targetRate }: BuyTrackerProps) 
 
               {/* 매수가 */}
               <div>
-                <label className="text-xs text-gray-500 block mb-1">매수가 ($)</label>
+                <label className="text-xs text-gray-500 block mb-1">매수가 ({market === 'KR' ? '₩' : '$'})</label>
                 <input
                   type="number"
                   step="0.01"
@@ -344,7 +350,7 @@ export function BuyTracker({ symbol, capital, n, targetRate }: BuyTrackerProps) 
               {/* 금액 또는 수량 */}
               {inputMode === 'amount' ? (
                 <div>
-                  <label className="text-xs text-gray-500 block mb-1">매수금액 ($)</label>
+                  <label className="text-xs text-gray-500 block mb-1">매수금액 ({market === 'KR' ? '₩' : '$'})</label>
                   <input
                     type="number"
                     step="0.01"
@@ -382,7 +388,7 @@ export function BuyTracker({ symbol, capital, n, targetRate }: BuyTrackerProps) 
                 parseFloat(formPrice) > 0 &&
                 parseFloat(formShares) > 0 && (
                   <div className="text-xs text-gray-500 pb-1.5">
-                    = ${(parseFloat(formShares) * parseFloat(formPrice)).toFixed(2)}
+                    = {fmtP(parseFloat(formShares) * parseFloat(formPrice), market)}
                   </div>
                 )}
 
@@ -495,7 +501,7 @@ export function BuyTracker({ symbol, capital, n, targetRate }: BuyTrackerProps) 
                               />
                               {parseFloat(editPrice) > 0 && parseFloat(editShares) > 0 && (
                                 <span className="text-xs text-gray-400 whitespace-nowrap">
-                                  =${(parseFloat(editShares) * parseFloat(editPrice)).toFixed(2)}
+                                  ={fmtP(parseFloat(editShares) * parseFloat(editPrice), market)}
                                 </span>
                               )}
                             </>
@@ -529,10 +535,10 @@ export function BuyTracker({ symbol, capital, n, targetRate }: BuyTrackerProps) 
                     /* ── 표시 행 ── */
                     <tr key={b.id} className="border-t border-gray-100 hover:bg-gray-50 group">
                       <td className="px-4 py-2.5 text-gray-700">{b.buy_date}</td>
-                      <td className="px-4 py-2.5 text-right text-gray-700">${b.price.toFixed(2)}</td>
+                      <td className="px-4 py-2.5 text-right text-gray-700">{fmtP(b.price, market)}</td>
                       <td className="px-4 py-2.5 text-right text-gray-700">{b.shares.toFixed(4)}</td>
-                      <td className="px-4 py-2.5 text-right text-gray-700">${b.amount.toFixed(2)}</td>
-                      <td className="px-4 py-2.5 text-right text-gray-500">${b.runningAvg.toFixed(2)}</td>
+                      <td className="px-4 py-2.5 text-right text-gray-700">{fmtP(b.amount, market)}</td>
+                      <td className="px-4 py-2.5 text-right text-gray-500">{fmtP(b.runningAvg, market)}</td>
                       <td className="px-4 py-2.5 text-right">
                         <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                           <button

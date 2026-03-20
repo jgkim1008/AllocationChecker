@@ -48,8 +48,9 @@ export async function GET(request: NextRequest) {
 
   if (krResult.status === 'fulfilled') {
     for (const q of krResult.value) {
-      // Normalize key: strip .KS/.KQ suffix to match original symbol if needed
-      prices[q.symbol] = { price: q.price, changePercent: q.changePercent };
+      const baseKey = (q.symbol as string).replace(/\.(KS|KQ)$/i, '');
+      prices[baseKey] = { price: q.price, changePercent: q.changePercent };
+      prices[q.symbol] = { price: q.price, changePercent: q.changePercent }; // also keep original key
     }
   }
 

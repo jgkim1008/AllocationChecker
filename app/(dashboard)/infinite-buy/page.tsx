@@ -6,7 +6,7 @@ import { BuyTracker } from '@/components/infinite-buy/BuyTracker';
 import { BacktestSim } from '@/components/infinite-buy/BacktestSim';
 import { StrategyGuide } from '@/components/infinite-buy/StrategyGuide';
 
-const PRESET_SYMBOLS = ['TQQQ', 'UPRO', 'SOXL', 'FNGU', 'TECL'];
+const PRESET_SYMBOLS = ['TQQQ', 'UPRO', 'SOXL', 'FNGU', 'TECL', '122630'];
 
 // 각 종목 한줄 설명
 const SYMBOL_DESC: Record<string, string> = {
@@ -15,7 +15,10 @@ const SYMBOL_DESC: Record<string, string> = {
   SOXL: '반도체 3배',
   FNGU: 'FANG+ 3배',
   TECL: '기술주 3배',
+  '122630': 'KOSPI200 2배',
 };
+
+const KR_SYMBOLS = new Set(['122630']);
 
 type Tab = 'calc' | 'tracker' | 'backtest';
 
@@ -64,6 +67,7 @@ export default function InfiniteBuyPage() {
   }, []);
 
   const activeSymbol = isCustom ? customSymbol.trim().toUpperCase() : symbol;
+  const activeMarket = KR_SYMBOLS.has(activeSymbol) ? 'KR' : 'US';
 
   function handlePresetClick(sym: string) {
     setSymbol(sym);
@@ -114,7 +118,7 @@ export default function InfiniteBuyPage() {
                 </span>
                 {price ? (
                   <span className={`text-xs font-medium mt-0.5 ${isActive ? 'text-white' : 'text-gray-600'}`}>
-                    ${price.toFixed(2)}
+                    {KR_SYMBOLS.has(sym) ? `₩${Math.round(price).toLocaleString('ko-KR')}` : `$${price.toFixed(2)}`}
                   </span>
                 ) : (
                   <span className={`text-xs mt-0.5 ${isActive ? 'text-green-200' : 'text-gray-300'}`}>
@@ -167,7 +171,7 @@ export default function InfiniteBuyPage() {
               <span className="font-normal text-gray-400 ml-1">— 이번 사이클에 쓸 전체 금액</span>
             </label>
             <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">{activeMarket === 'KR' ? '₩' : '$'}</span>
               <input
                 type="text"
                 inputMode="decimal"
@@ -240,15 +244,27 @@ export default function InfiniteBuyPage() {
         <div className="mt-3 pt-3 border-t border-gray-100 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-gray-500">
           <span>
             1분할 매수금:{' '}
-            <strong className="text-gray-700">${(capital / n).toLocaleString('en-US', { maximumFractionDigits: 2 })}</strong>
+            <strong className="text-gray-700">
+              {activeMarket === 'KR'
+                ? `₩${Math.round(capital / n).toLocaleString('ko-KR')}`
+                : `$${(capital / n).toLocaleString('en-US', { maximumFractionDigits: 2 })}`}
+            </strong>
           </span>
           <span>
             목표 수익금:{' '}
-            <strong className="text-green-600">${(capital * targetRate).toLocaleString('en-US', { maximumFractionDigits: 2 })}</strong>
+            <strong className="text-green-600">
+              {activeMarket === 'KR'
+                ? `₩${Math.round(capital * targetRate).toLocaleString('ko-KR')}`
+                : `$${(capital * targetRate).toLocaleString('en-US', { maximumFractionDigits: 2 })}`}
+            </strong>
           </span>
           <span>
             목표 도달 시 총 평가금:{' '}
-            <strong className="text-gray-700">${(capital * (1 + targetRate)).toLocaleString('en-US', { maximumFractionDigits: 2 })}</strong>
+            <strong className="text-gray-700">
+              {activeMarket === 'KR'
+                ? `₩${Math.round(capital * (1 + targetRate)).toLocaleString('ko-KR')}`
+                : `$${(capital * (1 + targetRate)).toLocaleString('en-US', { maximumFractionDigits: 2 })}`}
+            </strong>
           </span>
 
           {/* 매수 방식 토글 */}
@@ -300,13 +316,13 @@ export default function InfiniteBuyPage() {
       {/* 탭 내용 */}
       <div>
         {tab === 'calc' && (
-          <StrategyCalc symbol={activeSymbol} capital={capital} n={n} targetRate={targetRate} variableBuy={variableBuy} />
+          <StrategyCalc symbol={activeSymbol} capital={capital} n={n} targetRate={targetRate} variableBuy={variableBuy} market={activeMarket} />
         )}
         {tab === 'tracker' && (
-          <BuyTracker symbol={activeSymbol} capital={capital} n={n} targetRate={targetRate} />
+          <BuyTracker symbol={activeSymbol} capital={capital} n={n} targetRate={targetRate} market={activeMarket} />
         )}
         {tab === 'backtest' && (
-          <BacktestSim symbol={activeSymbol} capital={capital} n={n} targetRate={targetRate} variableBuy={variableBuy} />
+          <BacktestSim symbol={activeSymbol} capital={capital} n={n} targetRate={targetRate} variableBuy={variableBuy} market={activeMarket} />
         )}
       </div>
 

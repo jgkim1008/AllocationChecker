@@ -8,6 +8,12 @@ interface StrategyCalcProps {
   n: number;
   targetRate: number;
   variableBuy: boolean;
+  market?: 'US' | 'KR';
+}
+
+function fmtP(price: number, market: 'US' | 'KR' = 'US'): string {
+  if (market === 'KR') return `₩${Math.round(price).toLocaleString('ko-KR')}`;
+  return `$${price.toFixed(2)}`;
 }
 
 interface BuyRecord {
@@ -103,7 +109,7 @@ function simulateFreshScenario(
   };
 }
 
-export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy }: StrategyCalcProps) {
+export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy, market = 'US' }: StrategyCalcProps) {
   const [currentPrice, setCurrentPrice] = useState<number | null>(null);
   const [loadingPrice, setLoadingPrice] = useState(false);
   const [position, setPosition] = useState<TrackerPosition | null>(null);
@@ -192,7 +198,9 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy }: St
         <div className="bg-white border border-gray-200 rounded-xl p-4">
           <p className="text-xs text-gray-500 mb-1">1분할 매수금액</p>
           <p className="text-lg font-bold text-gray-900">
-            {unitBuy >= 1000 ? `$${(unitBuy / 1000).toFixed(1)}K` : `$${unitBuy.toFixed(2)}`}
+            {market === 'KR'
+              ? fmtP(unitBuy, 'KR')
+              : unitBuy >= 1000 ? `$${(unitBuy / 1000).toFixed(1)}K` : `$${unitBuy.toFixed(2)}`}
           </p>
           <p className="text-xs text-gray-400 mt-0.5">C ÷ N (평단 이상 시)</p>
         </div>
@@ -200,9 +208,11 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy }: St
         <div className="bg-white border border-gray-200 rounded-xl p-4">
           <p className="text-xs text-gray-500 mb-1">2분할 매수금액</p>
           <p className="text-lg font-bold text-gray-900">
-            {unitBuy * 2 >= 1000
-              ? `$${((unitBuy * 2) / 1000).toFixed(1)}K`
-              : `$${(unitBuy * 2).toFixed(2)}`}
+            {market === 'KR'
+              ? fmtP(unitBuy * 2, 'KR')
+              : unitBuy * 2 >= 1000
+                ? `$${((unitBuy * 2) / 1000).toFixed(1)}K`
+                : `$${(unitBuy * 2).toFixed(2)}`}
           </p>
           <p className="text-xs text-gray-400 mt-0.5">C/N × 2 (평단 미만 시)</p>
         </div>
@@ -210,7 +220,7 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy }: St
         <div className="bg-white border border-gray-200 rounded-xl p-4">
           <p className="text-xs text-gray-500 mb-1">목표 수익금</p>
           <p className="text-lg font-bold text-green-600">
-            ${targetProfit.toLocaleString('en-US', { maximumFractionDigits: 2 })}
+            {fmtP(targetProfit, market)}
           </p>
           <p className="text-xs text-gray-400 mt-0.5">C × {(targetRate * 100).toFixed(1)}%</p>
         </div>
@@ -251,7 +261,7 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy }: St
 
       {currentPrice && (
         <div className="text-sm text-gray-500">
-          현재가: <span className="font-medium text-gray-900">${currentPrice.toFixed(2)}</span>
+          현재가: <span className="font-medium text-gray-900">{fmtP(currentPrice, market)}</span>
         </div>
       )}
 
@@ -277,7 +287,7 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy }: St
                   <div className="flex-shrink-0 text-right text-xs text-gray-500 space-y-0.5">
                     <p>
                       평균단가{' '}
-                      <span className="font-semibold text-gray-800">${position.avgCost.toFixed(2)}</span>
+                      <span className="font-semibold text-gray-800">{fmtP(position.avgCost, market)}</span>
                     </p>
                     <p>
                       진행{' '}
@@ -307,7 +317,7 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy }: St
                   <span className="text-gray-500">
                     평가손익:{' '}
                     <span className={`font-medium ${pnl >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-                      {pnl >= 0 ? '+' : ''}${pnl.toFixed(2)} ({pct >= 0 ? '+' : ''}{pct.toFixed(2)}%)
+                      {pnl >= 0 ? '+' : ''}{fmtP(pnl, market)} ({pct >= 0 ? '+' : ''}{pct.toFixed(2)}%)
                     </span>
                   </span>
                   <span className="text-gray-500">
@@ -319,7 +329,7 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy }: St
                   <span className="text-gray-500">
                     목표가:{' '}
                     <span className="font-medium text-gray-700">
-                      ${(position.avgCost * (1 + targetRate)).toFixed(2)}
+                      {fmtP(position.avgCost * (1 + targetRate), market)}
                     </span>
                   </span>
                 </div>
@@ -367,7 +377,7 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy }: St
                         )}
                       </td>
                       <td className="px-4 py-2.5 text-right text-gray-700">
-                        ${row.scenarioPrice.toFixed(2)}
+                        {fmtP(row.scenarioPrice, market)}
                       </td>
                       <td className="px-4 py-2.5 text-right">
                         {row.isCheap ? (
@@ -389,10 +399,10 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy }: St
                         )}
                       </td>
                       <td className="px-4 py-2.5 text-right text-gray-600">
-                        ${row.sessionBuyAmount.toFixed(2)}
+                        {fmtP(row.sessionBuyAmount, market)}
                       </td>
                       <td className="px-4 py-2.5 text-right font-medium text-gray-900">
-                        ${row.newAvgCost.toFixed(2)}
+                        {fmtP(row.newAvgCost, market)}
                         {row.newAvgCost < position.avgCost && (
                           <span className="ml-1 text-xs text-blue-500 font-normal">
                             ▼{((position.avgCost - row.newAvgCost) / position.avgCost * 100).toFixed(1)}%
@@ -400,7 +410,7 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy }: St
                         )}
                       </td>
                       <td className="px-4 py-2.5 text-right text-green-600 font-medium">
-                        ${row.targetPrice.toFixed(2)}
+                        {fmtP(row.targetPrice, market)}
                       </td>
                       <td className="px-4 py-2.5 text-right font-medium text-red-500">
                         +{row.requiredRise.toFixed(1)}%
@@ -457,7 +467,7 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy }: St
                       {row.dropRate === 0 ? '0%' : `${row.dropRate.toFixed(0)}%`}
                     </td>
                     <td className="px-4 py-2.5 text-right text-gray-700">
-                      ${row.finalPrice.toFixed(2)}
+                      {fmtP(row.finalPrice, market)}
                     </td>
                     <td className="px-4 py-2.5 text-right text-gray-700">
                       {row.sessionCount}일
@@ -468,10 +478,10 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy }: St
                       )}
                     </td>
                     <td className="px-4 py-2.5 text-right text-gray-700">
-                      ${row.avgCost.toFixed(2)}
+                      {fmtP(row.avgCost, market)}
                     </td>
                     <td className="px-4 py-2.5 text-right text-green-600 font-medium">
-                      ${row.targetPrice.toFixed(2)}
+                      {fmtP(row.targetPrice, market)}
                     </td>
                     <td className="px-4 py-2.5 text-right font-medium text-red-500">
                       +{row.requiredRise.toFixed(1)}%

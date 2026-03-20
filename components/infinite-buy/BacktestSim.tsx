@@ -23,6 +23,7 @@ interface BacktestSimProps {
   n: number;
   targetRate: number;
   variableBuy: boolean;
+  market?: 'US' | 'KR';
 }
 
 type RangeOption = '1Y' | '2Y' | '3Y' | '5Y';
@@ -38,7 +39,7 @@ function fmtPct(v: number | undefined | null) {
   return `${(v * 100).toFixed(2)}%`;
 }
 
-export function BacktestSim({ symbol, capital, n, targetRate, variableBuy }: BacktestSimProps) {
+export function BacktestSim({ symbol, capital, n, targetRate, variableBuy, market: _market = 'US' }: BacktestSimProps) {
   const [range, setRange] = useState<RangeOption>('5Y');
   const [dates, setDates] = useState<string[]>([]);
   const [prices, setPrices] = useState<number[]>([]);

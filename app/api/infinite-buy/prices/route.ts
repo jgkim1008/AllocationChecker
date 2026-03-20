@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { detectMarket } from '@/lib/utils/market';
 
 const QUERY_URL = 'https://query1.finance.yahoo.com';
 
@@ -12,7 +13,11 @@ export async function GET(request: NextRequest) {
   }
 
   const ticker = symbol.toUpperCase();
-  const url = `${QUERY_URL}/v8/finance/chart/${encodeURIComponent(ticker)}?range=${range}y&interval=1d`;
+  const market = detectMarket(ticker);
+  const yahooTicker = market === 'KR' && !ticker.endsWith('.KS') && !ticker.endsWith('.KQ')
+    ? `${ticker}.KS`
+    : ticker;
+  const url = `${QUERY_URL}/v8/finance/chart/${encodeURIComponent(yahooTicker)}?range=${range}y&interval=1d`;
 
   try {
     const res = await fetch(url, {
