@@ -201,7 +201,7 @@ export async function GET(
 
     // 6. 캐시 저장 (실패해도 무시)
     try {
-      const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
       await supabase.from('ai_reports').insert({
         symbol: upperSymbol,
         report_type: 'sentiment',
