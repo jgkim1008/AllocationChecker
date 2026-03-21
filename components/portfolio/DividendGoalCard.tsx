@@ -152,7 +152,7 @@ export function DividendGoalCard({ holdings, usdKrw, currentPrices = {} }: Props
               value={targetInput}
               onChange={(e) => setTargetInput(e.target.value.replace(/[^\d,]/g, ''))}
               placeholder="목표 월배당액 입력"
-              className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+              className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
             />
             <select
               value={currency}

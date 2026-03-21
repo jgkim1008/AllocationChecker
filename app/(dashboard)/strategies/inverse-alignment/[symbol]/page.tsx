@@ -37,7 +37,7 @@ function InverseAlignmentDetailContent({
   const router = useRouter();
   const searchParams = useSearchParams();
   const market = (searchParams.get('market') || 'US') as 'US' | 'KR';
-  const name = searchParams.get('name') || symbol;
+  const name = (searchParams.get('name') ?? '').split('?')[0].trim() || symbol;
 
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);

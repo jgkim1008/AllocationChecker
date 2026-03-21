@@ -8,6 +8,10 @@ import { ArrowLeft, RefreshCw, TrendingUp, AlertTriangle, BarChart3, Target, Inf
 import { PremiumGate } from '@/components/PremiumGate';
 import { ChatBot } from '@/components/ai/ChatBot';
 import { createChart, ColorType, CrosshairMode, CandlestickSeries, LineSeries, HistogramSeries } from 'lightweight-charts';
+import { calculateMAAlignment } from '@/lib/utils/ma-alignment-calculator';
+import { calculateInverseAlignment } from '@/lib/utils/inverse-alignment-calculator';
+import { calculateDualRSI } from '@/lib/utils/dual-rsi-calculator';
+import { calculateRSIDivergence } from '@/lib/utils/rsi-divergence-calculator';
 
 interface MonteCarloResult {
   currentPrice: number;
@@ -1198,6 +1202,79 @@ export default function AnalystAlphaDetailPage({ params }: { params: Promise<{ s
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const f = data?.fundamentals;
+
+  // ─── 차트 전략 싱크 계산 ──────────────────────
+  const chartStrategySyncs = useMemo(() => {
+    if (!data || !f) return null;
+
+    // priceHistory → 계산기 포맷 (최신순)
+    const historyForCalc = [...data.priceHistory]
+      .sort((a, b) => b.date.localeCompare(a.date))
+      .map(h => ({ date: h.date, price: h.close, high: h.high, low: h.low, volume: h.volume }));
+
+    // MA 정배열
+    const maResult = historyForCalc.length >= 120
+      ? calculateMAAlignment(historyForCalc, f.currentPrice, historyForCalc[0]?.volume ?? 0)
+      : null;
+
+    // MA 역배열
+    const invResult = historyForCalc.length >= 448
+      ? calculateInverseAlignment(historyForCalc, f.currentPrice, historyForCalc[0]?.volume ?? 0)
+      : null;
+
+    // Dual RSI
+    const dualRsiResult = historyForCalc.length >= 50
+      ? calculateDualRSI(historyForCalc, f.currentPrice, historyForCalc[0]?.volume ?? 0)
+      : null;
+
+    // RSI 다이버전스
+    const rsiDivResult = historyForCalc.length >= 60
+      ? calculateRSIDivergence(historyForCalc, f.currentPrice, historyForCalc[0]?.volume ?? 0)
+      : null;
+
+    return {
+      maAlignment: maResult ? {
+        syncRate: maResult.syncRate,
+        criteria: [
+          { label: 'MA20 > MA60 > MA120', pass: maResult.criteria.isGoldenAlignment },
+          { label: '최근 5일 정배열 진입', pass: maResult.criteria.isFreshAlignment },
+          { label: '종가 > MA20', pass: maResult.criteria.isPriceAboveMa20 },
+          { label: 'MA5 > MA20', pass: maResult.criteria.isMa5AboveMa20 },
+          { label: '거래량 증가', pass: maResult.criteria.isVolumeUp },
+        ],
+      } : null,
+      inverseAlignment: invResult ? {
+        syncRate: invResult.syncRate,
+        criteria: [
+          { label: 'MA448 > MA224 > MA112', pass: invResult.criteria.isMaInverse },
+          { label: 'MA60 돌파', pass: invResult.criteria.isMa60Breakout },
+          { label: 'MA112 근접 (3%)', pass: invResult.criteria.isMa112Close },
+          { label: 'MA5 근접 (2%)', pass: invResult.criteria.isMa5Close },
+          { label: '볼린저 상단 근접', pass: invResult.criteria.isBbUpperClose },
+          { label: '거래량 증가', pass: invResult.criteria.isVolumeUp },
+        ],
+      } : null,
+      dualRsi: dualRsiResult ? {
+        syncRate: dualRsiResult.syncRate,
+        criteria: [
+          { label: `RSI14 과매도 (${dualRsiResult.rsi14})`, pass: dualRsiResult.criteria.isMtfOversold },
+          { label: 'RSI7 크로스 (≤2일)', pass: dualRsiResult.criteria.isFreshCross },
+          { label: 'RSI7 > RSI14', pass: dualRsiResult.criteria.isFastAboveSlow },
+          { label: '거래량 증가', pass: dualRsiResult.criteria.isVolumeUp },
+        ],
+      } : null,
+      rsiDivergence: rsiDivResult ? {
+        syncRate: rsiDivResult.syncRate,
+        criteria: [
+          { label: '불리시 다이버전스', pass: rsiDivResult.criteria.isDivergence },
+          { label: `RSI14 과매도 (${rsiDivResult.rsi14})`, pass: rsiDivResult.criteria.isOversold },
+          { label: '신규 발생 (5일 이내)', pass: rsiDivResult.criteria.isFreshDivergence },
+          { label: '거래량 증가', pass: rsiDivResult.criteria.isVolumeUp },
+        ],
+      } : null,
+    };
+  }, [data, f]);
+
   const upside = f && data?.priceTarget
     ? ((data.priceTarget.avg - f.currentPrice) / f.currentPrice) * 100
     : null;
@@ -1258,9 +1335,8 @@ export default function AnalystAlphaDetailPage({ params }: { params: Promise<{ s
           <PremiumGate featureName="Analyst Alpha 상세 분석">
           <div className="space-y-5">
 
-            {/* 현재가 + 핵심 4지표 (툴팁 포함) */}
+            {/* ── 1. 현재가 + 핵심 4지표 ── */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {/* 현재가는 툴팁 없는 일반 카드 */}
               <div className="bg-white rounded-[20px] border border-gray-200 p-4">
                 <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">현재가</p>
                 <p className="text-2xl font-black text-gray-900">{fmtPrice(f.currentPrice)}</p>
@@ -1271,7 +1347,10 @@ export default function AnalystAlphaDetailPage({ params }: { params: Promise<{ s
               <MetricCard metaKey="beta" value={f.beta ? fmt(f.beta, 2) : 'N/A'} />
             </div>
 
-            {/* 재무 지표 (툴팁 포함) */}
+            {/* ── 2. 워렌 버핏 기준 체크 ── */}
+            <BuffettScore f={f} />
+
+            {/* ── 3. 재무 지표 ── */}
             <div className="bg-white rounded-[24px] border border-gray-200 p-6">
               <div className="flex items-center gap-2 mb-5">
                 <BarChart3 className="h-4 w-4 text-indigo-500" />
@@ -1296,7 +1375,57 @@ export default function AnalystAlphaDetailPage({ params }: { params: Promise<{ s
               </div>
             </div>
 
-            {/* 펀더멘탈선 차트 */}
+            {/* ── 4. 배당 정보 ── */}
+            {data.dividendInfo && (
+              <DividendCard info={data.dividendInfo} fmtPrice={fmtPrice} currency={currency} />
+            )}
+
+            {/* ── 5. 애널리스트 컨센서스 + 목표가 ── */}
+            <div className="grid sm:grid-cols-2 gap-4">
+              <div className="bg-white rounded-[24px] border border-gray-200 p-6">
+                <div className="flex items-center gap-2 mb-4">
+                  <TrendingUp className="h-4 w-4 text-green-500" />
+                  <h2 className="font-black text-gray-900">애널리스트 컨센서스</h2>
+                </div>
+                {data.consensus
+                  ? <ConsensusBar consensus={data.consensus} />
+                  : <p className="text-sm text-gray-400">데이터 없음</p>}
+              </div>
+
+              <div className="bg-white rounded-[24px] border border-gray-200 p-6">
+                <div className="flex items-center gap-2 mb-4">
+                  <Target className="h-4 w-4 text-indigo-500" />
+                  <h2 className="font-black text-gray-900">목표 주가</h2>
+                </div>
+                {data.priceTarget ? (
+                  <div className="space-y-2">
+                    <div className="flex items-end gap-2">
+                      <span className="text-3xl font-black text-indigo-700">{fmtPrice(data.priceTarget.avg)}</span>
+                      {upside !== null && (
+                        <span className={`text-sm font-bold mb-1 ${upside > 0 ? 'text-green-600' : 'text-red-500'}`}>
+                          {upside > 0 ? '+' : ''}{upside.toFixed(1)}%
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-400">고: {fmtPrice(data.priceTarget.high)} · 저: {fmtPrice(data.priceTarget.low)} · {data.priceTarget.count}명 평균</p>
+                    <div className="relative mt-3">
+                      <div className="h-2 bg-gray-100 rounded-full">
+                        <div className="h-2 bg-indigo-500 rounded-full" style={{
+                          width: `${Math.min(100, Math.max(0, ((f.currentPrice - data.priceTarget.low) / (data.priceTarget.high - data.priceTarget.low)) * 100))}%`
+                        }} />
+                      </div>
+                      <div className="flex justify-between text-[10px] text-gray-400 mt-1">
+                        <span>{fmtPrice(data.priceTarget.low)}</span>
+                        <span className="text-indigo-500 font-bold">현재 {fmtPrice(f.currentPrice)}</span>
+                        <span>{fmtPrice(data.priceTarget.high)}</span>
+                      </div>
+                    </div>
+                  </div>
+                ) : <p className="text-sm text-gray-400">데이터 없음</p>}
+              </div>
+            </div>
+
+            {/* ── 6. 펀더멘탈선 차트 ── */}
             {data.priceHistory && data.priceHistory.length > 0 && (
               <div className="bg-white rounded-[24px] border border-gray-200 p-6">
                 <div className="flex items-center gap-2 mb-4">
@@ -1390,7 +1519,7 @@ export default function AnalystAlphaDetailPage({ params }: { params: Promise<{ s
               </div>
             )}
 
-            {/* 피보나치 레벨 요약 */}
+            {/* ── 7. 피보나치 되돌림 ── */}
             {data.fibonacciLevels && (
               <div className="bg-white rounded-[24px] border border-gray-200 p-6">
                 <div className="flex items-center justify-between mb-4">
@@ -1418,7 +1547,6 @@ export default function AnalystAlphaDetailPage({ params }: { params: Promise<{ s
                     <span>52주 고가</span>
                   </div>
                   <div className="relative h-8 bg-gradient-to-r from-green-100 via-yellow-100 to-red-100 rounded-lg">
-                    {/* 피보나치 레벨 마커 */}
                     {data.fibonacciLevels.levels.map(({ level, price }) => {
                       const pct = parseFloat(level);
                       return (
@@ -1430,7 +1558,6 @@ export default function AnalystAlphaDetailPage({ params }: { params: Promise<{ s
                         />
                       );
                     })}
-                    {/* 현재가 마커 */}
                     <div
                       className="absolute top-1/2 -translate-y-1/2 w-4 h-4 bg-indigo-600 rounded-full border-2 border-white shadow-lg"
                       style={{ left: `${Math.min(100, Math.max(0, data.fibonacciLevels.currentPercent))}%`, transform: 'translate(-50%, -50%)' }}
@@ -1469,7 +1596,7 @@ export default function AnalystAlphaDetailPage({ params }: { params: Promise<{ s
                   </div>
                 </div>
 
-                {/* 레벨 상세 (접히는 형태) */}
+                {/* 레벨 상세 */}
                 <details className="mt-4">
                   <summary className="text-xs text-gray-500 font-bold cursor-pointer hover:text-gray-700">
                     모든 레벨 보기
@@ -1494,60 +1621,101 @@ export default function AnalystAlphaDetailPage({ params }: { params: Promise<{ s
               </div>
             )}
 
-            {/* 배당 정보 */}
-            {data.dividendInfo && (
-              <DividendCard info={data.dividendInfo} fmtPrice={fmtPrice} currency={currency} />
+            {/* ── 8. 차트 전략 싱크 ── */}
+            {chartStrategySyncs && (
+              <div className="bg-white rounded-[24px] border border-gray-200 p-6">
+                <div className="flex items-center gap-2 mb-5">
+                  <Layers className="h-4 w-4 text-indigo-500" />
+                  <h2 className="font-black text-gray-900">차트 전략 싱크</h2>
+                  <span className="text-[10px] text-gray-400 font-medium">현재 차트가 각 전략 조건에 얼마나 부합하는지</span>
+                </div>
+                <div className="space-y-3">
+                  {[
+                    {
+                      label: '이평선 정배열 전략',
+                      sublabel: 'MA20 > MA60 > MA120 상승 정렬',
+                      href: `/strategies/ma-alignment/${symbol}?market=${market}&name=${encodeURIComponent(f?.name ?? symbol)}`,
+                      color: { bar: 'bg-green-500', badge: 'bg-green-50 text-green-700', icon: 'text-green-500' },
+                      data: chartStrategySyncs.maAlignment,
+                    },
+                    {
+                      label: '이평선 역배열 돌파',
+                      sublabel: 'MA448 > MA224 > MA112 역배열 + MA60 돌파',
+                      href: `/strategies/inverse-alignment/${symbol}?market=${market}&name=${encodeURIComponent(f?.name ?? symbol)}`,
+                      color: { bar: 'bg-blue-500', badge: 'bg-blue-50 text-blue-700', icon: 'text-blue-500' },
+                      data: chartStrategySyncs.inverseAlignment,
+                    },
+                    {
+                      label: 'MTF RSI + Dual RSI 크로스',
+                      sublabel: '일봉 RSI(14) ≤ 40 과매도 + RSI(7) 상향 돌파',
+                      href: `/strategies/dual-rsi/${symbol}?market=${market}&name=${encodeURIComponent(f?.name ?? symbol)}`,
+                      color: { bar: 'bg-violet-500', badge: 'bg-violet-50 text-violet-700', icon: 'text-violet-500' },
+                      data: chartStrategySyncs.dualRsi,
+                    },
+                    {
+                      label: 'RSI 다이버전스 + RSI 필터',
+                      sublabel: '가격 저점↓ + RSI 저점↑ 불리시 다이버전스',
+                      href: `/strategies/rsi-divergence/${symbol}?market=${market}&name=${encodeURIComponent(f?.name ?? symbol)}`,
+                      color: { bar: 'bg-orange-500', badge: 'bg-orange-50 text-orange-700', icon: 'text-orange-500' },
+                      data: chartStrategySyncs.rsiDivergence,
+                    },
+                  ].map(({ label, sublabel, href, color, data: syncData }) => {
+                    if (!syncData) return null;
+                    const rate = syncData.syncRate;
+                    const rateColor = rate >= 70 ? 'text-green-600' : rate >= 40 ? 'text-yellow-600' : 'text-gray-400';
+                    const rateLabel = rate >= 70 ? '높음' : rate >= 40 ? '보통' : '낮음';
+                    return (
+                      <Link
+                        key={href}
+                        href={`${href}?from=${symbol.toUpperCase()}`}
+                        className="group flex flex-col gap-3 p-4 rounded-2xl border border-gray-100 hover:border-indigo-200 hover:bg-indigo-50/30 transition-all"
+                      >
+                        {/* 헤더 */}
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-sm font-black text-gray-900 group-hover:text-indigo-700 transition-colors">{label}</p>
+                            <p className="text-[11px] text-gray-400 mt-0.5">{sublabel}</p>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className={`px-2.5 py-1 rounded-full text-xs font-black ${color.badge}`}>
+                              {rateLabel}
+                            </span>
+                            <span className={`text-xl font-black ${rateColor}`}>{rate}%</span>
+                            <svg className="h-4 w-4 text-gray-300 group-hover:text-indigo-400 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
+                            </svg>
+                          </div>
+                        </div>
+
+                        {/* 진행 바 */}
+                        <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all duration-700 ${color.bar}`}
+                            style={{ width: `${rate}%` }}
+                          />
+                        </div>
+
+                        {/* 조건 체크 */}
+                        <div className="flex flex-wrap gap-1.5">
+                          {syncData.criteria.map(c => (
+                            <span
+                              key={c.label}
+                              className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                                c.pass ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400'
+                              }`}
+                            >
+                              {c.pass ? '✓' : '✕'} {c.label}
+                            </span>
+                          ))}
+                        </div>
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
             )}
 
-            {/* 버핏 스코어 */}
-            <BuffettScore f={f} />
-
-            {/* 애널리스트 컨센서스 + 목표가 */}
-            <div className="grid sm:grid-cols-2 gap-4">
-              <div className="bg-white rounded-[24px] border border-gray-200 p-6">
-                <div className="flex items-center gap-2 mb-4">
-                  <TrendingUp className="h-4 w-4 text-green-500" />
-                  <h2 className="font-black text-gray-900">애널리스트 컨센서스</h2>
-                </div>
-                {data.consensus
-                  ? <ConsensusBar consensus={data.consensus} />
-                  : <p className="text-sm text-gray-400">데이터 없음</p>}
-              </div>
-
-              <div className="bg-white rounded-[24px] border border-gray-200 p-6">
-                <div className="flex items-center gap-2 mb-4">
-                  <Target className="h-4 w-4 text-indigo-500" />
-                  <h2 className="font-black text-gray-900">목표 주가</h2>
-                </div>
-                {data.priceTarget ? (
-                  <div className="space-y-2">
-                    <div className="flex items-end gap-2">
-                      <span className="text-3xl font-black text-indigo-700">{fmtPrice(data.priceTarget.avg)}</span>
-                      {upside !== null && (
-                        <span className={`text-sm font-bold mb-1 ${upside > 0 ? 'text-green-600' : 'text-red-500'}`}>
-                          {upside > 0 ? '+' : ''}{upside.toFixed(1)}%
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs text-gray-400">고: {fmtPrice(data.priceTarget.high)} · 저: {fmtPrice(data.priceTarget.low)} · {data.priceTarget.count}명 평균</p>
-                    <div className="relative mt-3">
-                      <div className="h-2 bg-gray-100 rounded-full">
-                        <div className="h-2 bg-indigo-500 rounded-full" style={{
-                          width: `${Math.min(100, Math.max(0, ((f.currentPrice - data.priceTarget.low) / (data.priceTarget.high - data.priceTarget.low)) * 100))}%`
-                        }} />
-                      </div>
-                      <div className="flex justify-between text-[10px] text-gray-400 mt-1">
-                        <span>{fmtPrice(data.priceTarget.low)}</span>
-                        <span className="text-indigo-500 font-bold">현재 {fmtPrice(f.currentPrice)}</span>
-                        <span>{fmtPrice(data.priceTarget.high)}</span>
-                      </div>
-                    </div>
-                  </div>
-                ) : <p className="text-sm text-gray-400">데이터 없음</p>}
-              </div>
-            </div>
-
-            {/* 몬테카를로 */}
+            {/* ── 10. 몬테카를로 시뮬레이션 ── */}
             {data.monteCarlo && (
               <div className="bg-white rounded-[24px] border border-gray-200 p-6">
                 <div className="flex items-center gap-2 mb-2">
@@ -1573,13 +1741,12 @@ export default function AnalystAlphaDetailPage({ params }: { params: Promise<{ s
               </div>
             )}
 
-            {/* 퀀트 투자 분석 */}
+            {/* ── 11. 퀀트 투자 분석 ── */}
             <InvestmentAnalysis f={f} monte={data.monteCarlo} currency={currency} fmtPrice={fmtPrice} />
 
-            {/* AI 투자 리포트 */}
+            {/* ── 12. AI 분석 ── */}
             <AIReportSection symbol={symbol.toUpperCase()} market={market} />
 
-            {/* AI 비교 분석 & 센티먼트 */}
             <div className="grid sm:grid-cols-2 gap-4">
               <AICompareSection symbol={symbol.toUpperCase()} market={market} />
               <AISentimentSection symbol={symbol.toUpperCase()} market={market} />

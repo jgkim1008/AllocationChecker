@@ -137,7 +137,7 @@ export default function InfiniteBuyPage() {
               value={isCustom ? customSymbol : ''}
               onChange={(e) => handleCustomInput(e.target.value)}
               onFocus={() => setIsCustom(true)}
-              className={`text-sm border rounded-lg px-3 py-2 h-full min-h-[60px] w-36 focus:outline-none focus:ring-2 focus:ring-green-500 transition-colors placeholder:text-gray-300 ${
+              className={`text-sm border rounded-lg px-3 py-2 h-full min-h-[60px] w-36 bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-green-500 transition-colors placeholder:text-gray-300 ${
                 isCustom ? 'border-green-500' : 'border-gray-200'
               }`}
             />
@@ -183,7 +183,7 @@ export default function InfiniteBuyPage() {
                   setCapital(clamped);
                   setCapitalInput(clamped.toString());
                 }}
-                className="w-full text-sm border border-gray-200 rounded-lg pl-7 pr-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500"
+                className="w-full text-sm border border-gray-200 rounded-lg pl-7 pr-3 py-2 bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-green-500"
               />
             </div>
           </div>
@@ -206,7 +206,7 @@ export default function InfiniteBuyPage() {
                   setN(clamped);
                   setNInput(clamped.toString());
                 }}
-                className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500"
+                className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-green-500"
               />
               <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs">등분</span>
             </div>
@@ -233,7 +233,7 @@ export default function InfiniteBuyPage() {
                     setTargetRateInput((targetRate * 100).toString());
                   }
                 }}
-                className="w-full text-sm border border-gray-200 rounded-lg px-3 pr-8 py-2 focus:outline-none focus:ring-2 focus:ring-green-500"
+                className="w-full text-sm border border-gray-200 rounded-lg px-3 pr-8 py-2 bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-green-500"
               />
               <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs">%</span>
             </div>

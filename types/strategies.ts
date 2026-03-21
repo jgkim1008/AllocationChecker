@@ -1,5 +1,7 @@
 import { InverseAlignmentResult } from '@/lib/utils/inverse-alignment-calculator';
 import { MAAlignmentResult } from '@/lib/utils/ma-alignment-calculator';
+import { DualRSIResult } from '@/lib/utils/dual-rsi-calculator';
+import { RSIDivergenceResult } from '@/lib/utils/rsi-divergence-calculator';
 
 export interface InverseAlignmentStock extends InverseAlignmentResult {
   symbol: string;
@@ -13,6 +15,18 @@ export interface InverseAlignmentReport {
 }
 
 export interface MAAlignmentStock extends MAAlignmentResult {
+  symbol: string;
+  name: string;
+  market: 'US' | 'KR';
+}
+
+export interface DualRSIStock extends DualRSIResult {
+  symbol: string;
+  name: string;
+  market: 'US' | 'KR';
+}
+
+export interface RSIDivergenceStock extends RSIDivergenceResult {
   symbol: string;
   name: string;
   market: 'US' | 'KR';
