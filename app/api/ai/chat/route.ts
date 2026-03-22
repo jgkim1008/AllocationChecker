@@ -29,7 +29,7 @@ interface ChatMessage {
 async function fetchStockContext(symbol: string, market: string): Promise<StockContext | null> {
   try {
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
-    const res = await fetch(`${baseUrl}/api/strategies/analyst-alpha/${symbol}?market=${market}`, {
+    const res = await fetch(`${baseUrl}/api/strategies/stock-scan/${symbol}?market=${market}`, {
       next: { revalidate: 300 },
     });
     if (!res.ok) return null;

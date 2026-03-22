@@ -1186,7 +1186,7 @@ export default function AnalystAlphaDetailPage({ params }: { params: Promise<{ s
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/strategies/analyst-alpha/${symbol}?market=${market}`);
+      const res = await fetch(`/api/strategies/stock-scan/${symbol}?market=${market}`);
       if (!res.ok) {
         const j = await res.json();
         throw new Error(j.error ?? 'Failed to fetch');
@@ -1288,7 +1288,7 @@ export default function AnalystAlphaDetailPage({ params }: { params: Promise<{ s
   return (
     <div className="min-h-screen bg-gray-50/50">
       <div className="max-w-4xl mx-auto px-4 pt-10 pb-20">
-        <Link href="/strategies/analyst-alpha"
+        <Link href="/strategies/stock-scan"
           className="flex items-center gap-2 text-sm font-bold text-gray-400 hover:text-gray-900 mb-10 transition-colors group"
         >
           <div className="p-1.5 bg-white rounded-lg border border-gray-100 group-hover:border-gray-300">
@@ -1301,10 +1301,9 @@ export default function AnalystAlphaDetailPage({ params }: { params: Promise<{ s
         <div className="flex items-start justify-between gap-4 mb-8">
           <div>
             <div className="flex items-center gap-2 mb-2">
-              <div className="px-2 py-1 bg-indigo-600 text-white text-[10px] font-black rounded uppercase tracking-widest">AI Quant</div>
               <div className="flex items-center gap-1 text-indigo-500">
                 <Sparkles className="h-3.5 w-3.5" />
-                <span className="text-xs font-bold">Analyst Alpha</span>
+                <span className="text-xs font-bold">종목스캔</span>
               </div>
             </div>
             <h1 className="text-4xl font-black text-gray-900 tracking-tighter">{symbol.toUpperCase()}</h1>
@@ -1332,7 +1331,7 @@ export default function AnalystAlphaDetailPage({ params }: { params: Promise<{ s
         )}
 
         {!loading && data && f && (
-          <PremiumGate featureName="Analyst Alpha 상세 분석">
+          <PremiumGate featureName="종목스캔 상세 분석">
           <div className="space-y-5">
 
             {/* ── 1. 현재가 + 핵심 4지표 ── */}

@@ -265,10 +265,10 @@ export function ValueScanTable({ stocks, loading }: ValueScanTableProps) {
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            router.push(`/strategies/analyst-alpha?symbol=${tickerDisplay}&market=${stock.market}`);
+                            router.push(`/strategies/stock-scan?symbol=${tickerDisplay}&market=${stock.market}`);
                           }}
                           className="p-1.5 rounded-lg hover:bg-amber-100 text-gray-300 hover:text-amber-600 transition-colors"
-                          title="Analyst Alpha 분석"
+                          title="종목스캔 분석"
                         >
                           <ChevronRight className="h-4 w-4" />
                         </button>

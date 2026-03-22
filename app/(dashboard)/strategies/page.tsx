@@ -1,20 +1,10 @@
 'use client';
 
 import Link from 'next/link';
-import { TrendingUp, Infinity, BarChart3, ChevronRight, Activity, Zap, BookOpen } from 'lucide-react';
+import { TrendingUp, Infinity, ChevronRight, Activity, Zap, BookOpen } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
 const STRATEGIES = [
-  {
-    id: 'analyst-alpha',
-    title: 'Analyst Alpha (AI)',
-    description: '기본적 가치 평가, 애널리스트 추정치, 몬테카를로 시뮬레이션을 결합한 AI 기반 퀀트 분석 엔진입니다.',
-    icon: BarChart3,
-    href: '/strategies/analyst-alpha',
-    color: 'bg-indigo-50 text-indigo-600',
-    tag: 'AI',
-    tagColor: 'bg-indigo-100 text-indigo-700',
-  },
   {
     id: 'fibonacci',
     title: '피보나치 되돌림',

@@ -64,9 +64,9 @@ const SECTOR_PEERS_KR: Record<string, string[]> = {
 
 async function fetchStockDataDirect(symbol: string, market: string): Promise<StockData | null> {
   try {
-    // 내부 analyst-alpha API 사용
+    // 내부 stock-scan API 사용
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
-    const res = await fetch(`${baseUrl}/api/strategies/analyst-alpha/${symbol}?market=${market}`, {
+    const res = await fetch(`${baseUrl}/api/strategies/stock-scan/${symbol}?market=${market}`, {
       headers: { 'User-Agent': 'Mozilla/5.0' },
     });
 

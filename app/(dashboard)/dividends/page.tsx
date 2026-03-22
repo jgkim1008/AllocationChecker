@@ -246,7 +246,7 @@ function DividendCalendar({
                     {dividends.slice(0, 2).map(stock => (
                       <Link
                         key={stock.symbol}
-                        href={`/strategies/analyst-alpha/${stock.symbol}?market=${stock.market}`}
+                        href={`/strategies/stock-scan/${stock.symbol}?market=${stock.market}`}
                         className={`block text-[9px] sm:text-[10px] font-bold px-1 py-0.5 rounded truncate hover:opacity-70 transition-opacity ${
                           stock.market === 'US' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'
                         }`}
@@ -302,7 +302,7 @@ function DividendCalendar({
               {expandedStocks.map(stock => (
                 <Link
                   key={stock.symbol}
-                  href={`/strategies/analyst-alpha/${stock.symbol}?market=${stock.market}`}
+                  href={`/strategies/stock-scan/${stock.symbol}?market=${stock.market}`}
                   onClick={() => setExpandedDate(null)}
                   className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-gray-50 transition-colors"
                 >
@@ -447,7 +447,7 @@ function AIDividendPicks({ year, month }: { year: number; month: number }) {
               {data.picks.map((pick, i) => (
                 <Link
                   key={pick.symbol}
-                  href={`/strategies/analyst-alpha/${pick.symbol}?market=${pick.market}`}
+                  href={`/strategies/stock-scan/${pick.symbol}?market=${pick.market}`}
                   className="bg-white rounded-xl p-4 border border-emerald-100 hover:border-emerald-300 hover:shadow-md transition-all group"
                 >
                   <div className="flex items-center justify-between mb-2">
@@ -764,7 +764,7 @@ export default function DividendsPage() {
                         <tr
                           key={stock.symbol}
                           className="hover:bg-emerald-50/30 transition-colors cursor-pointer"
-                          onClick={() => router.push(`/strategies/analyst-alpha/${stock.symbol}?market=${stock.market}`)}
+                          onClick={() => router.push(`/strategies/stock-scan/${stock.symbol}?market=${stock.market}`)}
                         >
                           <td className="px-5 py-4">
                             <div className="flex items-center gap-3">

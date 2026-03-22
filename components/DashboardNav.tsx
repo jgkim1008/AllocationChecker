@@ -8,6 +8,7 @@ import { useAuth } from '@/components/AuthProvider';
 const NAV_LINKS = [
   { href: '/portfolio', label: '포트폴리오' },
   { href: '/dividends', label: '배당캘린더' },
+  { href: '/strategies/stock-scan', label: '종목스캔' },
   { href: '/investors', label: '기관투자자' },
   { href: '/strategies', label: '전략' },
   { href: '/backtesting', label: '백테스팅' },
@@ -34,7 +35,9 @@ export function DashboardNav() {
           <span className="font-bold text-gray-900 text-sm">AllocationChecker</span>
           <nav className="hidden sm:flex items-center gap-1">
             {NAV_LINKS.map((link) => {
-              const isActive = pathname.startsWith(link.href);
+              const isActive = link.href === '/strategies'
+                ? pathname === '/strategies' || (pathname.startsWith('/strategies/') && !pathname.startsWith('/strategies/stock-scan'))
+                : pathname.startsWith(link.href);
               return (
                 <Link
                   key={link.href}

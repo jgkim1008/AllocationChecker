@@ -295,7 +295,7 @@ async function getQuarterlyEpsHistory(yahooTicker: string): Promise<{ date: stri
 }
 
 // ─────────────────────────────────────────────
-// GET /api/strategies/analyst-alpha/[symbol]
+// GET /api/strategies/stock-scan/[symbol]
 // ─────────────────────────────────────────────
 export async function GET(
   request: NextRequest,
