@@ -533,6 +533,7 @@ export default function AnalystAlphaPage() {
           </p>
         </div>
 
+        <PremiumGate featureName="종목스캔">
         {/* AI 종목 추천 */}
         <AIStockPicks />
 
@@ -564,7 +565,6 @@ export default function AnalystAlphaPage() {
         </div>
 
         {/* 리스트 */}
-        <PremiumGate featureName="종목스캔">
         {loading ? (
           <div className="space-y-2">
             {Array.from({ length: 8 }).map((_, i) => (

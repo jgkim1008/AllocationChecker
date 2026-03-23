@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
+import { getNaverStockNames } from '@/lib/api/naver';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
+
+// 한글 포함 여부 체크
+function hasKorean(str: string): boolean {
+  return /[가-힣]/.test(str);
+}
 
 interface DividendStock {
   symbol: string;
@@ -140,6 +146,34 @@ export async function GET(request: NextRequest) {
     }
 
     results.sort((a, b) => a.exDividendDate.localeCompare(b.exDividendDate));
+
+    // 한국 주식 중 한글 이름이 없는 종목 네이버에서 조회
+    const krResultsWithoutKoreanName = results.filter(
+      r => r.market === 'KR' && r.name && !hasKorean(r.name)
+    );
+
+    if (krResultsWithoutKoreanName.length > 0) {
+      const symbolsToFetch = krResultsWithoutKoreanName.map(r => r.symbol);
+      const koreanNames = await getNaverStockNames(symbolsToFetch, 5);
+
+      // DB 업데이트 (비동기)
+      const nameUpdates: { symbol: string; name: string }[] = [];
+      for (const [symbol, name] of koreanNames) {
+        nameUpdates.push({ symbol, name });
+      }
+      if (nameUpdates.length > 0) {
+        Promise.all(
+          nameUpdates.map(u => supabase.from('stocks').update({ name: u.name }).eq('symbol', u.symbol))
+        ).catch(() => {});
+      }
+
+      // 응답 데이터에 한글 이름 반영
+      for (const stock of results) {
+        if (stock.market === 'KR' && koreanNames.has(stock.symbol)) {
+          stock.name = koreanNames.get(stock.symbol)!;
+        }
+      }
+    }
 
     return NextResponse.json({
       stocks: results,

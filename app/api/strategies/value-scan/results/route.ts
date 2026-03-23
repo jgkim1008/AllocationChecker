@@ -6,7 +6,7 @@ export async function GET(request: NextRequest) {
   const grade = searchParams.get('grade'); // A, B, C, D, or null (all)
   const market = searchParams.get('market'); // US, KR, or null (all)
   const sort = searchParams.get('sort') ?? 'total_score'; // total_score, market_cap, dividend_yield
-  const limit = Math.min(parseInt(searchParams.get('limit') ?? '200'), 500);
+  const limit = Math.min(parseInt(searchParams.get('limit') ?? '1000'), 1000);
 
   try {
     const supabase = await createClient();

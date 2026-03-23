@@ -148,6 +148,25 @@ function fmtB(n: number | null | undefined, cur = '$') {
   return `${cur}${(n / 1e6).toFixed(0)}M`;
 }
 
+const SECTOR_KR: Record<string, string> = {
+  'Technology': '기술',
+  'Healthcare': '헬스케어',
+  'Financial Services': '금융',
+  'Consumer Cyclical': '경기소비재',
+  'Consumer Defensive': '필수소비재',
+  'Industrials': '산업재',
+  'Basic Materials': '소재',
+  'Energy': '에너지',
+  'Communication Services': '커뮤니케이션',
+  'Real Estate': '부동산',
+  'Utilities': '유틸리티',
+};
+
+function translateSector(sector: string, isKR: boolean): string {
+  if (!isKR) return sector;
+  return SECTOR_KR[sector] ?? sector;
+}
+
 // ─── 지표 정의 ────────────────────────────────
 type Grade = 'good' | 'ok' | 'bad' | 'neutral';
 
@@ -1307,7 +1326,7 @@ export default function AnalystAlphaDetailPage({ params }: { params: Promise<{ s
               </div>
             </div>
             <h1 className="text-4xl font-black text-gray-900 tracking-tighter">{symbol.toUpperCase()}</h1>
-            {f && <p className="text-gray-500 font-medium mt-1">{f.name} · {f.sector}</p>}
+            {f && <p className="text-gray-500 font-medium mt-1">{f.name} · {translateSector(f.sector, market === 'KR')}</p>}
           </div>
           <button onClick={fetchData} disabled={loading}
             className="flex items-center gap-2 bg-gray-900 hover:bg-indigo-600 disabled:bg-gray-200 text-white font-bold text-sm px-5 py-3 rounded-2xl transition-all active:scale-95"

@@ -5,6 +5,21 @@ import { createServiceClient } from '@/lib/supabase/server';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
+// 섹터 한글 번역
+const SECTOR_KR: Record<string, string> = {
+  'Technology': '기술',
+  'Healthcare': '헬스케어',
+  'Financial Services': '금융',
+  'Consumer Cyclical': '경기소비재',
+  'Consumer Defensive': '필수소비재',
+  'Industrials': '산업재',
+  'Basic Materials': '소재',
+  'Energy': '에너지',
+  'Communication Services': '커뮤니케이션',
+  'Real Estate': '부동산',
+  'Utilities': '유틸리티',
+};
+
 // ─────────────────────────────────────────────
 // Yahoo Finance crumb session (in-memory cache)
 // ─────────────────────────────────────────────
@@ -63,8 +78,8 @@ async function fetchQuoteSummary(symbol: string, modules: string) {
 }
 
 // ─────────────────────────────────────────────
-// 네이버 금융 PER/PBR/EPS (한국 주식 전용)
-// finance.naver.com HTML에서 em#_per, em#_pbr, em#_eps 파싱
+// 네이버 금융 PER/PBR/EPS + 종목명 (한국 주식 전용)
+// finance.naver.com HTML에서 파싱
 // ─────────────────────────────────────────────
 async function getNaverFundamentals(symbol: string) {
   const clean = symbol.replace(/\.[A-Z]+$/, '');
@@ -91,7 +106,15 @@ async function getNaverFundamentals(symbol: string) {
       return isNaN(n) ? null : n;
     };
 
+    // 종목명 파싱: <div class="wrap_company"> 내부의 <h2><a>종목명</a></h2>
+    let name: string | null = null;
+    const nameMatch = html.match(/<div[^>]*class="wrap_company"[^>]*>[\s\S]*?<h2[^>]*><a[^>]*>([^<]+)<\/a>/);
+    if (nameMatch) {
+      name = nameMatch[1].trim();
+    }
+
     return {
+      name,
       pe:  parseField('_per'),
       pb:  parseField('_pbr'),
       eps: parseField('_eps'),
@@ -339,14 +362,15 @@ export async function GET(
     }
   } catch { /* ignore */ }
 
-  // 3. quoteSummary + Naver + 배당 히스토리 병렬 호출
-  const [summary, krx, dividendHistory] = await Promise.all([
+  // 3. quoteSummary + Naver + 배당 히스토리 + DB 종목명 병렬 호출
+  const [summary, krx, dividendHistory, dbStock] = await Promise.all([
     fetchQuoteSummary(
       yahooTicker,
       'financialData,summaryDetail,defaultKeyStatistics,assetProfile,recommendationTrend,price'
     ),
     market === 'KR' ? getNaverFundamentals(upperSymbol) : Promise.resolve(null),
     getYahooDividendHistory(yahooTicker),
+    market === 'KR' ? createServiceClient().then(s => s.from('stocks').select('name').eq('symbol', upperSymbol).single()).then(r => r.data).catch(() => null) : Promise.resolve(null),
   ]);
 
   // 배당 주기 결정
@@ -377,8 +401,11 @@ export async function GET(
     revenue: fd.totalRevenue ?? null,
     netIncome: null as number | null,
     revenueGrowth: fd.revenueGrowth != null ? Math.round(fd.revenueGrowth * 1000) / 10 : null,
-    name: meta.longName ?? meta.shortName ?? upperSymbol,
-    sector: ap.sector ?? sector,
+    name: (market === 'KR' && (krx?.name || dbStock?.name)) ? (krx?.name ?? dbStock?.name) : (meta.longName ?? meta.shortName ?? upperSymbol),
+    sector: (() => {
+      const s = ap.sector ?? sector;
+      return market === 'KR' ? (SECTOR_KR[s] ?? s) : s;
+    })(),
     industry: ap.industry ?? industry,
     description: ap.longBusinessSummary ?? '',
   };
@@ -448,6 +475,8 @@ export async function GET(
         dividend_per_share: dividendInfo.perShare,
         ex_dividend_date: dividendInfo.exDate,
         dividend_frequency: dividendInfo.frequency,
+        // 한국 주식: 네이버에서 가져온 한글 종목명 저장
+        ...(market === 'KR' && krx?.name ? { name: krx.name } : {}),
       })
       .eq('symbol', upperSymbol)
   ).catch(() => {});

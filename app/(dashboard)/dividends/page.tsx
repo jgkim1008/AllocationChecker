@@ -5,6 +5,7 @@ import ReactMarkdown from 'react-markdown';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { RefreshCw, Calendar, DollarSign, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, X, Sparkles, Brain, Loader2, TrendingUp } from 'lucide-react';
+import { PremiumGate } from '@/components/PremiumGate';
 
 interface DividendStock {
   symbol: string;
@@ -642,6 +643,7 @@ export default function DividendsPage() {
           </button>
         </div>
 
+        <PremiumGate featureName="배당 캘린더">
         {/* 로딩 */}
         {loading && !data && (
           <div className="space-y-3">
@@ -813,6 +815,7 @@ export default function DividendsPage() {
             </p>
           </>
         )}
+        </PremiumGate>
       </div>
     </div>
   );

@@ -27,8 +27,8 @@ export function PremiumGate({ children, featureName }: PremiumGateProps) {
       </div>
 
       {/* 잠금 오버레이 */}
-      <div className="absolute inset-0 z-10 flex items-center justify-center">
-        <div className="bg-white/90 backdrop-blur-md rounded-3xl px-10 py-9 text-center shadow-2xl border border-gray-100 max-w-xs mx-4">
+      <div className="absolute inset-0 z-10 flex items-start justify-center pt-16">
+        <div className="bg-white/90 backdrop-blur-md rounded-3xl px-10 py-9 text-center shadow-2xl border border-gray-100 max-w-xs mx-4 sticky top-20">
           <div className="w-14 h-14 bg-indigo-100 rounded-2xl flex items-center justify-center mx-auto mb-5">
             <Lock className="h-6 w-6 text-indigo-600" />
           </div>

@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { TrendingUp, Infinity, ChevronRight, Activity, Zap, BookOpen } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { PremiumGate } from '@/components/PremiumGate';
 
 const STRATEGIES = [
   {
@@ -112,44 +113,46 @@ export default function StrategiesPage() {
           </p>
         </header>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {STRATEGIES.map((strategy) => {
-            const Icon = strategy.icon;
-            const isSoon = strategy.id === 'new-strategy';
-            
-            return (
-              <Link 
-                key={strategy.id} 
-                href={strategy.href}
-                className={isSoon ? 'cursor-not-allowed' : ''}
-              >
-                <Card className={`h-full border-gray-200 transition-all duration-300 ${isSoon ? 'opacity-60 grayscale' : 'hover:shadow-lg hover:-translate-y-1 cursor-pointer group active:scale-[0.98]'}`}>
-                  <CardHeader className="flex flex-row items-center gap-4 pb-4">
-                    <div className={`p-3 rounded-2xl ${strategy.color} transition-transform group-hover:scale-110 duration-300`}>
-                      <Icon className="h-6 w-6" />
-                    </div>
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded uppercase ${strategy.tagColor}`}>
-                          {strategy.tag}
-                        </span>
+        <PremiumGate featureName="투자 전략">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {STRATEGIES.map((strategy) => {
+              const Icon = strategy.icon;
+              const isSoon = strategy.id === 'new-strategy';
+
+              return (
+                <Link
+                  key={strategy.id}
+                  href={strategy.href}
+                  className={isSoon ? 'cursor-not-allowed' : ''}
+                >
+                  <Card className={`h-full border-gray-200 transition-all duration-300 ${isSoon ? 'opacity-60 grayscale' : 'hover:shadow-lg hover:-translate-y-1 cursor-pointer group active:scale-[0.98]'}`}>
+                    <CardHeader className="flex flex-row items-center gap-4 pb-4">
+                      <div className={`p-3 rounded-2xl ${strategy.color} transition-transform group-hover:scale-110 duration-300`}>
+                        <Icon className="h-6 w-6" />
                       </div>
-                      <CardTitle className="text-lg group-hover:text-indigo-600 transition-colors">
-                        {strategy.title}
-                      </CardTitle>
-                    </div>
-                    {!isSoon && <ChevronRight className="h-5 w-5 text-gray-300 group-hover:text-indigo-400 group-hover:translate-x-1 transition-all" />}
-                  </CardHeader>
-                  <CardContent>
-                    <CardDescription className="text-gray-600 leading-relaxed text-sm">
-                      {strategy.description}
-                    </CardDescription>
-                  </CardContent>
-                </Card>
-              </Link>
-            );
-          })}
-        </div>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded uppercase ${strategy.tagColor}`}>
+                            {strategy.tag}
+                          </span>
+                        </div>
+                        <CardTitle className="text-lg group-hover:text-indigo-600 transition-colors">
+                          {strategy.title}
+                        </CardTitle>
+                      </div>
+                      {!isSoon && <ChevronRight className="h-5 w-5 text-gray-300 group-hover:text-indigo-400 group-hover:translate-x-1 transition-all" />}
+                    </CardHeader>
+                    <CardContent>
+                      <CardDescription className="text-gray-600 leading-relaxed text-sm">
+                        {strategy.description}
+                      </CardDescription>
+                    </CardContent>
+                  </Card>
+                </Link>
+              );
+            })}
+          </div>
+        </PremiumGate>
       </div>
     </div>
   );

@@ -3,12 +3,18 @@ import { createServiceClient } from '@/lib/supabase/server';
 import { getSessionUser } from '@/lib/supabase/auth-helper';
 import { getDividendHistory } from '@/lib/api/dividend-router';
 import { detectMarket } from '@/lib/utils/market';
+import { getNaverStockNames } from '@/lib/api/naver';
 import type { DividendCalendarEvent } from '@/types/dividend';
 
 const MARKET_COLORS: Record<string, { bg: string; border: string }> = {
   US: { bg: '#16a34a', border: '#15803d' },
   KR: { bg: '#2563eb', border: '#1d4ed8' },
 };
+
+// 한글 포함 여부 체크
+function hasKorean(str: string): boolean {
+  return /[가-힣]/.test(str);
+}
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -39,7 +45,7 @@ export async function GET(request: NextRequest) {
     }
 
     // symbol별 총 수량 합산 (같은 종목을 여러 번 추가했을 경우)
-    const holdingMap = new Map<string, { shares: number; name: string }>();
+    const holdingMap = new Map<string, { shares: number; name: string; market: string }>();
     for (const h of holdings) {
       const stock = (h.stock as unknown) as { symbol: string; name: string; market: string } | null;
       if (!stock) continue;
@@ -47,10 +53,38 @@ export async function GET(request: NextRequest) {
       holdingMap.set(stock.symbol, {
         shares: (existing?.shares ?? 0) + Number(h.shares),
         name: stock.name,
+        market: stock.market,
       });
     }
 
     const symbols = [...holdingMap.keys()];
+
+    // 한국 주식 중 한글 이름이 없는 종목 네이버에서 조회
+    const krSymbolsWithoutKoreanName = symbols.filter(symbol => {
+      const holding = holdingMap.get(symbol);
+      return holding?.market === 'KR' && holding.name && !hasKorean(holding.name);
+    });
+
+    if (krSymbolsWithoutKoreanName.length > 0) {
+      const koreanNames = await getNaverStockNames(krSymbolsWithoutKoreanName, 5);
+
+      // DB 업데이트 (비동기)
+      if (koreanNames.size > 0) {
+        Promise.all(
+          [...koreanNames].map(([symbol, name]) =>
+            supabase.from('stocks').update({ name }).eq('symbol', symbol)
+          )
+        ).catch(() => {});
+      }
+
+      // holdingMap에 한글 이름 반영
+      for (const [symbol, name] of koreanNames) {
+        const holding = holdingMap.get(symbol);
+        if (holding) {
+          holding.name = name;
+        }
+      }
+    }
 
     // 각 종목 배당 이력 병렬 조회
     const results = await Promise.allSettled(
