@@ -20,6 +20,15 @@ const SYMBOL_DESC: Record<string, string> = {
 
 const KR_SYMBOLS = new Set(['122630']);
 
+// 전략 버전
+type StrategyVersion = 'v2.2' | 'v3.0';
+
+// V3.0 종목별 목표 수익률
+const V3_TARGET_RATES: Record<string, number> = {
+  TQQQ: 0.15,
+  SOXL: 0.20,
+};
+
 type Tab = 'calc' | 'tracker' | 'backtest';
 
 const TAB_LABELS: Record<Tab, string> = {
@@ -39,6 +48,9 @@ export default function InfiniteBuyPage() {
   const [customSymbol, setCustomSymbol] = useState<string>('');
   const [isCustom, setIsCustom] = useState(false);
 
+  // 전략 버전
+  const [version, setVersion] = useState<StrategyVersion>('v2.2');
+
   const [capital, setCapital] = useState<number>(10000);
   const [capitalInput, setCapitalInput] = useState<string>('10000');
   const [n, setN] = useState<number>(40);
@@ -48,6 +60,25 @@ export default function InfiniteBuyPage() {
   const [variableBuy, setVariableBuy] = useState<boolean>(true);
 
   const [tab, setTab] = useState<Tab>('calc');
+
+  // 버전 변경 시 분할 횟수 자동 조정
+  const handleVersionChange = (v: StrategyVersion) => {
+    setVersion(v);
+    if (v === 'v3.0') {
+      setN(20);
+      setNInput('20');
+      // V3.0 종목별 목표 수익률 적용
+      const activeSymbol = isCustom ? customSymbol.trim().toUpperCase() : symbol;
+      const v3Rate = V3_TARGET_RATES[activeSymbol] ?? 0.10;
+      setTargetRate(v3Rate);
+      setTargetRateInput((v3Rate * 100).toString());
+    } else {
+      setN(40);
+      setNInput('40');
+      setTargetRate(0.10);
+      setTargetRateInput('10');
+    }
+  };
 
   // 실시간 현재가 (프리셋 버튼 표시용)
   const [presetPrices, setPresetPrices] = useState<Record<string, number>>({});
@@ -82,15 +113,42 @@ export default function InfiniteBuyPage() {
   return (
     <div className="max-w-6xl mx-auto px-4 py-8 space-y-5">
       {/* Header */}
-      <div>
-        <h1 className="text-xl font-bold text-gray-900">무한 매수법</h1>
-        <p className="text-sm text-gray-500 mt-1">
-          라오어 무한 매수법 — 레버리지 ETF 분할 매수 전략 계산기
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-bold text-gray-900">무한 매수법</h1>
+          <p className="text-sm text-gray-500 mt-1">
+            라오어 무한 매수법 — 레버리지 ETF 분할 매수 전략 계산기
+          </p>
+        </div>
+        {/* 버전 선택 */}
+        <div className="flex items-center gap-1 bg-gray-100 rounded-xl p-1">
+          <button
+            onClick={() => handleVersionChange('v2.2')}
+            className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${
+              version === 'v2.2'
+                ? 'bg-white text-green-700 shadow-sm'
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            V2.2
+            <span className="block text-[10px] font-normal opacity-70">40분할 · 안정형</span>
+          </button>
+          <button
+            onClick={() => handleVersionChange('v3.0')}
+            className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${
+              version === 'v3.0'
+                ? 'bg-white text-orange-600 shadow-sm'
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            V3.0
+            <span className="block text-[10px] font-normal opacity-70">20분할 · 공격형</span>
+          </button>
+        </div>
       </div>
 
       {/* 전략 가이드 (접힘/펼침) */}
-      <StrategyGuide />
+      <StrategyGuide version={version} />
 
       {/* ETF 선택 */}
       <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
@@ -316,13 +374,13 @@ export default function InfiniteBuyPage() {
       {/* 탭 내용 */}
       <div>
         {tab === 'calc' && (
-          <StrategyCalc symbol={activeSymbol} capital={capital} n={n} targetRate={targetRate} variableBuy={variableBuy} market={activeMarket} />
+          <StrategyCalc symbol={activeSymbol} capital={capital} n={n} targetRate={targetRate} variableBuy={variableBuy} market={activeMarket} version={version} />
         )}
         {tab === 'tracker' && (
           <BuyTracker symbol={activeSymbol} capital={capital} n={n} targetRate={targetRate} market={activeMarket} />
         )}
         {tab === 'backtest' && (
-          <BacktestSim symbol={activeSymbol} capital={capital} n={n} targetRate={targetRate} variableBuy={variableBuy} market={activeMarket} />
+          <BacktestSim symbol={activeSymbol} capital={capital} n={n} targetRate={targetRate} variableBuy={variableBuy} market={activeMarket} version={version} />
         )}
       </div>
 

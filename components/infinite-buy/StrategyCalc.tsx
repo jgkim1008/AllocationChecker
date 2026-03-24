@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useMemo } from 'react';
 
+type StrategyVersion = 'v2.2' | 'v3.0';
+
 interface StrategyCalcProps {
   symbol: string;
   capital: number;
@@ -9,6 +11,7 @@ interface StrategyCalcProps {
   targetRate: number;
   variableBuy: boolean;
   market?: 'US' | 'KR';
+  version?: StrategyVersion;
 }
 
 function fmtP(price: number, market: 'US' | 'KR' = 'US'): string {
@@ -32,6 +35,57 @@ interface TrackerPosition {
 
 const DROP_RATES = [0, -0.1, -0.2, -0.3, -0.4, -0.5];
 const ADDITIONAL_DROP_RATES = [0, -0.05, -0.1, -0.15, -0.2, -0.25, -0.3, -0.4, -0.5];
+
+/**
+ * V2.2 동적 목표 수익률 계산
+ * T: 현재 회차 (누적매수액 / 1회매수액, 올림)
+ * 전반전/후반전 모두 (10 - T/2)%
+ */
+function getDynamicTargetRate(t: number): number {
+  return (10 - t / 2) / 100;
+}
+
+/**
+ * V2.2 매수 규칙
+ * 전반전 (T < 20): 절반 평단가, 절반 평단+(10-T/2)%
+ * 후반전 (T >= 20): 전액 평단+(10-T/2)%
+ */
+function getV22BuyPrices(avgCost: number, t: number): { price1: number; price2: number | null; ratio1: number; ratio2: number } {
+  const dynamicRate = getDynamicTargetRate(t);
+
+  if (t < 20) {
+    // 전반전: 절반 평단가, 절반 평단+(10-T/2)%
+    return {
+      price1: avgCost,
+      price2: avgCost * (1 + dynamicRate),
+      ratio1: 0.5,
+      ratio2: 0.5,
+    };
+  } else {
+    // 후반전: 전액 평단+(10-T/2)%
+    return {
+      price1: avgCost * (1 + dynamicRate),
+      price2: null,
+      ratio1: 1,
+      ratio2: 0,
+    };
+  }
+}
+
+/**
+ * V2.2 매도 규칙
+ * 1/4 수량: 평단+(10-T/2)%
+ * 3/4 수량: 평단+10%
+ */
+function getV22SellPrices(avgCost: number, t: number): { price1: number; price2: number; ratio1: number; ratio2: number } {
+  const dynamicRate = getDynamicTargetRate(t);
+  return {
+    price1: avgCost * (1 + dynamicRate), // 1/4 수량
+    price2: avgCost * 1.10, // 3/4 수량
+    ratio1: 0.25,
+    ratio2: 0.75,
+  };
+}
 
 function loadTrackerPosition(symbol: string, n: number): TrackerPosition | null {
   if (typeof window === 'undefined') return null;
@@ -109,7 +163,7 @@ function simulateFreshScenario(
   };
 }
 
-export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy, market = 'US' }: StrategyCalcProps) {
+export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy, market = 'US', version = 'v2.2' }: StrategyCalcProps) {
   const [currentPrice, setCurrentPrice] = useState<number | null>(null);
   const [loadingPrice, setLoadingPrice] = useState(false);
   const [position, setPosition] = useState<TrackerPosition | null>(null);
@@ -193,6 +247,23 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy, mark
 
   return (
     <div className="space-y-6">
+      {/* 버전 배지 */}
+      <div className={`px-4 py-3 rounded-xl border ${version === 'v3.0' ? 'bg-orange-50 border-orange-200' : 'bg-green-50 border-green-200'}`}>
+        <div className="flex items-center gap-2 mb-2">
+          <span className={`text-sm font-black ${version === 'v3.0' ? 'text-orange-700' : 'text-green-700'}`}>
+            {version === 'v3.0' ? 'V3.0 공격형' : 'V2.2 안정형'}
+          </span>
+          <span className={`text-xs px-2 py-0.5 rounded-full ${version === 'v3.0' ? 'bg-orange-100 text-orange-600' : 'bg-green-100 text-green-600'}`}>
+            {n}분할
+          </span>
+        </div>
+        <p className="text-xs text-gray-600">
+          {version === 'v3.0'
+            ? '수익금 복리 전환 · TQQQ +15%, SOXL +20% 목표 · 리스크 주의'
+            : '전반전(T<20) 절반 평단가 + 절반 평단+(10-T/2)% · 후반전(T≥20) 전액 평단+(10-T/2)%'}
+        </p>
+      </div>
+
       {/* 요약 카드 */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="bg-white border border-gray-200 rounded-xl p-4">
@@ -202,19 +273,15 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy, mark
               ? fmtP(unitBuy, 'KR')
               : unitBuy >= 1000 ? `$${(unitBuy / 1000).toFixed(1)}K` : `$${unitBuy.toFixed(2)}`}
           </p>
-          <p className="text-xs text-gray-400 mt-0.5">C ÷ N (평단 이상 시)</p>
+          <p className="text-xs text-gray-400 mt-0.5">C ÷ N</p>
         </div>
 
         <div className="bg-white border border-gray-200 rounded-xl p-4">
-          <p className="text-xs text-gray-500 mb-1">2분할 매수금액</p>
-          <p className="text-lg font-bold text-gray-900">
-            {market === 'KR'
-              ? fmtP(unitBuy * 2, 'KR')
-              : unitBuy * 2 >= 1000
-                ? `$${((unitBuy * 2) / 1000).toFixed(1)}K`
-                : `$${(unitBuy * 2).toFixed(2)}`}
+          <p className="text-xs text-gray-500 mb-1">목표 수익률</p>
+          <p className="text-lg font-bold text-green-600">
+            +{(targetRate * 100).toFixed(0)}%
           </p>
-          <p className="text-xs text-gray-400 mt-0.5">C/N × 2 (평단 미만 시)</p>
+          <p className="text-xs text-gray-400 mt-0.5">{version === 'v3.0' ? '종목별 차등' : '3/4물량 기준'}</p>
         </div>
 
         <div className="bg-white border border-gray-200 rounded-xl p-4">
@@ -238,26 +305,32 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy, mark
         </div>
       </div>
 
-      {/* 전략 규칙 배지 */}
-      <div className="flex flex-wrap gap-2 text-xs">
-        {variableBuy ? (
-          <>
-            <span className="bg-gray-100 text-gray-600 px-2.5 py-1 rounded-full">
-              현재가 &gt; 평단 → <strong>1분할</strong> 매수
-            </span>
-            <span className="bg-green-50 text-green-700 px-2.5 py-1 rounded-full border border-green-100">
-              현재가 ≤ 평단 → <strong>2분할</strong> 매수 (쌀 때 더 많이)
-            </span>
-          </>
-        ) : (
-          <span className="bg-gray-100 text-gray-600 px-2.5 py-1 rounded-full">
-            매일 <strong>1분할</strong> 고정 매수
+      {/* 버전별 전략 규칙 배지 */}
+      {version === 'v2.2' ? (
+        <div className="flex flex-wrap gap-2 text-xs">
+          <span className="bg-amber-50 text-amber-700 px-2.5 py-1 rounded-full border border-amber-200">
+            <strong>전반전</strong> T&lt;20: 절반 평단 + 절반 평단+(10-T/2)%
           </span>
-        )}
-        <span className="bg-blue-50 text-blue-700 px-2.5 py-1 rounded-full border border-blue-100">
-          현재가 ≥ 평단 × {(1 + targetRate).toFixed(2)} → <strong>전량 매도</strong>
-        </span>
-      </div>
+          <span className="bg-purple-50 text-purple-700 px-2.5 py-1 rounded-full border border-purple-200">
+            <strong>후반전</strong> T≥20: 전액 평단+(10-T/2)%
+          </span>
+          <span className="bg-blue-50 text-blue-700 px-2.5 py-1 rounded-full border border-blue-100">
+            <strong>매도</strong> 1/4수량 (10-T/2)% + 3/4수량 +10%
+          </span>
+        </div>
+      ) : (
+        <div className="flex flex-wrap gap-2 text-xs">
+          <span className="bg-orange-50 text-orange-700 px-2.5 py-1 rounded-full border border-orange-200">
+            <strong>매수</strong> 평단+목표수익률% LOC
+          </span>
+          <span className="bg-red-50 text-red-700 px-2.5 py-1 rounded-full border border-red-200">
+            <strong>매도</strong> 전량 평단+목표수익률%
+          </span>
+          <span className="bg-blue-50 text-blue-700 px-2.5 py-1 rounded-full border border-blue-100">
+            <strong>복리</strong> 익절 시 수익금 재투자
+          </span>
+        </div>
+      )}
 
       {currentPrice && (
         <div className="text-sm text-gray-500">

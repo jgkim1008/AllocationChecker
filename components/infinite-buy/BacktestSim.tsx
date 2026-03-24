@@ -17,6 +17,8 @@ import {
 import { simulateInfiniteBuy } from '@/lib/utils/infinite-buy-calc';
 import type { SimCycle } from '@/lib/utils/infinite-buy-calc';
 
+type StrategyVersion = 'v2.2' | 'v3.0';
+
 interface BacktestSimProps {
   symbol: string;
   capital: number;
@@ -24,6 +26,7 @@ interface BacktestSimProps {
   targetRate: number;
   variableBuy: boolean;
   market?: 'US' | 'KR';
+  version?: StrategyVersion;
 }
 
 type RangeOption = '1Y' | '2Y' | '3Y' | '5Y';
@@ -39,7 +42,7 @@ function fmtPct(v: number | undefined | null) {
   return `${(v * 100).toFixed(2)}%`;
 }
 
-export function BacktestSim({ symbol, capital, n, targetRate, variableBuy, market: _market = 'US' }: BacktestSimProps) {
+export function BacktestSim({ symbol, capital, n, targetRate, variableBuy, market: _market = 'US', version = 'v2.2' }: BacktestSimProps) {
   const [range, setRange] = useState<RangeOption>('5Y');
   const [dates, setDates] = useState<string[]>([]);
   const [prices, setPrices] = useState<number[]>([]);
@@ -71,8 +74,8 @@ export function BacktestSim({ symbol, capital, n, targetRate, variableBuy, marke
   // 시뮬레이션: 가격 또는 파라미터 변경 시 재계산 (API 호출 없음)
   const result = useMemo(() => {
     if (prices.length === 0) return null;
-    return simulateInfiniteBuy(prices, { capital, n, targetRate, variableBuy });
-  }, [prices, capital, n, targetRate, variableBuy]);
+    return simulateInfiniteBuy(prices, { capital, n, targetRate, variableBuy, version, symbol });
+  }, [prices, capital, n, targetRate, variableBuy, version, symbol]);
 
   // Build comparison chart data (normalize to 100)
   const comparisonData = (() => {
@@ -101,21 +104,30 @@ export function BacktestSim({ symbol, capital, n, targetRate, variableBuy, marke
 
   return (
     <div className="space-y-6">
-      {/* Range buttons */}
-      <div className="flex items-center gap-2">
-        {(['1Y', '2Y', '3Y', '5Y'] as RangeOption[]).map((r) => (
-          <button
-            key={r}
-            onClick={() => setRange(r)}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-              range === r
-                ? 'bg-green-600 text-white'
-                : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
-            }`}
-          >
-            {r}
-          </button>
-        ))}
+      {/* Version badge + Range buttons */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div className={`px-3 py-1.5 rounded-lg text-sm font-semibold ${
+          version === 'v3.0'
+            ? 'bg-orange-100 text-orange-700 border border-orange-200'
+            : 'bg-green-100 text-green-700 border border-green-200'
+        }`}>
+          {version === 'v3.0' ? 'V3.0 공격형' : 'V2.2 안정형'} 백테스트
+        </div>
+        <div className="flex items-center gap-2">
+          {(['1Y', '2Y', '3Y', '5Y'] as RangeOption[]).map((r) => (
+            <button
+              key={r}
+              onClick={() => setRange(r)}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                range === r
+                  ? 'bg-green-600 text-white'
+                  : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
+              }`}
+            >
+              {r}
+            </button>
+          ))}
+        </div>
       </div>
 
       {loading ? (

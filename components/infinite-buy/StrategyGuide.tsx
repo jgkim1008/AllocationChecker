@@ -1,7 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import { ChevronDown, ChevronUp, BookOpen, TrendingUp, Calculator, BarChart2, AlertTriangle } from 'lucide-react';
+import { ChevronDown, ChevronUp, BookOpen, TrendingUp, Calculator, AlertTriangle } from 'lucide-react';
+
+type StrategyVersion = 'v2.2' | 'v3.0';
 
 interface Section {
   id: string;
@@ -10,7 +12,11 @@ interface Section {
   content: React.ReactNode;
 }
 
-export function StrategyGuide() {
+interface StrategyGuideProps {
+  version?: StrategyVersion;
+}
+
+export function StrategyGuide({ version = 'v2.2' }: StrategyGuideProps) {
   const [open, setOpen] = useState(true);
   const [openSection, setOpenSection] = useState<string | null>('what');
 
@@ -28,27 +34,58 @@ export function StrategyGuide() {
           <p>
             핵심 아이디어는 간단합니다. <strong>레버리지 ETF는 변동성이 크기 때문에,
             한 번에 몰빵하면 위험하지만 — 조금씩 나눠 사면 하락장에서 평균단가를 낮출 수 있습니다.</strong>
-            그리고 목표 수익에 도달하면 전량 팔고 처음부터 다시 시작합니다.
+            그리고 목표 수익에 도달하면 팔고 처음부터 다시 시작합니다.
           </p>
-          <div className="bg-green-50 border border-green-100 rounded-lg p-3 space-y-2">
-            <p className="font-medium text-green-800">한 줄 요약</p>
-            <p className="text-green-700">
-              총 투자금을 40등분 → 매일 가격이 평단보다 비싸면 1분할, 싸면 2분할 매수 →
-              현재가가 평단의 110% 이상이면 전량 매도 후 재시작
-            </p>
-          </div>
-          <div className="bg-gray-50 rounded-lg p-3 space-y-1.5">
-            <p className="font-medium text-gray-800 text-xs uppercase tracking-wide">구체적인 예시</p>
-            <p>총 투자금 $10,000, N=40, 목표수익률 10%로 설정했다면:</p>
-            <ul className="list-disc list-inside space-y-1 text-gray-600">
-              <li>1분할 금액 = $10,000 ÷ 40 = <strong>$250</strong></li>
-              <li>현재가 &gt; 평균단가 → <strong>$250</strong>(1분할) 매수</li>
-              <li>현재가 ≤ 평균단가 → <strong>$500</strong>(2분할) 매수 — 더 싸게 더 많이!</li>
-              <li>현재가 ≥ 평균단가 × 1.10 이 되면 → <strong>전량 매도</strong></li>
-              <li>수익금 포함 새 원금으로 사이클 재시작 (복리)</li>
-              <li>40분할 소진 후 조건 미달성 → <strong>기다리며 보유</strong></li>
-            </ul>
-          </div>
+
+          {version === 'v2.2' ? (
+            <>
+              <div className="bg-green-50 border border-green-100 rounded-lg p-3 space-y-2">
+                <p className="font-medium text-green-800">V2.2 안정형 — 핵심 규칙</p>
+                <p className="text-green-700">
+                  40분할 · 동적 목표수익률 (10-T/2)% · 분할 매도 (1/4 + 3/4)
+                </p>
+              </div>
+              <div className="bg-gray-50 rounded-lg p-3 space-y-1.5">
+                <p className="font-medium text-gray-800 text-xs uppercase tracking-wide">V2.2 전략 상세</p>
+                <p className="font-medium text-amber-700">📌 매수 규칙</p>
+                <ul className="list-disc list-inside space-y-1 text-gray-600 mb-3">
+                  <li><strong>전반전 (T &lt; 20)</strong>: 절반 평단가 + 절반 평단+(10-T/2)% LOC 주문</li>
+                  <li><strong>후반전 (T ≥ 20)</strong>: 전액 평단+(10-T/2)% LOC 주문</li>
+                  <li>T = 회차 (누적매수액 ÷ 1회매수액, 올림)</li>
+                </ul>
+                <p className="font-medium text-blue-700">📌 매도 규칙</p>
+                <ul className="list-disc list-inside space-y-1 text-gray-600">
+                  <li><strong>1/4 수량</strong>: 평단+(10-T/2)% LOC 매도</li>
+                  <li><strong>3/4 수량</strong>: 평단+10% LOC 매도 (고정)</li>
+                  <li>익절 후 수익금 포함 새 원금으로 사이클 재시작</li>
+                </ul>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="bg-orange-50 border border-orange-100 rounded-lg p-3 space-y-2">
+                <p className="font-medium text-orange-800">V3.0 공격형 — 핵심 규칙</p>
+                <p className="text-orange-700">
+                  20분할 · 종목별 고정 목표 (TQQQ +15%, SOXL +20%) · 전량 매도 · 복리 전환
+                </p>
+              </div>
+              <div className="bg-gray-50 rounded-lg p-3 space-y-1.5">
+                <p className="font-medium text-gray-800 text-xs uppercase tracking-wide">V3.0 전략 상세</p>
+                <p className="font-medium text-amber-700">📌 매수 규칙</p>
+                <ul className="list-disc list-inside space-y-1 text-gray-600 mb-3">
+                  <li>매일 <strong>평단+목표수익률%</strong> LOC 주문</li>
+                  <li>TQQQ: +15%, SOXL: +20%, 기타: +10%</li>
+                  <li>체결되면 평단 하락 → 다음날 더 낮은 가격에 주문</li>
+                </ul>
+                <p className="font-medium text-blue-700">📌 매도 규칙</p>
+                <ul className="list-disc list-inside space-y-1 text-gray-600">
+                  <li><strong>전량</strong> 평단+목표수익률% LOC 매도</li>
+                  <li>익절 시 수익금 복리 전환 (원금 + 수익금 재투자)</li>
+                </ul>
+                <p className="font-medium text-red-600 mt-3">⚠️ 주의: V3.0은 고위험 공격형 전략입니다</p>
+              </div>
+            </>
+          )}
         </div>
       ),
     },
@@ -164,25 +201,46 @@ export function StrategyGuide() {
           </div>
 
           <div className="bg-gray-50 rounded-lg p-3">
-            <p className="font-medium text-gray-800 mb-1.5">파라미터 기준점</p>
-            <div className="grid grid-cols-2 gap-2 text-xs text-gray-600">
-              <div>
-                <span className="font-medium text-gray-700">분할 횟수 (N)</span>
-                <ul className="mt-1 space-y-0.5">
-                  <li>보수적: <strong>60~80등분</strong> (더 안전)</li>
-                  <li>표준: <strong>40등분</strong> (라오어 추천)</li>
-                  <li>공격적: <strong>20~30등분</strong></li>
-                </ul>
+            <p className="font-medium text-gray-800 mb-1.5">버전별 파라미터</p>
+            {version === 'v2.2' ? (
+              <div className="grid grid-cols-2 gap-2 text-xs text-gray-600">
+                <div>
+                  <span className="font-medium text-green-700">V2.2 분할 횟수</span>
+                  <ul className="mt-1 space-y-0.5">
+                    <li>표준: <strong>40등분</strong> (권장)</li>
+                    <li>전반전: T &lt; 20 (2가지 주문)</li>
+                    <li>후반전: T ≥ 20 (1가지 주문)</li>
+                  </ul>
+                </div>
+                <div>
+                  <span className="font-medium text-green-700">V2.2 목표 수익률</span>
+                  <ul className="mt-1 space-y-0.5">
+                    <li>동적: <strong>(10 - T/2)%</strong></li>
+                    <li>T=1: 9.5%, T=10: 5%, T=20: 0%</li>
+                    <li>3/4 물량: <strong>+10% 고정</strong></li>
+                  </ul>
+                </div>
               </div>
-              <div>
-                <span className="font-medium text-gray-700">목표 수익률</span>
-                <ul className="mt-1 space-y-0.5">
-                  <li>원본 기준: <strong>10%</strong> (라오어 책 기본값)</li>
-                  <li>보수적: <strong>5~7%</strong> (사이클 짧음)</li>
-                  <li>공격적: <strong>15~20%</strong> (사이클 김)</li>
-                </ul>
+            ) : (
+              <div className="grid grid-cols-2 gap-2 text-xs text-gray-600">
+                <div>
+                  <span className="font-medium text-orange-700">V3.0 분할 횟수</span>
+                  <ul className="mt-1 space-y-0.5">
+                    <li>표준: <strong>20등분</strong> (권장)</li>
+                    <li>적은 분할 = 빠른 소진</li>
+                    <li>수익금 복리 전환 중요</li>
+                  </ul>
+                </div>
+                <div>
+                  <span className="font-medium text-orange-700">V3.0 목표 수익률</span>
+                  <ul className="mt-1 space-y-0.5">
+                    <li>TQQQ: <strong>+15%</strong></li>
+                    <li>SOXL: <strong>+20%</strong></li>
+                    <li>기타: <strong>+10%</strong></li>
+                  </ul>
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
       ),
