@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   LineChart,
   Line,
@@ -56,10 +56,39 @@ function CustomTooltip({
   );
 }
 
+// 기본 ON 상태로 표시할 벤치마크 ID
+const DEFAULT_VISIBLE = new Set(['SPY', 'QQQ']);
+
 export function BacktestChart({ dates, series, range, onRangeChange }: Props) {
-  const [hidden, setHidden] = useState<Set<string>>(new Set());
+  // 사용자가 명시적으로 토글한 ID 추적
+  const userToggledRef = useRef<Set<string>>(new Set());
+
+  const [hidden, setHidden] = useState<Set<string>>(() => {
+    const initialHidden = new Set<string>();
+    series.forEach(s => {
+      if (!DEFAULT_VISIBLE.has(s.id)) {
+        initialHidden.add(s.id);
+      }
+    });
+    return initialHidden;
+  });
+
+  // series가 변경될 때 새로 추가된 항목은 기본 숨김 처리
+  useEffect(() => {
+    setHidden(prev => {
+      const next = new Set(prev);
+      series.forEach(s => {
+        // 사용자가 토글하지 않은 새 series는 기본 규칙 적용
+        if (!userToggledRef.current.has(s.id) && !DEFAULT_VISIBLE.has(s.id)) {
+          next.add(s.id);
+        }
+      });
+      return next;
+    });
+  }, [series]);
 
   const toggleHidden = (id: string) => {
+    userToggledRef.current.add(id); // 사용자가 토글한 것으로 표시
     setHidden((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);

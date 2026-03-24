@@ -36,6 +36,13 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const rangeYears = Math.min(Math.max(parseInt(searchParams.get('range') ?? '10', 10), 1), 10);
 
+    // 추가 종목 파싱 (쉼표로 구분)
+    const extraSymbolsParam = searchParams.get('extraSymbols') ?? '';
+    const extraSymbols = extraSymbolsParam
+      .split(',')
+      .map((s) => s.trim().toUpperCase())
+      .filter((s) => s.length > 0);
+
     const supabase = await createServiceClient();
     const { data: holdings, error } = await supabase
       .from('portfolio_holdings')
@@ -59,8 +66,13 @@ export async function GET(request: NextRequest) {
       .filter((h) => h.stock?.symbol)
       .map((h) => h.stock!.symbol);
 
+    // 추가 종목에서 이미 보유 중인 종목 및 벤치마크 제외
     const benchmarks = ['SPY', 'QQQ'];
-    const allSymbols = [...benchmarks, ...holdingSymbols];
+    const filteredExtraSymbols = extraSymbols.filter(
+      (s) => !holdingSymbols.includes(s) && !benchmarks.includes(s)
+    );
+
+    const allSymbols = [...benchmarks, ...holdingSymbols, ...filteredExtraSymbols];
 
     // Fetch all price histories in parallel
     const allPoints = await Promise.all(
@@ -93,6 +105,14 @@ export async function GET(request: NextRequest) {
       return buildSeries(sym, name, color, points, dates);
     });
 
+    // Build extra symbols series (추가 종목)
+    const extraSeriesColors = ['#9333EA', '#DC2626', '#0891B2', '#CA8A04', '#7C3AED', '#059669', '#E11D48'];
+    const extraSeries = filteredExtraSymbols.map((sym, i) => {
+      const points = allPoints[benchmarks.length + holdingSymbols.length + i];
+      const color = extraSeriesColors[i % extraSeriesColors.length];
+      return buildSeries(sym, sym, color, points, dates);
+    });
+
     // Weights: shares × first available price
     const weights: Record<string, number> = {};
     holdingSeries.forEach((s, i) => {
@@ -111,6 +131,7 @@ export async function GET(request: NextRequest) {
       ...benchmarkSeries,
       ...(portfolioSeries ? [portfolioSeries] : []),
       ...holdingSeries,
+      ...extraSeries,
     ];
 
     return NextResponse.json(
