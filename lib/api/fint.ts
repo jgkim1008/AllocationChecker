@@ -1,4 +1,4 @@
-import puppeteer, { Browser } from 'puppeteer';
+import type { Browser } from 'puppeteer-core';
 
 export interface FintStock {
   symbol: string;
@@ -15,7 +15,22 @@ export interface FintPortfolio {
 }
 
 async function createBrowser(): Promise<Browser> {
-  return puppeteer.launch({
+  // Vercel/AWS Lambda 환경
+  if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) {
+    const chromium = await import('@sparticuz/chromium');
+    const puppeteerCore = await import('puppeteer-core');
+
+    return puppeteerCore.default.launch({
+      args: chromium.default.args,
+      defaultViewport: chromium.default.defaultViewport,
+      executablePath: await chromium.default.executablePath(),
+      headless: chromium.default.headless,
+    });
+  }
+
+  // 로컬 개발 환경
+  const puppeteer = await import('puppeteer');
+  return puppeteer.default.launch({
     headless: true,
     args: ['--no-sandbox', '--disable-setuid-sandbox'],
   });
