@@ -329,7 +329,7 @@ export function BuyTracker({ symbol, capital, n, targetRate, market = 'US' }: Bu
                   type="date"
                   value={formDate}
                   onChange={(e) => setFormDate(e.target.value)}
-                  className="text-sm border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                  className="text-sm border border-gray-200 rounded-lg px-2 py-1.5 bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-green-500"
                 />
               </div>
 
@@ -343,7 +343,7 @@ export function BuyTracker({ symbol, capital, n, targetRate, market = 'US' }: Bu
                   placeholder="0.00"
                   value={formPrice}
                   onChange={(e) => setFormPrice(e.target.value)}
-                  className="text-sm border border-gray-200 rounded-lg px-2 py-1.5 w-28 bg-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                  className="text-sm border border-gray-200 rounded-lg px-2 py-1.5 w-28 bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500"
                 />
               </div>
 
@@ -358,7 +358,7 @@ export function BuyTracker({ symbol, capital, n, targetRate, market = 'US' }: Bu
                     placeholder="0.00"
                     value={formAmount}
                     onChange={(e) => setFormAmount(e.target.value)}
-                    className="text-sm border border-gray-200 rounded-lg px-2 py-1.5 w-28 bg-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                    className="text-sm border border-gray-200 rounded-lg px-2 py-1.5 w-28 bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500"
                   />
                 </div>
               ) : (
@@ -371,7 +371,7 @@ export function BuyTracker({ symbol, capital, n, targetRate, market = 'US' }: Bu
                     placeholder="0.0000"
                     value={formShares}
                     onChange={(e) => setFormShares(e.target.value)}
-                    className="text-sm border border-gray-200 rounded-lg px-2 py-1.5 w-28 bg-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                    className="text-sm border border-gray-200 rounded-lg px-2 py-1.5 w-28 bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500"
                   />
                 </div>
               )}
@@ -437,7 +437,7 @@ export function BuyTracker({ symbol, capital, n, targetRate, market = 'US' }: Bu
                           type="date"
                           value={editDate}
                           onChange={(e) => setEditDate(e.target.value)}
-                          className="text-xs border border-gray-200 rounded-md px-2 py-1 w-full focus:outline-none focus:ring-2 focus:ring-green-500 bg-white"
+                          className="text-xs border border-gray-200 rounded-md px-2 py-1 w-full focus:outline-none focus:ring-2 focus:ring-green-500 bg-white text-gray-900"
                         />
                       </td>
                       {/* 매수가 */}
@@ -448,7 +448,7 @@ export function BuyTracker({ symbol, capital, n, targetRate, market = 'US' }: Bu
                           min="0"
                           value={editPrice}
                           onChange={(e) => setEditPrice(e.target.value)}
-                          className="text-xs border border-gray-200 rounded-md px-2 py-1 w-24 text-right focus:outline-none focus:ring-2 focus:ring-green-500 bg-white"
+                          className="text-xs border border-gray-200 rounded-md px-2 py-1 w-24 text-right focus:outline-none focus:ring-2 focus:ring-green-500 bg-white text-gray-900"
                         />
                       </td>
                       {/* 수량 / 금액 — 모드 토글 포함 */}
@@ -481,7 +481,7 @@ export function BuyTracker({ symbol, capital, n, targetRate, market = 'US' }: Bu
                                 min="0"
                                 value={editAmount}
                                 onChange={(e) => setEditAmount(e.target.value)}
-                                className="text-xs border border-gray-200 rounded-md px-2 py-1 w-24 text-right focus:outline-none focus:ring-2 focus:ring-green-500 bg-white"
+                                className="text-xs border border-gray-200 rounded-md px-2 py-1 w-24 text-right focus:outline-none focus:ring-2 focus:ring-green-500 bg-white text-gray-900"
                               />
                               {parseFloat(editPrice) > 0 && parseFloat(editAmount) > 0 && (
                                 <span className="text-xs text-gray-400 whitespace-nowrap">
@@ -497,7 +497,7 @@ export function BuyTracker({ symbol, capital, n, targetRate, market = 'US' }: Bu
                                 min="0"
                                 value={editShares}
                                 onChange={(e) => setEditShares(e.target.value)}
-                                className="text-xs border border-gray-200 rounded-md px-2 py-1 w-24 text-right focus:outline-none focus:ring-2 focus:ring-green-500 bg-white"
+                                className="text-xs border border-gray-200 rounded-md px-2 py-1 w-24 text-right focus:outline-none focus:ring-2 focus:ring-green-500 bg-white text-gray-900"
                               />
                               {parseFloat(editPrice) > 0 && parseFloat(editShares) > 0 && (
                                 <span className="text-xs text-gray-400 whitespace-nowrap">
