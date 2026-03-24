@@ -18,18 +18,28 @@ interface DividendStock {
 }
 
 async function fetchUpcomingDividends(year: number, month: number, baseUrl: string): Promise<DividendStock[]> {
+  const url = `${baseUrl}/api/dividends/upcoming?year=${year}&month=${month + 1}`;
+  console.log('[dividend-picks] Fetching:', url);
+
   try {
     // 내부 API 호출로 Yahoo Finance 데이터 포함 조회
-    const res = await fetch(`${baseUrl}/api/dividends/upcoming?year=${year}&month=${month + 1}`, {
+    const res = await fetch(url, {
       cache: 'no-store',
+      headers: {
+        'Content-Type': 'application/json',
+      },
     });
 
+    console.log('[dividend-picks] Response status:', res.status);
+
     if (!res.ok) {
-      console.error('[dividend-picks] fetchUpcomingDividends failed:', res.status);
+      const errorText = await res.text();
+      console.error('[dividend-picks] fetchUpcomingDividends failed:', res.status, errorText);
       return [];
     }
 
     const data = await res.json();
+    console.log('[dividend-picks] Got stocks count:', data.stocks?.length ?? 0);
     return data.stocks || [];
   } catch (err) {
     console.error('[dividend-picks] fetchUpcomingDividends error:', err);
@@ -145,6 +155,7 @@ export async function GET(request: NextRequest) {
         period: cacheKey,
         picks: [],
         analysis: '이번 달에 배당락일이 예정된 종목이 없습니다.',
+        debug: { baseUrl, year, month: month + 1 },
         cached: false,
         generatedAt: new Date().toISOString(),
       });
