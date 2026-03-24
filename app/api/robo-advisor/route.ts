@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
 
     // 캐시 확인 (refresh=true가 아닌 경우)
     if (!refresh) {
-      const { data: cached } = await supabase
+      const { data: cached, error: cacheError } = await supabase
         .from('ai_reports')
         .select('content, generated_at')
         .eq('symbol', CACHE_KEY)
@@ -28,6 +28,10 @@ export async function GET(request: NextRequest) {
         .gt('expires_at', new Date().toISOString())
         .order('generated_at', { ascending: false })
         .limit(1);
+
+      if (cacheError) {
+        console.error('[robo-advisor] Cache lookup error:', cacheError);
+      }
 
       if (cached?.[0]?.content) {
         return NextResponse.json({
@@ -38,7 +42,33 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 크롤링 실행
+    // Vercel에서는 Puppeteer가 작동하지 않음
+    if (process.env.VERCEL) {
+      // 만료된 캐시라도 있으면 반환
+      const { data: anyCache } = await supabase
+        .from('ai_reports')
+        .select('content, generated_at')
+        .eq('symbol', CACHE_KEY)
+        .eq('report_type', 'robo_advisor')
+        .order('generated_at', { ascending: false })
+        .limit(1);
+
+      if (anyCache?.[0]?.content) {
+        return NextResponse.json({
+          ...anyCache[0].content,
+          cached: true,
+          expired: true,
+          generatedAt: anyCache[0].generated_at,
+        });
+      }
+
+      return NextResponse.json(
+        { error: '캐시된 데이터가 없습니다. 로컬에서 새로고침 후 다시 시도해주세요.' },
+        { status: 503 }
+      );
+    }
+
+    // 크롤링 실행 (로컬에서만)
     const portfolios = await scrapeFintAI();
     const payload = { portfolios, source: 'fint.co.kr' };
 
