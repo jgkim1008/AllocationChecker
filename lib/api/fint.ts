@@ -22,22 +22,10 @@ async function createBrowser(): Promise<Browser> {
     const chromium = (await import('@sparticuz/chromium')).default;
     const puppeteerCore = (await import('puppeteer-core')).default;
 
-    // Chromium 압축 해제 경로 설정
-    chromium.setHeadlessMode = true;
-    chromium.setGraphicsMode = false;
-
     const executablePath = await chromium.executablePath();
-    console.log('[fint] Using chromium at:', executablePath);
 
     return puppeteerCore.launch({
-      args: [
-        ...chromium.args,
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-        '--single-process',
-      ],
+      args: chromium.args,
       defaultViewport: { width: 1280, height: 720 },
       executablePath,
       headless: true,
