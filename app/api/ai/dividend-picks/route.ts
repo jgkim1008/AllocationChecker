@@ -19,14 +19,38 @@ interface DividendStock {
 
 async function fetchUpcomingDividends(year: number, month: number): Promise<DividendStock[]> {
   try {
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
-    const res = await fetch(`${baseUrl}/api/dividends/upcoming?year=${year}&month=${month + 1}`, {
-      next: { revalidate: 300 },
-    });
-    if (!res.ok) return [];
-    const data = await res.json();
-    return data.stocks || [];
-  } catch {
+    const supabase = await createServiceClient();
+
+    // 해당 월의 시작과 끝
+    const rangeStart = new Date(year, month, 1);
+    const rangeEnd = new Date(year, month + 1, 0);
+
+    const startStr = rangeStart.toISOString().split('T')[0];
+    const endStr = rangeEnd.toISOString().split('T')[0];
+
+    // DB에서 직접 배당락일이 해당 월에 있는 종목 조회
+    const { data: stocks, error } = await supabase
+      .from('stocks')
+      .select('symbol, name, market, current_price, ex_dividend_date, dividend_yield, dividend_per_share, dividend_frequency')
+      .not('symbol', 'like', '^%')
+      .gte('ex_dividend_date', startStr)
+      .lte('ex_dividend_date', endStr)
+      .order('ex_dividend_date');
+
+    if (error || !stocks) return [];
+
+    return stocks.map(stock => ({
+      symbol: stock.symbol,
+      name: stock.name,
+      market: stock.market as 'US' | 'KR',
+      exDividendDate: stock.ex_dividend_date,
+      dividendYield: stock.dividend_yield,
+      dividendPerShare: stock.dividend_per_share,
+      currentPrice: stock.current_price,
+      dividendFrequency: stock.dividend_frequency ?? null,
+    }));
+  } catch (err) {
+    console.error('[dividend-picks] fetchUpcomingDividends error:', err);
     return [];
   }
 }
