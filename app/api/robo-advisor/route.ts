@@ -38,7 +38,15 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 크롤링 실행
+    // Vercel 환경에서는 Puppeteer가 작동하지 않으므로 캐시만 반환
+    if (process.env.VERCEL) {
+      return NextResponse.json(
+        { error: '캐시된 데이터가 없습니다. 로컬에서 새로고침 후 다시 시도해주세요.' },
+        { status: 503 }
+      );
+    }
+
+    // 크롤링 실행 (로컬 환경에서만)
     const portfolios = await scrapeFintAI();
     const payload = { portfolios, source: 'fint.co.kr' };
 
