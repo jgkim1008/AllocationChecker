@@ -75,16 +75,29 @@ export async function GET(request: NextRequest) {
     // 캐시 저장 (다음 달 1일까지 유효)
     const cacheTTL = getMillisecondsUntilNextMonth();
     try {
-      await supabase.from('ai_reports').delete()
+      const { error: deleteError } = await supabase.from('ai_reports').delete()
         .eq('symbol', CACHE_KEY)
         .eq('report_type', 'robo_advisor');
-      await supabase.from('ai_reports').insert({
+
+      if (deleteError) {
+        console.error('[robo-advisor] Cache delete error:', deleteError);
+      }
+
+      const { error: insertError } = await supabase.from('ai_reports').insert({
         symbol: CACHE_KEY,
         report_type: 'robo_advisor',
         content: payload,
         expires_at: new Date(Date.now() + cacheTTL).toISOString(),
       });
-    } catch { /* 캐시 저장 실패 무시 */ }
+
+      if (insertError) {
+        console.error('[robo-advisor] Cache insert error:', insertError);
+      } else {
+        console.log('[robo-advisor] Cache saved successfully');
+      }
+    } catch (err) {
+      console.error('[robo-advisor] Cache save exception:', err);
+    }
 
     return NextResponse.json({
       ...payload,
