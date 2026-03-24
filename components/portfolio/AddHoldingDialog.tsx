@@ -201,7 +201,7 @@ export function AddHoldingDialog({ open, onClose, onAdd, onUpdate, accounts = []
               {results.length > 0 && !selected && (
                 <div className="absolute z-50 mt-1 w-full bg-white rounded-xl border border-gray-200 shadow-lg max-h-60 overflow-auto">
                   {loading && <div className="p-2"><Skeleton className="h-8 w-full bg-gray-200" /></div>}
-                  {results.map((stock) => (
+                  {results.filter((stock, idx, arr) => arr.findIndex(s => s.symbol === stock.symbol) === idx).map((stock) => (
                     <button
                       key={stock.symbol}
                       className="w-full text-left px-4 py-2.5 hover:bg-gray-50 flex items-center justify-between transition-colors"

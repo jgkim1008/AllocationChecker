@@ -466,20 +466,25 @@ export async function GET(
   };
   const buffettScore = Object.values(buffettData).filter(Boolean).length;
 
-  createServiceClient().then(supabase =>
-    supabase.from('stocks')
-      .update({
-        buffett_score: buffettScore,
-        buffett_data: buffettData,
-        dividend_yield: dividendInfo.yield,
-        dividend_per_share: dividendInfo.perShare,
-        ex_dividend_date: dividendInfo.exDate,
-        dividend_frequency: dividendInfo.frequency,
-        // 한국 주식: 네이버에서 가져온 한글 종목명 저장
-        ...(market === 'KR' && krx?.name ? { name: krx.name } : {}),
-      })
-      .eq('symbol', upperSymbol)
-  ).catch(() => {});
+  // DB에 종목 저장 (없으면 추가, 있으면 업데이트)
+  createServiceClient().then(async supabase => {
+    const stockData = {
+      symbol: upperSymbol,
+      name: fundamentals.name,
+      market,
+      current_price: fundamentals.currentPrice,
+      buffett_score: buffettScore,
+      buffett_data: buffettData,
+      dividend_yield: dividendInfo.yield,
+      dividend_per_share: dividendInfo.perShare,
+      ex_dividend_date: dividendInfo.exDate,
+      dividend_frequency: dividendInfo.frequency,
+      last_fetched_at: new Date().toISOString(),
+    };
+
+    // upsert: 있으면 업데이트, 없으면 추가
+    await supabase.from('stocks').upsert(stockData, { onConflict: 'symbol' });
+  }).catch(() => {});
 
   // 6. 몬테카를로
   const history = await getDailyHistory(upperSymbol, market);

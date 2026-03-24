@@ -10,6 +10,7 @@ const NAV_LINKS = [
   { href: '/dividends', label: '배당캘린더' },
   { href: '/strategies/stock-scan', label: '종목스캔' },
   { href: '/investors', label: '기관투자자' },
+  { href: '/robo-advisor', label: '로보어드바이저' },
   { href: '/strategies', label: '전략' },
   { href: '/backtesting', label: '백테스팅' },
 ];
