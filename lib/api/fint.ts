@@ -15,22 +15,38 @@ export interface FintPortfolio {
 }
 
 async function createBrowser(): Promise<Browser> {
-  // Vercel/AWS Lambda 환경
-  if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) {
-    const chromium = await import('@sparticuz/chromium');
-    const puppeteerCore = await import('puppeteer-core');
+  const isServerless = process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME;
 
-    return puppeteerCore.default.launch({
-      args: chromium.default.args,
-      defaultViewport: chromium.default.defaultViewport,
-      executablePath: await chromium.default.executablePath(),
-      headless: chromium.default.headless,
+  if (isServerless) {
+    // Vercel/AWS Lambda 환경
+    const chromium = (await import('@sparticuz/chromium')).default;
+    const puppeteerCore = (await import('puppeteer-core')).default;
+
+    // Chromium 압축 해제 경로 설정
+    chromium.setHeadlessMode = true;
+    chromium.setGraphicsMode = false;
+
+    const executablePath = await chromium.executablePath();
+    console.log('[fint] Using chromium at:', executablePath);
+
+    return puppeteerCore.launch({
+      args: [
+        ...chromium.args,
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--single-process',
+      ],
+      defaultViewport: { width: 1280, height: 720 },
+      executablePath,
+      headless: true,
     });
   }
 
   // 로컬 개발 환경
-  const puppeteer = await import('puppeteer');
-  return puppeteer.default.launch({
+  const puppeteer = (await import('puppeteer')).default;
+  return puppeteer.launch({
     headless: true,
     args: ['--no-sandbox', '--disable-setuid-sandbox'],
   });

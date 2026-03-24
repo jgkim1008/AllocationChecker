@@ -63,8 +63,9 @@ export async function GET(request: NextRequest) {
     });
   } catch (err) {
     console.error('[robo-advisor] Error:', err);
+    const errorMessage = err instanceof Error ? err.message : String(err);
     return NextResponse.json(
-      { error: '로보어드바이저 데이터 조회 실패' },
+      { error: '로보어드바이저 데이터 조회 실패', details: errorMessage },
       { status: 500 }
     );
   }
