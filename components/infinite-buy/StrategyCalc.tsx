@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, ChevronDown, ChevronUp } from 'lucide-react';
 
 type StrategyVersion = 'v2.2' | 'v3.0';
 
@@ -163,6 +163,10 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy, mark
   const [loadingPrice, setLoadingPrice] = useState(false);
   const [position, setPosition] = useState<TrackerPosition | null>(null);
   const [loadingPosition, setLoadingPosition] = useState(false);
+
+  // 시나리오 섹션 접힘 상태 (기본: 접힘)
+  const [showAddScenario, setShowAddScenario] = useState(false);
+  const [showFreshScenario, setShowFreshScenario] = useState(false);
 
   // 현재가 가져오기
   useEffect(() => {
@@ -570,89 +574,37 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy, mark
         );
       })()}
 
-      {/* ── 추매 시나리오 ── */}
+      {/* ── 추매 시나리오 (접힘 가능) ── */}
       {!loadingPosition && position && currentPrice && (
         <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-          <div className="px-4 py-3 border-b border-gray-100">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-sm font-medium text-gray-900">추매 시나리오 (현재 포지션 기반)</p>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  {variableBuy
-                    ? '평단 미만 가격에서는 2분할 매수 → 1회 추매금이 늘어나고 세션 수가 줄어듭니다.'
-                    : '1분할 고정 모드 — 매 세션마다 1분할씩 매수합니다.'}
-                </p>
-              </div>
+          <button
+            onClick={() => setShowAddScenario(!showAddScenario)}
+            className="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-50 transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <p className="text-sm font-medium text-gray-900">추매 시나리오 (현재 포지션 기반)</p>
+              <span className="text-xs text-gray-400">가격 하락 시 시뮬레이션</span>
+            </div>
+            {showAddScenario ? (
+              <ChevronUp className="h-4 w-4 text-gray-400" />
+            ) : (
+              <ChevronDown className="h-4 w-4 text-gray-400" />
+            )}
+          </button>
+
+          {showAddScenario && (
+            <>
               {(() => {
                 const effDivUsed = unitBuy > 0
                   ? Math.min(Math.round(position.invested / unitBuy), n)
                   : position.divisionsUsed;
-                const remDiv = Math.max(0, n - effDivUsed);
-                return (
-                  <div className="flex-shrink-0 text-right text-xs text-gray-500 space-y-0.5">
-                    <p>
-                      평균단가{' '}
-                      <span className="font-semibold text-gray-800">{fmtP(position.avgCost, market)}</span>
-                    </p>
-                    <p>
-                      진행{' '}
-                      <span className="font-semibold text-gray-800">
-                        {effDivUsed}/{n}회
-                      </span>
-                    </p>
-                    <p>
-                      잔여{' '}
-                      <span className="font-semibold text-green-700">
-                        {remDiv}분할
-                      </span>
-                    </p>
-                  </div>
-                );
-              })()}
-            </div>
-
-            {(() => {
-              const evalValue = position.shares * currentPrice;
-              const pnl = evalValue - position.invested;
-              const pct = position.invested > 0 ? (pnl / position.invested) * 100 : 0;
-              const targetVal = position.invested * (1 + targetRate);
-              const achievePct = targetVal > 0 ? (evalValue / targetVal) * 100 : 0;
-              return (
-                <div className="mt-2 flex flex-wrap gap-3 text-xs">
-                  <span className="text-gray-500">
-                    평가손익:{' '}
-                    <span className={`font-medium ${pnl >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-                      {pnl >= 0 ? '+' : ''}{fmtP(pnl, market)} ({pct >= 0 ? '+' : ''}{pct.toFixed(2)}%)
-                    </span>
-                  </span>
-                  <span className="text-gray-500">
-                    목표 달성률:{' '}
-                    <span className={`font-medium ${achievePct >= 100 ? 'text-green-600' : 'text-gray-700'}`}>
-                      {achievePct.toFixed(1)}%
-                    </span>
-                  </span>
-                  <span className="text-gray-500">
-                    목표가:{' '}
-                    <span className="font-medium text-gray-700">
-                      {fmtP(position.avgCost * (1 + targetRate), market)}
-                    </span>
-                  </span>
+                return Math.max(0, n - effDivUsed);
+              })() === 0 ? (
+                <div className="px-4 py-6 text-center text-sm text-gray-400 border-t border-gray-100">
+                  분할 횟수를 모두 소진했습니다. 목표가 도달을 기다리세요.
                 </div>
-              );
-            })()}
-          </div>
-
-          {(() => {
-            const effDivUsed = unitBuy > 0
-              ? Math.min(Math.round(position.invested / unitBuy), n)
-              : position.divisionsUsed;
-            return Math.max(0, n - effDivUsed);
-          })() === 0 ? (
-            <div className="px-4 py-6 text-center text-sm text-gray-400">
-              분할 횟수를 모두 소진했습니다. 목표가 도달을 기다리세요.
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
+              ) : (
+                <div className="overflow-x-auto border-t border-gray-100">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-gray-50">
@@ -724,11 +676,13 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy, mark
                   ))}
                 </tbody>
               </table>
-            </div>
+                </div>
+              )}
+              <p className="px-4 py-2 text-xs text-gray-400 border-t border-gray-100">
+                * 남은 분할을 해당 가격에서 전량 집행 가정
+              </p>
+            </>
           )}
-          <p className="px-4 py-2 text-xs text-gray-400 border-t border-gray-100">
-            * 남은 분할을 해당 가격에서 전량 집행 가정.{variableBuy ? ' 평단 미만 시 세션당 2분할 사용.' : ' 항상 1분할 고정.'}
-          </p>
         </div>
       )}
 
@@ -807,75 +761,71 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy, mark
         </div>
       )}
 
-      {/* ── 신규 시작 시나리오 ── */}
-      {currentPrice ? (
+      {/* ── 신규 시작 시나리오 (접힘 가능) ── */}
+      {currentPrice && (
         <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-          <div className="px-4 py-3 border-b border-gray-100">
-            <p className="text-sm font-medium text-gray-900">
-              {position ? '신규 사이클 시나리오 (참고)' : '하락 시나리오 분석'}
-            </p>
-            <p className="text-xs text-gray-500 mt-0.5">
-              처음부터 N분할 매수 시 가격이 선형 하락할 때
-              {variableBuy
-                ? ' — 평단 미만 구간에서 2분할 매수 적용.'
-                : ' — 매일 1분할 고정 매수.'}
-              {' '}&quot;소진 세션&quot;은 N분할을 다 쓰는 데 걸리는 거래일 수입니다.
-            </p>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-gray-50">
-                  <th className="text-left px-4 py-2.5 text-xs font-medium text-gray-500">하락률</th>
-                  <th className="text-right px-4 py-2.5 text-xs font-medium text-gray-500">하락 최종가</th>
-                  <th className="text-right px-4 py-2.5 text-xs font-medium text-gray-500">N 소진 세션</th>
-                  <th className="text-right px-4 py-2.5 text-xs font-medium text-gray-500">평균단가</th>
-                  <th className="text-right px-4 py-2.5 text-xs font-medium text-gray-500">목표가</th>
-                  <th className="text-right px-4 py-2.5 text-xs font-medium text-gray-500">필요 상승폭</th>
-                </tr>
-              </thead>
-              <tbody>
-                {freshScenarios.map((row, idx) => (
-                  <tr key={idx} className="border-t border-gray-100 hover:bg-gray-50">
-                    <td className="px-4 py-2.5 font-medium text-gray-900">
-                      {row.dropRate === 0 ? '0%' : `${row.dropRate.toFixed(0)}%`}
-                    </td>
-                    <td className="px-4 py-2.5 text-right text-gray-700">
-                      {fmtP(row.finalPrice, market)}
-                    </td>
-                    <td className="px-4 py-2.5 text-right text-gray-700">
-                      {row.sessionCount}일
-                      {row.sessionCount < n && (
-                        <span className="ml-1 text-xs text-green-600">
-                          (2분할 적용)
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-2.5 text-right text-gray-700">
-                      {fmtP(row.avgCost, market)}
-                    </td>
-                    <td className="px-4 py-2.5 text-right text-green-600 font-medium">
-                      {fmtP(row.targetPrice, market)}
-                    </td>
-                    <td className="px-4 py-2.5 text-right font-medium text-red-500">
-                      +{row.requiredRise.toFixed(1)}%
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <p className="px-4 py-2 text-xs text-gray-400 border-t border-gray-100">
-            * 필요 상승폭은 N 소진 시점의 가격 기준입니다 (하락 최종가와 다를 수 있음).
-          </p>
-        </div>
-      ) : !loadingPrice ? (
-        <div className="bg-white border border-gray-200 rounded-xl p-8 text-center text-sm text-gray-400">
-          현재가를 불러오는 중이거나 종목을 선택해 주세요.
-        </div>
-      ) : (
-        <div className="bg-white border border-gray-200 rounded-xl p-8 text-center">
-          <div className="h-4 w-48 bg-gray-200 animate-pulse rounded mx-auto" />
+          <button
+            onClick={() => setShowFreshScenario(!showFreshScenario)}
+            className="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-50 transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <p className="text-sm font-medium text-gray-900">
+                {position ? '신규 사이클 시나리오' : '하락 시나리오 분석'}
+              </p>
+              <span className="text-xs text-gray-400">처음부터 시작할 때 시뮬레이션</span>
+            </div>
+            {showFreshScenario ? (
+              <ChevronUp className="h-4 w-4 text-gray-400" />
+            ) : (
+              <ChevronDown className="h-4 w-4 text-gray-400" />
+            )}
+          </button>
+
+          {showFreshScenario && (
+            <>
+              <div className="overflow-x-auto border-t border-gray-100">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-gray-50">
+                      <th className="text-left px-4 py-2.5 text-xs font-medium text-gray-500">하락률</th>
+                      <th className="text-right px-4 py-2.5 text-xs font-medium text-gray-500">하락 최종가</th>
+                      <th className="text-right px-4 py-2.5 text-xs font-medium text-gray-500">N 소진 세션</th>
+                      <th className="text-right px-4 py-2.5 text-xs font-medium text-gray-500">평균단가</th>
+                      <th className="text-right px-4 py-2.5 text-xs font-medium text-gray-500">목표가</th>
+                      <th className="text-right px-4 py-2.5 text-xs font-medium text-gray-500">필요 상승폭</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {freshScenarios.map((row, idx) => (
+                      <tr key={idx} className="border-t border-gray-100 hover:bg-gray-50">
+                        <td className="px-4 py-2.5 font-medium text-gray-900">
+                          {row.dropRate === 0 ? '0%' : `${row.dropRate.toFixed(0)}%`}
+                        </td>
+                        <td className="px-4 py-2.5 text-right text-gray-700">
+                          {fmtP(row.finalPrice, market)}
+                        </td>
+                        <td className="px-4 py-2.5 text-right text-gray-700">
+                          {row.sessionCount}일
+                        </td>
+                        <td className="px-4 py-2.5 text-right text-gray-700">
+                          {fmtP(row.avgCost, market)}
+                        </td>
+                        <td className="px-4 py-2.5 text-right text-green-600 font-medium">
+                          {fmtP(row.targetPrice, market)}
+                        </td>
+                        <td className="px-4 py-2.5 text-right font-medium text-red-500">
+                          +{row.requiredRise.toFixed(1)}%
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="px-4 py-2 text-xs text-gray-400 border-t border-gray-100">
+                * 필요 상승폭은 N 소진 시점의 가격 기준입니다
+              </p>
+            </>
+          )}
         </div>
       )}
     </div>
