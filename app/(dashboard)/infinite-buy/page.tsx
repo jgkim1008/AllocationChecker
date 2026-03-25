@@ -57,7 +57,8 @@ export default function InfiniteBuyPage() {
   const [nInput, setNInput] = useState<string>('40');
   const [targetRate, setTargetRate] = useState<number>(0.10);
   const [targetRateInput, setTargetRateInput] = useState<string>('10');
-  const [variableBuy, setVariableBuy] = useState<boolean>(true);
+  // V2.2/V3.0에서는 variableBuy가 사용되지 않음 (버전별 규칙 적용)
+  const variableBuy = false;
 
   const [tab, setTab] = useState<Tab>('calc');
 
@@ -325,28 +326,12 @@ export default function InfiniteBuyPage() {
             </strong>
           </span>
 
-          {/* 매수 방식 토글 */}
-          <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5 ml-auto">
-            <button
-              onClick={() => setVariableBuy(false)}
-              className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-                !variableBuy
-                  ? 'bg-white text-gray-800 shadow-sm'
-                  : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              1분할 고정
-            </button>
-            <button
-              onClick={() => setVariableBuy(true)}
-              className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-                variableBuy
-                  ? 'bg-green-600 text-white shadow-sm'
-                  : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              가변 (평단 기준 1/2분할)
-            </button>
+          {/* 버전별 매수 방식 안내 */}
+          <div className={`ml-auto px-2.5 py-1 rounded-lg text-xs font-medium ${
+            version === 'v3.0' ? 'bg-orange-100 text-orange-700' : 'bg-green-100 text-green-700'
+          }`}>
+            {version === 'v2.2' && '전반전 2주문 · 후반전 1주문'}
+            {version === 'v3.0' && '평단+목표% LOC 1주문'}
           </div>
         </div>
       </div>
