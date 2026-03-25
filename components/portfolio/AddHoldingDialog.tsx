@@ -308,10 +308,10 @@ export function AddHoldingDialog({ open, onClose, onAdd, onUpdate, accounts = []
                 <SelectTrigger className="mt-1 bg-white border-gray-200 text-gray-900 focus:ring-green-600">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent className="bg-white border-gray-200">
-                  <SelectItem value="unassigned" className="focus:bg-gray-50">미분류</SelectItem>
+                <SelectContent className="bg-white border-gray-200 text-gray-900">
+                  <SelectItem value="unassigned" className="text-gray-900 focus:bg-gray-50 focus:text-gray-900">미분류</SelectItem>
                   {accounts.map((a) => (
-                    <SelectItem key={a.id} value={a.id} className="focus:bg-gray-50">
+                    <SelectItem key={a.id} value={a.id} className="text-gray-900 focus:bg-gray-50 focus:text-gray-900">
                       {a.name}
                       <span className="ml-1 text-xs text-gray-400">({a.type})</span>
                     </SelectItem>

@@ -249,7 +249,7 @@ export function AutoTradePanel({
       const response = await fetch('/api/auto-trade/infinite-buy', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ brokerType, orders: ordersToExecute, market }),
+        body: JSON.stringify({ brokerType, orders: ordersToExecute, market, capital: totalCapital, strategyVersion }),
       });
       const data = await response.json();
 
@@ -271,7 +271,11 @@ export function AutoTradePanel({
         setExecutionResult({ success: false, message: data.message, details });
       } else {
         // 전부 성공 → UI 초기화
-        setExecutionResult({ success: true, message: data.message });
+        const trackerCount: number = data.trackerCount ?? 0;
+        const msg = trackerCount > 0
+          ? `${data.message} · 트래커 ${trackerCount}건 기록됨`
+          : data.message;
+        setExecutionResult({ success: true, message: msg });
         setCurrentRound(prev => prev + 1);
         setDailyOrders(null);
         setConfirmedOrders(new Set());

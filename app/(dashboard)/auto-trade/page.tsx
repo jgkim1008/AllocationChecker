@@ -1,14 +1,38 @@
 import { Metadata } from 'next';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { BrokerConnect, AutoTradePanel, OrderHistory } from '@/components/auto-trade';
-import { Bot, Link, History, TrendingUp } from 'lucide-react';
+import { BrokerConnect, AutoTradePanel, OrderHistory, BalancePanel } from '@/components/auto-trade';
+import { Bot, Link, History, TrendingUp, Construction, Wallet } from 'lucide-react';
 
 export const metadata: Metadata = {
   title: '자동매매 - AllocationChecker',
   description: '증권사 API 연동 자동매매',
 };
 
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+
 export default function AutoTradePage() {
+  if (IS_PRODUCTION) {
+    return (
+      <div className="container mx-auto max-w-6xl py-6">
+        <div className="mb-6">
+          <h1 className="flex items-center gap-2 text-2xl font-bold">
+            <Bot className="h-6 w-6" />
+            자동매매
+          </h1>
+        </div>
+        <div className="flex flex-col items-center justify-center py-24 gap-4 bg-white border border-gray-200 rounded-2xl">
+          <div className="p-4 bg-amber-50 rounded-full">
+            <Construction className="h-8 w-8 text-amber-500" />
+          </div>
+          <h2 className="text-lg font-bold text-gray-800">서비스 준비 중</h2>
+          <p className="text-sm text-gray-500 text-center max-w-sm">
+            자동매매 기능은 보안 검토 후 제공될 예정입니다.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="container mx-auto max-w-6xl py-6">
       <div className="mb-6">
@@ -22,10 +46,14 @@ export default function AutoTradePage() {
       </div>
 
       <Tabs defaultValue="trade" className="space-y-4">
-        <TabsList className="grid w-full grid-cols-3 lg:w-[400px]">
+        <TabsList className="grid w-full grid-cols-4 lg:w-[520px]">
           <TabsTrigger value="trade" className="flex items-center gap-2">
             <TrendingUp className="h-4 w-4" />
             매매
+          </TabsTrigger>
+          <TabsTrigger value="balance" className="flex items-center gap-2">
+            <Wallet className="h-4 w-4" />
+            잔고
           </TabsTrigger>
           <TabsTrigger value="history" className="flex items-center gap-2">
             <History className="h-4 w-4" />
@@ -39,6 +67,10 @@ export default function AutoTradePage() {
 
         <TabsContent value="trade">
           <AutoTradePanel />
+        </TabsContent>
+
+        <TabsContent value="balance">
+          <BalancePanel />
         </TabsContent>
 
         <TabsContent value="history">

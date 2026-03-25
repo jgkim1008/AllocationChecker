@@ -6,7 +6,8 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+
+import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { getBrokerClient } from '@/lib/broker/session';
 import {
   calculateDailyOrders,
@@ -19,6 +20,7 @@ import type { BrokerType, AutoTradeOrder, MarketType } from '@/lib/broker/types'
 // GET: 오늘의 주문 계산
 export async function GET(request: NextRequest) {
   try {
+    if (process.env.NODE_ENV === 'production') return NextResponse.json({ error: '서비스 준비 중입니다.' }, { status: 503 });
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
 
@@ -111,6 +113,7 @@ export async function GET(request: NextRequest) {
 // POST: 주문 실행
 export async function POST(request: NextRequest) {
   try {
+    if (process.env.NODE_ENV === 'production') return NextResponse.json({ error: '서비스 준비 중입니다.' }, { status: 503 });
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
 
@@ -126,10 +129,14 @@ export async function POST(request: NextRequest) {
       brokerType,
       orders,
       market,
+      capital,
+      strategyVersion,
     } = body as {
       brokerType: BrokerType;
       orders: AutoTradeOrder[];
       market: MarketType;
+      capital?: number;
+      strategyVersion?: StrategyVersion;
     };
 
     if (!brokerType || !orders || orders.length === 0) {
@@ -186,9 +193,32 @@ export async function POST(request: NextRequest) {
     const successCount = results.filter(r => r.success).length;
     const failCount = results.length - successCount;
 
+    // 매수 성공 주문을 infinite_buy_records에 자동 기록
+    const successfulBuys = results.filter(r => r.success && r.order.side === 'buy');
+    let trackerCount = 0;
+    if (successfulBuys.length > 0 && capital) {
+      const n = strategyVersion === 'V3.0' ? 20 : 40;
+      const today = new Date().toISOString().split('T')[0];
+      const serviceClient = await createServiceClient();
+      await serviceClient.from('infinite_buy_records').insert(
+        successfulBuys.map(r => ({
+          symbol: r.order.symbol,
+          buy_date: today,
+          price: r.order.targetPrice,
+          shares: r.order.quantity,
+          amount: r.order.targetPrice * r.order.quantity,
+          capital: Number(capital),
+          n,
+          target_rate: 0.10,
+        }))
+      );
+      trackerCount = successfulBuys.length;
+    }
+
     return NextResponse.json({
       success: true,
       message: `${successCount}건 성공, ${failCount}건 실패`,
+      trackerCount,
       data: {
         results,
         summary: {

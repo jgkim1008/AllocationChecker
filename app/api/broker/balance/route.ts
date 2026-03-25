@@ -5,6 +5,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+
 import { createClient } from '@/lib/supabase/server';
 import { getBrokerClient } from '@/lib/broker/session';
 import type { BrokerType } from '@/lib/broker/types';
@@ -12,6 +13,7 @@ import { KISClient } from '@/lib/broker/kis';
 
 export async function GET(request: NextRequest) {
   try {
+    if (process.env.NODE_ENV === 'production') return NextResponse.json({ error: '서비스 준비 중입니다.' }, { status: 503 });
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
 
@@ -26,7 +28,7 @@ export async function GET(request: NextRequest) {
     const brokerType = (searchParams.get('brokerType') || 'kis') as BrokerType;
     const includeOverseas = searchParams.get('includeOverseas') === 'true';
 
-    // 브로커 클라이언트 가져오기
+    // 브로커 클라이언트 가져오기 (메모리 없으면 .env.local 자동 폴백)
     const clientResult = await getBrokerClient(user.id, brokerType);
 
     if (!clientResult.success || !clientResult.client) {
@@ -49,9 +51,12 @@ export async function GET(request: NextRequest) {
         );
       }
 
+      const fullData = fullBalanceResult.data!;
+      console.log('[balance] domestic positions:', fullData.domestic.positions.length, fullData.domestic.positions.map(p => p.symbol));
+      console.log('[balance] overseas positions:', fullData.overseas.positions.length, fullData.overseas.positions.map(p => p.symbol));
       return NextResponse.json({
         success: true,
-        data: fullBalanceResult.data,
+        data: fullData,
       });
     }
 

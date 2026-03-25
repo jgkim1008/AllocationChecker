@@ -7,6 +7,7 @@ import {
   buildPortfolioSeries,
   buildDateUnion,
   filterDates,
+  type SeriesResult,
 } from '@/lib/utils/backtest-calc';
 
 const BENCHMARK_COLORS: Record<string, string> = {
@@ -127,8 +128,18 @@ export async function GET(request: NextRequest) {
         ? buildPortfolioSeries(holdingSeries, weights, dates)
         : null;
 
+    // 현금 보유 시리즈 (항상 100, 수익률 0%)
+    const cashSeries: SeriesResult = {
+      id: 'CASH',
+      name: '현금 보유',
+      color: '#9CA3AF',
+      data: dates.map(() => 100),
+      metrics: { totalReturn: 0, cagr: 0, maxDrawdown: 0 },
+    };
+
     const series = [
       ...benchmarkSeries,
+      cashSeries,
       ...(portfolioSeries ? [portfolioSeries] : []),
       ...holdingSeries,
       ...extraSeries,
