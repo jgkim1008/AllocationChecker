@@ -338,6 +338,207 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy, mark
         </div>
       )}
 
+      {/* ── V2.2 오늘의 매매 가이드 ── */}
+      {version === 'v2.2' && position && currentPrice && (() => {
+        const effDivUsed = unitBuy > 0
+          ? Math.min(Math.round(position.invested / unitBuy), n)
+          : position.divisionsUsed;
+        const t = effDivUsed + 1; // 다음 매수 회차
+        const dynamicRate = getDynamicTargetRate(t);
+        const isFirstHalf = t < 20;
+        const buyInfo = getV22BuyPrices(position.avgCost, t);
+        const sellInfo = getV22SellPrices(position.avgCost, t);
+
+        return (
+          <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200 rounded-xl overflow-hidden">
+            <div className="px-4 py-3 bg-blue-100/50 border-b border-blue-200">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-bold text-blue-900">오늘의 매매 가이드</p>
+                  <p className="text-xs text-blue-600 mt-0.5">V2.2 전략 · 현재 포지션 기준 자동 계산</p>
+                </div>
+                <div className="text-right">
+                  <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${isFirstHalf ? 'bg-amber-100 text-amber-700' : 'bg-purple-100 text-purple-700'}`}>
+                    {isFirstHalf ? '전반전' : '후반전'}
+                  </span>
+                  <p className="text-xs text-blue-600 mt-1">T = {t}회차</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-4 space-y-4">
+              {/* 현재 상태 요약 */}
+              <div className="grid grid-cols-3 gap-3 text-center">
+                <div className="bg-white/60 rounded-lg p-2.5">
+                  <p className="text-[10px] text-gray-500 mb-0.5">평균단가</p>
+                  <p className="text-sm font-bold text-gray-900">{fmtP(position.avgCost, market)}</p>
+                </div>
+                <div className="bg-white/60 rounded-lg p-2.5">
+                  <p className="text-[10px] text-gray-500 mb-0.5">동적 목표율</p>
+                  <p className="text-sm font-bold text-indigo-600">+{(dynamicRate * 100).toFixed(1)}%</p>
+                </div>
+                <div className="bg-white/60 rounded-lg p-2.5">
+                  <p className="text-[10px] text-gray-500 mb-0.5">진행률</p>
+                  <p className="text-sm font-bold text-gray-900">{effDivUsed}/{n}회</p>
+                </div>
+              </div>
+
+              {/* 매수 주문 가이드 */}
+              <div className="bg-white rounded-xl border border-green-200 overflow-hidden">
+                <div className="px-3 py-2 bg-green-50 border-b border-green-100">
+                  <p className="text-xs font-bold text-green-800">📥 매수 주문 (LOC)</p>
+                  <p className="text-[10px] text-green-600 mt-0.5">
+                    {isFirstHalf
+                      ? '전반전: 2개의 LOC 주문으로 분산 매수'
+                      : '후반전: 1개의 LOC 주문으로 집중 매수'}
+                  </p>
+                </div>
+                <div className="p-3">
+                  {isFirstHalf ? (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between p-2 bg-green-50/50 rounded-lg">
+                        <div>
+                          <span className="text-xs font-medium text-green-700">주문 1</span>
+                          <span className="text-[10px] text-gray-500 ml-1.5">절반 금액 ({fmtP(unitBuy / 2, market)})</span>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-bold text-green-700">{fmtP(buyInfo.price1, market)}</p>
+                          <p className="text-[10px] text-gray-400">= 평단가</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between p-2 bg-green-50/50 rounded-lg">
+                        <div>
+                          <span className="text-xs font-medium text-green-700">주문 2</span>
+                          <span className="text-[10px] text-gray-500 ml-1.5">절반 금액 ({fmtP(unitBuy / 2, market)})</span>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-bold text-green-700">{fmtP(buyInfo.price2!, market)}</p>
+                          <p className="text-[10px] text-gray-400">= 평단 + {(dynamicRate * 100).toFixed(1)}%</p>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between p-2 bg-green-50/50 rounded-lg">
+                      <div>
+                        <span className="text-xs font-medium text-green-700">전액 주문</span>
+                        <span className="text-[10px] text-gray-500 ml-1.5">{fmtP(unitBuy, market)}</span>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-bold text-green-700">{fmtP(buyInfo.price1, market)}</p>
+                        <p className="text-[10px] text-gray-400">= 평단 + {(dynamicRate * 100).toFixed(1)}%</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* 매도 주문 가이드 */}
+              <div className="bg-white rounded-xl border border-red-200 overflow-hidden">
+                <div className="px-3 py-2 bg-red-50 border-b border-red-100">
+                  <p className="text-xs font-bold text-red-800">📤 매도 주문 (LOC)</p>
+                  <p className="text-[10px] text-red-600 mt-0.5">2개의 LOC 주문: 1/4 물량 먼저, 3/4 물량 나중에</p>
+                </div>
+                <div className="p-3 space-y-2">
+                  <div className="flex items-center justify-between p-2 bg-red-50/50 rounded-lg">
+                    <div>
+                      <span className="text-xs font-medium text-red-700">1차 익절</span>
+                      <span className="text-[10px] text-gray-500 ml-1.5">1/4 물량 ({(position.shares / 4).toFixed(2)}주)</span>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-bold text-red-600">{fmtP(sellInfo.price1, market)}</p>
+                      <p className="text-[10px] text-gray-400">= 평단 + {(dynamicRate * 100).toFixed(1)}%</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between p-2 bg-red-50/50 rounded-lg">
+                    <div>
+                      <span className="text-xs font-medium text-red-700">2차 익절</span>
+                      <span className="text-[10px] text-gray-500 ml-1.5">3/4 물량 ({(position.shares * 3 / 4).toFixed(2)}주)</span>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-bold text-red-600">{fmtP(sellInfo.price2, market)}</p>
+                      <p className="text-[10px] text-gray-400">= 평단 + 10% (고정)</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 쉬운 설명 */}
+              <div className="bg-gray-50 rounded-lg p-3 text-xs text-gray-600 space-y-1.5">
+                <p className="font-medium text-gray-800">💡 한눈에 이해하기</p>
+                {isFirstHalf ? (
+                  <>
+                    <p>• <strong>전반전</strong>이므로 매수 주문을 2개로 나눠서 걸어요</p>
+                    <p>• 주문1은 평단가에, 주문2는 평단보다 {(dynamicRate * 100).toFixed(1)}% 높은 가격에 걸어요</p>
+                    <p>• 가격이 내려가면 주문1이 체결되고, 올라가면 주문2가 체결돼요</p>
+                  </>
+                ) : (
+                  <>
+                    <p>• <strong>후반전</strong>이므로 매수 주문을 1개만 걸어요</p>
+                    <p>• 평단보다 {(dynamicRate * 100).toFixed(1)}% 높은 가격에만 주문을 걸어요</p>
+                    <p>• 주가가 살짝 오를 때만 매수되므로 추격 매수를 줄여요</p>
+                  </>
+                )}
+                <p className="pt-1 border-t border-gray-200 mt-2">• 매도는 1/4을 먼저 익절하고, 나머지 3/4은 +10%에서 익절해요</p>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* V3.0 오늘의 매매 가이드 */}
+      {version === 'v3.0' && position && currentPrice && (() => {
+        const effDivUsed = unitBuy > 0
+          ? Math.min(Math.round(position.invested / unitBuy), n)
+          : position.divisionsUsed;
+        const buyPrice = position.avgCost * (1 + targetRate);
+        const sellPrice = position.avgCost * (1 + targetRate);
+
+        return (
+          <div className="bg-gradient-to-br from-orange-50 to-amber-50 border border-orange-200 rounded-xl overflow-hidden">
+            <div className="px-4 py-3 bg-orange-100/50 border-b border-orange-200">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-bold text-orange-900">오늘의 매매 가이드</p>
+                  <p className="text-xs text-orange-600 mt-0.5">V3.0 공격형 · 단순 명확한 규칙</p>
+                </div>
+                <div className="text-right">
+                  <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-orange-100 text-orange-700">
+                    목표 +{(targetRate * 100).toFixed(0)}%
+                  </span>
+                  <p className="text-xs text-orange-600 mt-1">{effDivUsed}/{n}회 사용</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-4 space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                {/* 매수 */}
+                <div className="bg-white rounded-xl border border-green-200 p-3">
+                  <p className="text-xs font-bold text-green-800 mb-2">📥 매수 주문</p>
+                  <p className="text-lg font-bold text-green-700">{fmtP(buyPrice, market)}</p>
+                  <p className="text-[10px] text-gray-500 mt-1">= 평단 + {(targetRate * 100).toFixed(0)}%</p>
+                  <p className="text-[10px] text-gray-400 mt-0.5">금액: {fmtP(unitBuy, market)}</p>
+                </div>
+                {/* 매도 */}
+                <div className="bg-white rounded-xl border border-red-200 p-3">
+                  <p className="text-xs font-bold text-red-800 mb-2">📤 매도 주문</p>
+                  <p className="text-lg font-bold text-red-600">{fmtP(sellPrice, market)}</p>
+                  <p className="text-[10px] text-gray-500 mt-1">= 평단 + {(targetRate * 100).toFixed(0)}%</p>
+                  <p className="text-[10px] text-gray-400 mt-0.5">전량: {position.shares.toFixed(2)}주</p>
+                </div>
+              </div>
+
+              <div className="bg-gray-50 rounded-lg p-3 text-xs text-gray-600 space-y-1.5">
+                <p className="font-medium text-gray-800">💡 V3.0은 간단해요</p>
+                <p>• 매수/매도 모두 <strong>평단 + {(targetRate * 100).toFixed(0)}%</strong> 단 하나의 가격만 사용</p>
+                <p>• 매수가 체결되면 평단이 내려가고, 다음날 주문가도 낮아져요</p>
+                <p>• 목표가에 도달하면 <strong>전량 매도</strong> 후 수익금 포함 재시작 (복리)</p>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* ── 추매 시나리오 ── */}
       {position && currentPrice && (
         <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
@@ -500,9 +701,78 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy, mark
         </div>
       )}
 
+      {/* 신규 매수자를 위한 첫 매수 가이드 */}
       {!position && currentPrice && (
-        <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 text-xs text-blue-600">
-          실시간 트래커에 매수 내역을 기록하면, 현재 포지션 기반 추매 시나리오가 여기에 표시됩니다.
+        <div className="bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-200 rounded-xl overflow-hidden">
+          <div className="px-4 py-3 bg-emerald-100/50 border-b border-emerald-200">
+            <p className="text-sm font-bold text-emerald-900">🚀 첫 매수 가이드</p>
+            <p className="text-xs text-emerald-600 mt-0.5">아직 포지션이 없습니다. 아래 방법으로 시작하세요!</p>
+          </div>
+
+          <div className="p-4 space-y-4">
+            {version === 'v2.2' ? (
+              <>
+                {/* V2.2 첫 매수 */}
+                <div className="bg-white rounded-xl border border-green-200 p-3">
+                  <p className="text-xs font-bold text-green-800 mb-2">📥 첫 매수 방법</p>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between p-2 bg-green-50/50 rounded-lg">
+                      <div>
+                        <span className="text-xs font-medium text-green-700">시장가 매수</span>
+                        <span className="text-[10px] text-gray-500 ml-1.5">1분할 금액</span>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-bold text-green-700">{fmtP(unitBuy, market)}</p>
+                        <p className="text-[10px] text-gray-400">≈ {(unitBuy / currentPrice).toFixed(2)}주</p>
+                      </div>
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-gray-500 mt-2">
+                    * 첫 매수는 평단가가 없으므로 <strong>시장가 또는 현재가</strong>로 매수합니다
+                  </p>
+                </div>
+
+                <div className="bg-gray-50 rounded-lg p-3 text-xs text-gray-600 space-y-1.5">
+                  <p className="font-medium text-gray-800">💡 첫날 이후 진행</p>
+                  <p>1. 첫 매수 후 평균단가가 생성됩니다 (= 첫 매수가)</p>
+                  <p>2. T=1 이므로 <strong>전반전</strong>이 시작됩니다</p>
+                  <p>3. 다음날부터 평단가 기준으로 LOC 주문을 걸어주세요</p>
+                  <p>4. 매수 내역을 "실시간 트래커"에 기록하면 자동 계산됩니다</p>
+                </div>
+              </>
+            ) : (
+              <>
+                {/* V3.0 첫 매수 */}
+                <div className="bg-white rounded-xl border border-green-200 p-3">
+                  <p className="text-xs font-bold text-green-800 mb-2">📥 첫 매수 방법</p>
+                  <div className="flex items-center justify-between p-2 bg-green-50/50 rounded-lg">
+                    <div>
+                      <span className="text-xs font-medium text-green-700">시장가 매수</span>
+                      <span className="text-[10px] text-gray-500 ml-1.5">1분할 금액</span>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-bold text-green-700">{fmtP(unitBuy, market)}</p>
+                      <p className="text-[10px] text-gray-400">≈ {(unitBuy / currentPrice).toFixed(2)}주</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-gray-50 rounded-lg p-3 text-xs text-gray-600 space-y-1.5">
+                  <p className="font-medium text-gray-800">💡 V3.0 진행 방법</p>
+                  <p>1. 첫 매수 후 평균단가가 생성됩니다</p>
+                  <p>2. 다음날부터 <strong>평단 + {(targetRate * 100).toFixed(0)}%</strong> 가격에 LOC 매수 주문</p>
+                  <p>3. 같은 가격에 전량 매도 주문도 함께 걸어두세요</p>
+                  <p>4. 체결되면 평단이 낮아지고, 목표가도 자동으로 낮아집니다</p>
+                </div>
+              </>
+            )}
+
+            <div className="text-center">
+              <p className="text-xs text-emerald-600">
+                👆 매수 후 <strong>"실시간 트래커"</strong> 탭에서 기록하면 자동으로 가이드가 업데이트됩니다
+              </p>
+            </div>
+          </div>
         </div>
       )}
 
