@@ -14,6 +14,7 @@ const NAV_LINKS = [
   { href: '/robo-advisor', label: '로보어드바이저' },
   { href: '/strategies', label: '전략' },
   { href: '/backtesting', label: '백테스팅' },
+  { href: '/auto-trade', label: '자동매매' },
 ];
 
 // 모바일 하단 네비게이션 (주요 5개)
