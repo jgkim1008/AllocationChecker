@@ -1,6 +1,7 @@
 import { Metadata } from 'next';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { BrokerConnect, AutoTradePanel, OrderHistory, BalancePanel } from '@/components/auto-trade';
+import { PremiumGate } from '@/components/PremiumGate';
 import { Bot, Link, History, TrendingUp, Construction, Wallet } from 'lucide-react';
 
 export const metadata: Metadata = {
@@ -34,6 +35,7 @@ export default function AutoTradePage() {
   }
 
   return (
+    <PremiumGate featureName="자동매매">
     <div className="container mx-auto max-w-6xl py-6">
       <div className="mb-6">
         <h1 className="flex items-center gap-2 text-2xl font-bold">
@@ -110,5 +112,6 @@ export default function AutoTradePage() {
         </div>
       </div>
     </div>
+    </PremiumGate>
   );
 }
