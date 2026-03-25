@@ -8,7 +8,7 @@ import type { IBroker } from './interface';
 import type { BrokerType, KISCredentials, KiwoomCredentials, TokenInfo } from './types';
 import { KISClient } from './kis';
 import { KiwoomClient } from './kiwoom';
-import { getBrokerCredentials, getCachedToken, cacheToken } from './storage';
+import { getBrokerCredentials, getEnvKISCredentials, getCachedToken, cacheToken, clearCachedToken } from './storage';
 
 // 브로커 인스턴스 캐시
 const brokerCache = new Map<string, IBroker>();
@@ -36,17 +36,26 @@ export async function getBrokerClient(
     return { success: true, client };
   }
 
-  // 자격증명 조회
+  // 자격증명 조회: 메모리 저장소 → .env.local 순으로 폴백
   const credResult = await getBrokerCredentials(userId, brokerType);
-  if (!credResult.success || !credResult.data) {
-    return { success: false, error: credResult.error || '브로커 설정을 찾을 수 없습니다.' };
+  let credentials = credResult.data;
+
+  if (!credentials && brokerType === 'kis') {
+    const envCreds = getEnvKISCredentials();
+    if (envCreds) {
+      credentials = envCreds;
+    }
+  }
+
+  if (!credentials) {
+    return { success: false, error: '브로커 설정이 없습니다. 연결 탭에서 API 키를 입력하거나 .env.local에 KIS_APP_KEY를 설정하세요.' };
   }
 
   // 클라이언트 생성
   if (brokerType === 'kis') {
-    client = new KISClient(credResult.data as KISCredentials);
+    client = new KISClient(credentials as KISCredentials);
   } else {
-    client = new KiwoomClient(credResult.data as KiwoomCredentials);
+    client = new KiwoomClient(credentials as KiwoomCredentials);
   }
 
   // 캐시된 토큰 확인
@@ -93,6 +102,7 @@ export async function disconnectBroker(
     await client.disconnect();
     brokerCache.delete(cacheKey);
   }
+  clearCachedToken(userId, brokerType);
 }
 
 /**

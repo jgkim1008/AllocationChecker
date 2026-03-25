@@ -8,7 +8,7 @@ export async function PUT(
   try {
     const { id } = await params;
     const body = await request.json();
-    const { buy_date, price, shares, amount } = body;
+    const { buy_date, price, shares, amount, capital, n, target_rate } = body;
 
     const supabase = await createServiceClient();
 
@@ -17,6 +17,9 @@ export async function PUT(
     if (price !== undefined) updateData.price = Number(price);
     if (shares !== undefined) updateData.shares = Number(shares);
     if (amount !== undefined) updateData.amount = Number(amount);
+    if (capital !== undefined) updateData.capital = Number(capital);
+    if (n !== undefined) updateData.n = Number(n);
+    if (target_rate !== undefined) updateData.target_rate = Number(target_rate);
 
     const { data, error } = await supabase
       .from('infinite_buy_records')

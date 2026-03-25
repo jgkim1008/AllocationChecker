@@ -156,9 +156,11 @@ export class KISAccount {
   }
 
   /**
-   * 해외주식 잔고 조회 (미국 기준)
+   * 특정 거래소의 해외주식 잔고 조회
    */
-  async getOverseasBalance(): Promise<BrokerResponse<{ balance: Balance; positions: Position[] }>> {
+  private async getOverseasBalanceByExchange(
+    exchangeCode: string
+  ): Promise<BrokerResponse<{ balance: Balance; positions: Position[] }>> {
     const [accountNo, accountProduct] = this.auth.getAccountParts();
     const trId = this.auth.isVirtual()
       ? KIS_TR_ID.OVERSEAS_VIRTUAL.BALANCE
@@ -168,7 +170,7 @@ export class KISAccount {
       const url = new URL(`${this.auth.getBaseUrl()}${KIS_ENDPOINTS.OVERSEAS.BALANCE}`);
       url.searchParams.set('CANO', accountNo);
       url.searchParams.set('ACNT_PRDT_CD', accountProduct);
-      url.searchParams.set('OVRS_EXCG_CD', KIS_EXCHANGE_CODE.NASDAQ);
+      url.searchParams.set('OVRS_EXCG_CD', exchangeCode);
       url.searchParams.set('TR_CRCY_CD', 'USD');
       url.searchParams.set('CTX_AREA_FK200', '');
       url.searchParams.set('CTX_AREA_NK200', '');
@@ -241,6 +243,50 @@ export class KISAccount {
         },
       };
     }
+  }
+
+  /**
+   * 해외주식 잔고 조회 (NASD + NYSE + AMEX 합산)
+   */
+  async getOverseasBalance(): Promise<BrokerResponse<{ balance: Balance; positions: Position[] }>> {
+    const exchanges = [
+      KIS_EXCHANGE_CODE.NASDAQ,
+      KIS_EXCHANGE_CODE.NYSE,
+      KIS_EXCHANGE_CODE.AMEX,
+    ];
+
+    const results = await Promise.all(exchanges.map(ex => this.getOverseasBalanceByExchange(ex)));
+
+    // 심볼 기준 중복 제거하며 positions 합산
+    const positionMap = new Map<string, Position>();
+    let totalBuyAmount = 0;
+    let totalProfitLoss = 0;
+
+    for (const r of results) {
+      if (r.success && r.data) {
+        for (const p of r.data.positions) {
+          if (!positionMap.has(p.symbol)) {
+            positionMap.set(p.symbol, p);
+          }
+        }
+        totalBuyAmount += r.data.balance.totalBuyAmount;
+        totalProfitLoss += r.data.balance.totalProfitLoss;
+      }
+    }
+
+    const allPositions = Array.from(positionMap.values());
+
+    const balance: Balance = {
+      totalAsset: totalBuyAmount + totalProfitLoss,
+      totalDeposit: 0,
+      totalBuyAmount,
+      totalEvalAmount: totalBuyAmount + totalProfitLoss,
+      totalProfitLoss,
+      totalProfitLossRate: totalBuyAmount > 0 ? (totalProfitLoss / totalBuyAmount) * 100 : 0,
+      currency: 'USD',
+    };
+
+    return { success: true, data: { balance, positions: allPositions } };
   }
 
   /**

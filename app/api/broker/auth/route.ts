@@ -7,6 +7,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+
 import { createClient } from '@/lib/supabase/server';
 import { saveBrokerCredentials, deleteBrokerCredentials, getConnectedBrokers } from '@/lib/broker/storage';
 import { getBrokerClient, disconnectBroker } from '@/lib/broker/session';
@@ -15,6 +16,7 @@ import type { BrokerType, KISCredentials, KiwoomCredentials } from '@/lib/broker
 // POST: 브로커 연결
 export async function POST(request: NextRequest) {
   try {
+    if (process.env.NODE_ENV === 'production') return NextResponse.json({ error: '서비스 준비 중입니다.' }, { status: 503 });
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
 
@@ -38,13 +40,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 자격증명 검증 (실제 연결 시도)
-    const clientResult = await getBrokerClient(user.id, brokerType);
+    // 기존 연결 해제 (캐시된 토큰/클라이언트 클리어)
+    await disconnectBroker(user.id, brokerType);
 
-    // 먼저 저장 (연결 실패해도 저장은 해둠)
+    // 새 자격증명 저장
     await saveBrokerCredentials(user.id, brokerType, credentials);
 
-    // 다시 연결 시도
+    // 새 연결 시도
     const retryResult = await getBrokerClient(user.id, brokerType);
 
     if (!retryResult.success) {
@@ -74,6 +76,7 @@ export async function POST(request: NextRequest) {
 // DELETE: 브로커 연결 해제
 export async function DELETE(request: NextRequest) {
   try {
+    if (process.env.NODE_ENV === 'production') return NextResponse.json({ error: '서비스 준비 중입니다.' }, { status: 503 });
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
 
@@ -116,6 +119,7 @@ export async function DELETE(request: NextRequest) {
 // GET: 연결 상태 확인
 export async function GET(request: NextRequest) {
   try {
+    if (process.env.NODE_ENV === 'production') return NextResponse.json({ error: '서비스 준비 중입니다.' }, { status: 503 });
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
 

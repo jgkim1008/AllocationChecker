@@ -115,19 +115,18 @@ export class KISQuote {
   }
 
   /**
-   * 해외주식 현재가 조회
+   * 해외주식 현재가 조회 (거래소 코드 직접 지정)
    */
-  async getOverseasQuote(
+  async getOverseasQuoteByCode(
     symbol: string,
-    exchange: keyof typeof KIS_EXCHANGE_CODE = 'NASDAQ'
+    excd: string
   ): Promise<BrokerResponse<Quote>> {
     const trId = KIS_TR_ID.OVERSEAS.PRICE;
-    const exchangeCode = KIS_EXCHANGE_CODE[exchange];
 
     try {
       const url = new URL(`${this.auth.getBaseUrl()}${KIS_ENDPOINTS.OVERSEAS.PRICE}`);
       url.searchParams.set('AUTH', '');
-      url.searchParams.set('EXCD', exchangeCode);
+      url.searchParams.set('EXCD', excd);
       url.searchParams.set('SYMB', symbol);
 
       const response = await fetch(url.toString(), {
@@ -194,22 +193,24 @@ export class KISQuote {
       return this.getDomesticQuote(symbol);
     }
 
-    // 미국 주식 - 거래소 자동 판별 시도
-    // NASDAQ 먼저 시도, 실패시 NYSE, AMEX 순
-    const exchanges: (keyof typeof KIS_EXCHANGE_CODE)[] = ['NASDAQ', 'NYSE', 'AMEX'];
+      // 미국 주식 - NASDAQ 먼저, NYSE, AMEX 순
+    // 시세 API는 잔고 API와 거래소 코드가 다름 (NAS/NYS/AMS)
+    const priceExchangeCodes = ['NAS', 'NYS', 'AMS'];
+    let lastError: { code: string; message: string } | undefined;
 
-    for (const exchange of exchanges) {
-      const result = await this.getOverseasQuote(symbol, exchange);
+    for (const excd of priceExchangeCodes) {
+      const result = await this.getOverseasQuoteByCode(symbol, excd);
       if (result.success) {
         return result;
       }
+      lastError = result.error;
     }
 
     return {
       success: false,
       error: {
-        code: 'QUOTE_NOT_FOUND',
-        message: `종목을 찾을 수 없습니다: ${symbol}`,
+        code: lastError?.code ?? 'QUOTE_NOT_FOUND',
+        message: lastError?.message ?? `종목을 찾을 수 없습니다: ${symbol}`,
       },
     };
   }

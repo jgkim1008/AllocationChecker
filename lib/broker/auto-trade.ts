@@ -350,6 +350,15 @@ export function calculateDailyOrders(
   const validBuyOrders = buyOrders.filter(o => o.quantity > 0);
   const validSellOrders = sellOrders.filter(o => o.quantity > 0);
 
+  // 매수 주문이 모두 0인 경우 → 투자금 부족 경고
+  const droppedBuys = buyOrders.filter(o => o.quantity === 0);
+  let message = `${t}회차 주문 ${validBuyOrders.length + validSellOrders.length}건 생성`;
+  if (droppedBuys.length > 0 && validBuyOrders.length === 0) {
+    const unitBuyForMsg = totalCapital / strategyConfig.divisions;
+    const minCapital = Math.ceil(currentPrice * strategyConfig.divisions * 2) / 2; // 절반 유닛 기준
+    message = `⚠️ 투자금 부족: 유닛당 $${unitBuyForMsg.toFixed(0)} < 현재가 $${currentPrice.toFixed(2)}. 최소 $${minCapital.toLocaleString()} 이상 필요합니다.`;
+  }
+
   return {
     buyOrders: validBuyOrders,
     sellOrders: validSellOrders,
@@ -360,7 +369,7 @@ export function calculateDailyOrders(
       avgCost,
       currentRound,
       totalBuyAmount,
-      message: `${t}회차 주문 ${validBuyOrders.length + validSellOrders.length}건 생성`,
+      message,
     },
   };
 }

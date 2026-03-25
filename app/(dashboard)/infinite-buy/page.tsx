@@ -51,8 +51,8 @@ export default function InfiniteBuyPage() {
   // 전략 버전
   const [version, setVersion] = useState<StrategyVersion>('v2.2');
 
-  const [capital, setCapital] = useState<number>(10000);
-  const [capitalInput, setCapitalInput] = useState<string>('10000');
+  const [capital, setCapital] = useState<number>(5000);
+  const [capitalInput, setCapitalInput] = useState<string>('5000');
   const [n, setN] = useState<number>(40);
   const [nInput, setNInput] = useState<string>('40');
   const [targetRate, setTargetRate] = useState<number>(0.10);
@@ -61,6 +61,9 @@ export default function InfiniteBuyPage() {
   const variableBuy = false;
 
   const [tab, setTab] = useState<Tab>('calc');
+
+  // 사이클 번호 (localStorage 저장, 종목별 관리)
+  const [currentCycle, setCurrentCycle] = useState<number>(1);
 
   // 버전 변경 시 분할 횟수 자동 조정
   const handleVersionChange = (v: StrategyVersion) => {
@@ -100,6 +103,19 @@ export default function InfiniteBuyPage() {
 
   const activeSymbol = isCustom ? customSymbol.trim().toUpperCase() : symbol;
   const activeMarket = KR_SYMBOLS.has(activeSymbol) ? 'KR' : 'US';
+
+  // 종목 변경 시 해당 종목의 사이클 번호 불러오기
+  useEffect(() => {
+    if (!activeSymbol) return;
+    const saved = parseInt(localStorage.getItem(`inf-buy-cycle-${activeSymbol}`) || '1', 10);
+    setCurrentCycle(saved);
+  }, [activeSymbol]);
+
+  function handleCycleReset() {
+    const next = currentCycle + 1;
+    setCurrentCycle(next);
+    if (activeSymbol) localStorage.setItem(`inf-buy-cycle-${activeSymbol}`, next.toString());
+  }
 
   function handlePresetClick(sym: string) {
     setSymbol(sym);
@@ -362,7 +378,7 @@ export default function InfiniteBuyPage() {
           <StrategyCalc symbol={activeSymbol} capital={capital} n={n} targetRate={targetRate} variableBuy={variableBuy} market={activeMarket} version={version} />
         )}
         {tab === 'tracker' && (
-          <BuyTracker symbol={activeSymbol} capital={capital} n={n} targetRate={targetRate} market={activeMarket} />
+          <BuyTracker symbol={activeSymbol} capital={capital} n={n} targetRate={targetRate} market={activeMarket} onCycleReset={handleCycleReset} />
         )}
         {tab === 'backtest' && (
           <BacktestSim symbol={activeSymbol} capital={capital} n={n} targetRate={targetRate} variableBuy={variableBuy} market={activeMarket} version={version} />

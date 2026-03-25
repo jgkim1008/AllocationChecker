@@ -19,7 +19,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Switch } from '@/components/ui/switch';
 import { Loader2, CheckCircle, XCircle, Link, Unlink } from 'lucide-react';
 
 type BrokerType = 'kis' | 'kiwoom';
@@ -34,7 +33,6 @@ export function BrokerConnect({ onConnect, onDisconnect }: BrokerConnectProps) {
   const [appKey, setAppKey] = useState('');
   const [appSecret, setAppSecret] = useState('');
   const [accountNumber, setAccountNumber] = useState('');
-  const [isVirtual, setIsVirtual] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [isCheckingStatus, setIsCheckingStatus] = useState(true);
   const [connectedBrokers, setConnectedBrokers] = useState<BrokerType[]>([]);
@@ -68,9 +66,7 @@ export function BrokerConnect({ onConnect, onDisconnect }: BrokerConnectProps) {
     setSuccess(null);
 
     try {
-      const credentials = brokerType === 'kis'
-        ? { appKey, appSecret, accountNumber, isVirtual }
-        : { appKey, appSecret, accountNumber };
+      const credentials = { appKey, appSecret, accountNumber, isVirtual: false };
 
       const response = await fetch('/api/broker/auth', {
         method: 'POST',
@@ -82,7 +78,7 @@ export function BrokerConnect({ onConnect, onDisconnect }: BrokerConnectProps) {
 
       if (data.success) {
         setSuccess('브로커에 연결되었습니다.');
-        setConnectedBrokers(prev => [...prev, brokerType]);
+        setConnectedBrokers(prev => prev.includes(brokerType) ? prev : [...prev, brokerType]);
         onConnect?.(brokerType);
 
         // 폼 초기화
@@ -264,21 +260,6 @@ export function BrokerConnect({ onConnect, onDisconnect }: BrokerConnectProps) {
               placeholder="XXXXXXXX-XX 형식"
             />
           </div>
-
-          {brokerType === 'kis' && (
-            <div className="flex items-center justify-between rounded-lg border p-3">
-              <div>
-                <p className="font-medium">모의투자 모드</p>
-                <p className="text-sm text-muted-foreground">
-                  실제 주문 없이 테스트할 수 있습니다
-                </p>
-              </div>
-              <Switch
-                checked={isVirtual}
-                onCheckedChange={setIsVirtual}
-              />
-            </div>
-          )}
 
           {error && (
             <div className="flex items-center gap-2 rounded-lg bg-destructive/10 p-3 text-destructive">

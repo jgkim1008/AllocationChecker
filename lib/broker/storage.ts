@@ -1,141 +1,116 @@
 /**
  * 브로커 인증 정보 저장/조회
  *
- * 보안 참고:
- * - 실제 운영 시에는 Supabase의 암호화된 컬럼이나 환경 변수를 사용해야 합니다.
- * - 현재는 개발 편의를 위해 메모리에 저장합니다.
+ * ⚠️  현재는 서버 메모리에만 저장합니다 (DB 저장 없음).
+ *     서버 재시작 시 초기화되며, credentials는 어디에도 기록되지 않습니다.
+ *
+ * 로컬 개발 편의: .env.local에 KIS_APP_KEY / KIS_APP_SECRET /
+ *   KIS_ACCOUNT_NUMBER / KIS_IS_VIRTUAL 이 모두 있으면 'dev-user:kis' 로 자동 등록합니다.
  */
 
-import { createServiceClient } from '../supabase/server';
 import type { BrokerType, KISCredentials, KiwoomCredentials, TokenInfo } from './types';
 
-// 메모리 캐시 (서버 재시작 시 초기화)
-const tokenCache = new Map<string, TokenInfo>();
+// global에 저장 → Next.js 핫리로드 후에도 유지 (서버 재시작 시엔 초기화)
+declare global {
+  // eslint-disable-next-line no-var
+  var _brokerCredentialsCache: Map<string, KISCredentials | KiwoomCredentials> | undefined;
+  // eslint-disable-next-line no-var
+  var _brokerTokenCache: Map<string, TokenInfo> | undefined;
+}
+
+const credentialsCache: Map<string, KISCredentials | KiwoomCredentials> =
+  global._brokerCredentialsCache ?? (global._brokerCredentialsCache = new Map());
+const tokenCache: Map<string, TokenInfo> =
+  global._brokerTokenCache ?? (global._brokerTokenCache = new Map());
+
+function cacheKey(userId: string, brokerType: BrokerType) {
+  return `${userId}:${brokerType}`;
+}
 
 /**
- * 브로커 설정 저장
+ * .env.local에 KIS 키가 있으면 KISCredentials 반환 (없으면 null)
+ */
+export function getEnvKISCredentials(): KISCredentials | null {
+  const appKey = process.env.KIS_APP_KEY;
+  const appSecret = process.env.KIS_APP_SECRET;
+  const accountNumber = process.env.KIS_ACCOUNT_NUMBER;
+  if (!appKey || !appSecret || !accountNumber) return null;
+  return {
+    appKey,
+    appSecret,
+    accountNumber,
+    isVirtual: process.env.KIS_IS_VIRTUAL !== 'false',
+  };
+}
+
+/**
+ * 브로커 설정 저장 (메모리만)
  */
 export async function saveBrokerCredentials(
   userId: string,
   brokerType: BrokerType,
   credentials: KISCredentials | KiwoomCredentials
 ): Promise<{ success: boolean; error?: string }> {
-  try {
-    const supabase = await createServiceClient();
-
-    // broker_configs 테이블에 저장 (없으면 생성 필요)
-    const { error } = await supabase
-      .from('broker_configs')
-      .upsert({
-        user_id: userId,
-        broker_type: brokerType,
-        // 실제 운영에서는 암호화 필요
-        credentials: JSON.stringify(credentials),
-        updated_at: new Date().toISOString(),
-      }, {
-        onConflict: 'user_id,broker_type',
-      });
-
-    if (error) {
-      console.error('브로커 설정 저장 오류:', error);
-      return { success: false, error: error.message };
-    }
-
-    return { success: true };
-  } catch (error) {
-    console.error('브로커 설정 저장 실패:', error);
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : '알 수 없는 오류',
-    };
-  }
+  credentialsCache.set(cacheKey(userId, brokerType), credentials);
+  return { success: true };
 }
 
 /**
- * 브로커 설정 조회
+ * 브로커 설정 조회 (메모리만)
  */
 export async function getBrokerCredentials(
   userId: string,
   brokerType: BrokerType
 ): Promise<{ success: boolean; data?: KISCredentials | KiwoomCredentials; error?: string }> {
-  try {
-    const supabase = await createServiceClient();
-
-    const { data, error } = await supabase
-      .from('broker_configs')
-      .select('credentials')
-      .eq('user_id', userId)
-      .eq('broker_type', brokerType)
-      .single();
-
-    if (error) {
-      if (error.code === 'PGRST116') {
-        return { success: false, error: '브로커 설정이 없습니다.' };
-      }
-      return { success: false, error: error.message };
-    }
-
-    const credentials = JSON.parse(data.credentials);
-    return { success: true, data: credentials };
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : '알 수 없는 오류',
-    };
-  }
+  const data = credentialsCache.get(cacheKey(userId, brokerType));
+  if (!data) return { success: false, error: '브로커 설정이 없습니다.' };
+  return { success: true, data };
 }
 
 /**
- * 브로커 설정 삭제
+ * 브로커 설정 삭제 (메모리만)
  */
 export async function deleteBrokerCredentials(
   userId: string,
   brokerType: BrokerType
 ): Promise<{ success: boolean; error?: string }> {
-  try {
-    const supabase = await createServiceClient();
+  credentialsCache.delete(cacheKey(userId, brokerType));
+  tokenCache.delete(cacheKey(userId, brokerType));
+  return { success: true };
+}
 
-    const { error } = await supabase
-      .from('broker_configs')
-      .delete()
-      .eq('user_id', userId)
-      .eq('broker_type', brokerType);
-
-    if (error) {
-      return { success: false, error: error.message };
+/**
+ * 연결된 브로커 목록 조회 (메모리만)
+ */
+export async function getConnectedBrokers(
+  userId: string
+): Promise<{ success: boolean; data?: BrokerType[]; error?: string }> {
+  const brokers: BrokerType[] = [];
+  for (const key of credentialsCache.keys()) {
+    if (key.startsWith(`${userId}:`)) {
+      brokers.push(key.split(':')[1] as BrokerType);
     }
-
-    // 캐시 삭제
-    tokenCache.delete(`${userId}:${brokerType}`);
-
-    return { success: true };
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : '알 수 없는 오류',
-    };
   }
+  return { success: true, data: brokers };
 }
 
 /**
  * 토큰 캐시 저장
  */
 export function cacheToken(userId: string, brokerType: BrokerType, token: TokenInfo): void {
-  tokenCache.set(`${userId}:${brokerType}`, token);
+  tokenCache.set(cacheKey(userId, brokerType), token);
 }
 
 /**
  * 토큰 캐시 조회
  */
 export function getCachedToken(userId: string, brokerType: BrokerType): TokenInfo | null {
-  const token = tokenCache.get(`${userId}:${brokerType}`);
+  const token = tokenCache.get(cacheKey(userId, brokerType));
   if (!token) return null;
 
-  // 만료 확인
-  const now = new Date();
-  const bufferTime = 5 * 60 * 1000; // 5분
-  if (token.expiresAt.getTime() - now.getTime() < bufferTime) {
-    tokenCache.delete(`${userId}:${brokerType}`);
+  const bufferTime = 5 * 60 * 1000;
+  if (token.expiresAt.getTime() - Date.now() < bufferTime) {
+    tokenCache.delete(cacheKey(userId, brokerType));
     return null;
   }
 
@@ -146,33 +121,5 @@ export function getCachedToken(userId: string, brokerType: BrokerType): TokenInf
  * 토큰 캐시 삭제
  */
 export function clearCachedToken(userId: string, brokerType: BrokerType): void {
-  tokenCache.delete(`${userId}:${brokerType}`);
-}
-
-/**
- * 연결된 브로커 목록 조회
- */
-export async function getConnectedBrokers(
-  userId: string
-): Promise<{ success: boolean; data?: BrokerType[]; error?: string }> {
-  try {
-    const supabase = await createServiceClient();
-
-    const { data, error } = await supabase
-      .from('broker_configs')
-      .select('broker_type')
-      .eq('user_id', userId);
-
-    if (error) {
-      return { success: false, error: error.message };
-    }
-
-    const brokers = data.map((d: { broker_type: string }) => d.broker_type as BrokerType);
-    return { success: true, data: brokers };
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : '알 수 없는 오류',
-    };
-  }
+  tokenCache.delete(cacheKey(userId, brokerType));
 }

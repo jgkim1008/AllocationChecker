@@ -10,6 +10,7 @@ interface BuyTrackerProps {
   n: number;
   targetRate: number;
   market?: 'US' | 'KR';
+  onCycleReset?: () => void;
 }
 
 function fmtP(price: number, market: 'US' | 'KR' = 'US'): string {
@@ -17,7 +18,7 @@ function fmtP(price: number, market: 'US' | 'KR' = 'US'): string {
   return `$${price.toFixed(2)}`;
 }
 
-export function BuyTracker({ symbol, capital, n, targetRate, market = 'US' }: BuyTrackerProps) {
+export function BuyTracker({ symbol, capital, n, targetRate, market = 'US', onCycleReset }: BuyTrackerProps) {
   const { records, loading: recordsLoading, addRecord, updateRecord, deleteRecord, deleteAllRecords } =
     useInfiniteBuyRecords(symbol);
 
@@ -143,8 +144,9 @@ export function BuyTracker({ symbol, capital, n, targetRate, market = 'US' }: Bu
   }
 
   async function handleReset() {
-    if (!confirm(`${symbol} 무한매수 기록을 모두 삭제하시겠습니까?`)) return;
+    if (!confirm(`${symbol} 무한매수 기록을 모두 삭제하시겠습니까? (새 사이클 시작)`)) return;
     await deleteAllRecords();
+    onCycleReset?.();
   }
 
   async function handleDeleteBuy(id: string) {
