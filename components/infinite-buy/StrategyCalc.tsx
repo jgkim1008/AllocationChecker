@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { RefreshCw } from 'lucide-react';
 
 type StrategyVersion = 'v2.2' | 'v3.0';
 
@@ -17,13 +18,6 @@ interface StrategyCalcProps {
 function fmtP(price: number, market: 'US' | 'KR' = 'US'): string {
   if (market === 'KR') return `₩${Math.round(price).toLocaleString('ko-KR')}`;
   return `$${price.toFixed(2)}`;
-}
-
-interface BuyRecord {
-  date: string;
-  price: number;
-  shares: number;
-  amount: number;
 }
 
 interface TrackerPosition {
@@ -87,21 +81,22 @@ function getV22SellPrices(avgCost: number, t: number): { price1: number; price2:
   };
 }
 
-function loadTrackerPosition(symbol: string, n: number): TrackerPosition | null {
-  if (typeof window === 'undefined') return null;
+// API에서 포지션 데이터 가져오기
+async function fetchTrackerPosition(symbol: string): Promise<TrackerPosition | null> {
+  if (!symbol) return null;
   try {
-    const raw = localStorage.getItem(`ac_ibl_${symbol.toUpperCase()}`);
-    if (!raw) return null;
-    const state = JSON.parse(raw) as { buys?: BuyRecord[] };
-    const buys = state.buys ?? [];
-    if (buys.length === 0) return null;
-    const shares = buys.reduce((s, b) => s + b.shares, 0);
-    const invested = buys.reduce((s, b) => s + b.amount, 0);
+    const res = await fetch(`/api/infinite-buy/records?symbol=${encodeURIComponent(symbol)}`);
+    if (!res.ok) return null;
+    const records = await res.json();
+    if (!records || records.length === 0) return null;
+
+    const shares = records.reduce((s: number, b: { shares: number }) => s + b.shares, 0);
+    const invested = records.reduce((s: number, b: { amount: number }) => s + b.amount, 0);
     return {
       shares,
       invested,
       avgCost: shares > 0 ? invested / shares : 0,
-      divisionsUsed: Math.min(buys.length, n),
+      divisionsUsed: records.length,
     };
   } catch {
     return null;
@@ -167,7 +162,9 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy, mark
   const [currentPrice, setCurrentPrice] = useState<number | null>(null);
   const [loadingPrice, setLoadingPrice] = useState(false);
   const [position, setPosition] = useState<TrackerPosition | null>(null);
+  const [loadingPosition, setLoadingPosition] = useState(false);
 
+  // 현재가 가져오기
   useEffect(() => {
     if (!symbol) return;
     setLoadingPrice(true);
@@ -181,9 +178,17 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy, mark
       .finally(() => setLoadingPrice(false));
   }, [symbol]);
 
+  // 트래커 포지션 가져오기 (API에서)
+  const loadPosition = useCallback(async () => {
+    setLoadingPosition(true);
+    const pos = await fetchTrackerPosition(symbol);
+    setPosition(pos);
+    setLoadingPosition(false);
+  }, [symbol]);
+
   useEffect(() => {
-    setPosition(loadTrackerPosition(symbol, n));
-  }, [symbol, n]);
+    loadPosition();
+  }, [loadPosition]);
 
   const unitBuy = capital / n;
   const targetProfit = capital * targetRate;
@@ -338,8 +343,16 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy, mark
         </div>
       )}
 
+      {/* 포지션 로딩 중 */}
+      {loadingPosition && (
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-6 text-center">
+          <RefreshCw className="h-5 w-5 text-blue-500 animate-spin mx-auto mb-2" />
+          <p className="text-sm text-blue-600">트래커 데이터 불러오는 중...</p>
+        </div>
+      )}
+
       {/* ── V2.2 오늘의 매매 가이드 ── */}
-      {version === 'v2.2' && position && currentPrice && (() => {
+      {!loadingPosition && version === 'v2.2' && position && currentPrice && (() => {
         const effDivUsed = unitBuy > 0
           ? Math.min(Math.round(position.invested / unitBuy), n)
           : position.divisionsUsed;
@@ -353,9 +366,18 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy, mark
           <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200 rounded-xl overflow-hidden">
             <div className="px-4 py-3 bg-blue-100/50 border-b border-blue-200">
               <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-bold text-blue-900">오늘의 매매 가이드</p>
-                  <p className="text-xs text-blue-600 mt-0.5">V2.2 전략 · 현재 포지션 기준 자동 계산</p>
+                <div className="flex items-center gap-2">
+                  <div>
+                    <p className="text-sm font-bold text-blue-900">오늘의 매매 가이드</p>
+                    <p className="text-xs text-blue-600 mt-0.5">V2.2 전략 · 현재 포지션 기준 자동 계산</p>
+                  </div>
+                  <button
+                    onClick={loadPosition}
+                    className="p-1.5 rounded-lg hover:bg-blue-200/50 transition-colors"
+                    title="데이터 새로고침"
+                  >
+                    <RefreshCw className={`h-3.5 w-3.5 text-blue-600 ${loadingPosition ? 'animate-spin' : ''}`} />
+                  </button>
                 </div>
                 <div className="text-right">
                   <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${isFirstHalf ? 'bg-amber-100 text-amber-700' : 'bg-purple-100 text-purple-700'}`}>
@@ -486,7 +508,7 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy, mark
       })()}
 
       {/* V3.0 오늘의 매매 가이드 */}
-      {version === 'v3.0' && position && currentPrice && (() => {
+      {!loadingPosition && version === 'v3.0' && position && currentPrice && (() => {
         const effDivUsed = unitBuy > 0
           ? Math.min(Math.round(position.invested / unitBuy), n)
           : position.divisionsUsed;
@@ -497,9 +519,18 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy, mark
           <div className="bg-gradient-to-br from-orange-50 to-amber-50 border border-orange-200 rounded-xl overflow-hidden">
             <div className="px-4 py-3 bg-orange-100/50 border-b border-orange-200">
               <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-bold text-orange-900">오늘의 매매 가이드</p>
-                  <p className="text-xs text-orange-600 mt-0.5">V3.0 공격형 · 단순 명확한 규칙</p>
+                <div className="flex items-center gap-2">
+                  <div>
+                    <p className="text-sm font-bold text-orange-900">오늘의 매매 가이드</p>
+                    <p className="text-xs text-orange-600 mt-0.5">V3.0 공격형 · 단순 명확한 규칙</p>
+                  </div>
+                  <button
+                    onClick={loadPosition}
+                    className="p-1.5 rounded-lg hover:bg-orange-200/50 transition-colors"
+                    title="데이터 새로고침"
+                  >
+                    <RefreshCw className={`h-3.5 w-3.5 text-orange-600 ${loadingPosition ? 'animate-spin' : ''}`} />
+                  </button>
                 </div>
                 <div className="text-right">
                   <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-orange-100 text-orange-700">
@@ -540,7 +571,7 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy, mark
       })()}
 
       {/* ── 추매 시나리오 ── */}
-      {position && currentPrice && (
+      {!loadingPosition && position && currentPrice && (
         <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-100">
             <div className="flex items-start justify-between gap-4">
@@ -702,7 +733,7 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy, mark
       )}
 
       {/* 신규 매수자를 위한 첫 매수 가이드 */}
-      {!position && currentPrice && (
+      {!loadingPosition && !position && currentPrice && (
         <div className="bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-200 rounded-xl overflow-hidden">
           <div className="px-4 py-3 bg-emerald-100/50 border-b border-emerald-200">
             <p className="text-sm font-bold text-emerald-900">🚀 첫 매수 가이드</p>
