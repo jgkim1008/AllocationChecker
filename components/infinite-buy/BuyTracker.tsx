@@ -29,7 +29,7 @@ export function BuyTracker({ symbol, capital, n, targetRate, market = 'US' }: Bu
   const [formPrice, setFormPrice] = useState('');
   const [formAmount, setFormAmount] = useState('');
   const [formShares, setFormShares] = useState('');
-  const [inputMode, setInputMode] = useState<'amount' | 'shares'>('amount');
+  const [inputMode, setInputMode] = useState<'amount' | 'shares'>('shares');
   const [showForm, setShowForm] = useState(false);
   const [adding, setAdding] = useState(false);
 
@@ -39,7 +39,7 @@ export function BuyTracker({ symbol, capital, n, targetRate, market = 'US' }: Bu
   const [editPrice, setEditPrice] = useState('');
   const [editAmount, setEditAmount] = useState('');
   const [editShares, setEditShares] = useState('');
-  const [editMode, setEditMode] = useState<'amount' | 'shares'>('amount');
+  const [editMode, setEditMode] = useState<'amount' | 'shares'>('shares');
   const [saving, setSaving] = useState(false);
 
   // Fetch current price
@@ -104,8 +104,8 @@ export function BuyTracker({ symbol, capital, n, targetRate, market = 'US' }: Bu
     setEditDate(record.buy_date);
     setEditPrice(record.price.toString());
     setEditAmount(record.amount.toString());
-    setEditShares(record.shares.toString());
-    setEditMode('amount');
+    setEditShares(Math.round(record.shares).toString());
+    setEditMode('shares');
     setShowForm(false);
   }
 
@@ -198,7 +198,7 @@ export function BuyTracker({ symbol, capital, n, targetRate, market = 'US' }: Bu
             {avgCost > 0 ? fmtP(avgCost, market) : '-'}
           </p>
           <p className="text-xs text-gray-400 mt-0.5">
-            보유 {totalShares > 0 ? `${totalShares.toFixed(4)}주` : '-'}
+            보유 {totalShares > 0 ? `${Math.round(totalShares)}주` : '-'}
           </p>
         </div>
 
@@ -366,9 +366,9 @@ export function BuyTracker({ symbol, capital, n, targetRate, market = 'US' }: Bu
                   <label className="text-xs text-gray-500 block mb-1">수량 (주)</label>
                   <input
                     type="number"
-                    step="0.0001"
+                    step="1"
                     min="0"
-                    placeholder="0.0000"
+                    placeholder="0"
                     value={formShares}
                     onChange={(e) => setFormShares(e.target.value)}
                     className="text-sm border border-gray-200 rounded-lg px-2 py-1.5 w-28 bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500"
@@ -381,7 +381,7 @@ export function BuyTracker({ symbol, capital, n, targetRate, market = 'US' }: Bu
                 parseFloat(formPrice) > 0 &&
                 parseFloat(formAmount) > 0 && (
                   <div className="text-xs text-gray-500 pb-1.5">
-                    = {(parseFloat(formAmount) / parseFloat(formPrice)).toFixed(4)}주
+                    = {Math.round(parseFloat(formAmount) / parseFloat(formPrice))}주
                   </div>
                 )}
               {inputMode === 'shares' &&
@@ -485,7 +485,7 @@ export function BuyTracker({ symbol, capital, n, targetRate, market = 'US' }: Bu
                               />
                               {parseFloat(editPrice) > 0 && parseFloat(editAmount) > 0 && (
                                 <span className="text-xs text-gray-400 whitespace-nowrap">
-                                  ={(parseFloat(editAmount) / parseFloat(editPrice)).toFixed(4)}주
+                                  ={Math.round(parseFloat(editAmount) / parseFloat(editPrice))}주
                                 </span>
                               )}
                             </>
@@ -493,7 +493,7 @@ export function BuyTracker({ symbol, capital, n, targetRate, market = 'US' }: Bu
                             <>
                               <input
                                 type="number"
-                                step="0.0001"
+                                step="1"
                                 min="0"
                                 value={editShares}
                                 onChange={(e) => setEditShares(e.target.value)}
@@ -536,7 +536,7 @@ export function BuyTracker({ symbol, capital, n, targetRate, market = 'US' }: Bu
                     <tr key={b.id} className="border-t border-gray-100 hover:bg-gray-50 group">
                       <td className="px-4 py-2.5 text-gray-700">{b.buy_date}</td>
                       <td className="px-4 py-2.5 text-right text-gray-700">{fmtP(b.price, market)}</td>
-                      <td className="px-4 py-2.5 text-right text-gray-700">{b.shares.toFixed(4)}</td>
+                      <td className="px-4 py-2.5 text-right text-gray-700">{Math.round(b.shares)}주</td>
                       <td className="px-4 py-2.5 text-right text-gray-700">{fmtP(b.amount, market)}</td>
                       <td className="px-4 py-2.5 text-right text-gray-500">{fmtP(b.runningAvg, market)}</td>
                       <td className="px-4 py-2.5 text-right">

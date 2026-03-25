@@ -302,7 +302,7 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy, mark
           {loadingPrice ? (
             <div className="h-7 w-20 bg-gray-200 animate-pulse rounded" />
           ) : sharesPerBuy != null ? (
-            <p className="text-lg font-bold text-gray-900">{sharesPerBuy.toFixed(4)}주</p>
+            <p className="text-lg font-bold text-gray-900">{Math.round(sharesPerBuy)}주</p>
           ) : (
             <p className="text-lg font-bold text-gray-400">-</p>
           )}
@@ -464,7 +464,7 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy, mark
                   <div className="flex items-center justify-between p-2 bg-red-50/50 rounded-lg">
                     <div>
                       <span className="text-xs font-medium text-red-700">1차 익절</span>
-                      <span className="text-[10px] text-gray-500 ml-1.5">1/4 물량 ({(position.shares / 4).toFixed(2)}주)</span>
+                      <span className="text-[10px] text-gray-500 ml-1.5">1/4 물량 ({Math.round(position.shares / 4)}주)</span>
                     </div>
                     <div className="text-right">
                       <p className="text-sm font-bold text-red-600">{fmtP(sellInfo.price1, market)}</p>
@@ -474,7 +474,7 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy, mark
                   <div className="flex items-center justify-between p-2 bg-red-50/50 rounded-lg">
                     <div>
                       <span className="text-xs font-medium text-red-700">2차 익절</span>
-                      <span className="text-[10px] text-gray-500 ml-1.5">3/4 물량 ({(position.shares * 3 / 4).toFixed(2)}주)</span>
+                      <span className="text-[10px] text-gray-500 ml-1.5">3/4 물량 ({Math.round(position.shares * 3 / 4)}주)</span>
                     </div>
                     <div className="text-right">
                       <p className="text-sm font-bold text-red-600">{fmtP(sellInfo.price2, market)}</p>
@@ -555,7 +555,7 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy, mark
                   <p className="text-xs font-bold text-red-800 mb-2">📤 매도 주문</p>
                   <p className="text-lg font-bold text-red-600">{fmtP(sellPrice, market)}</p>
                   <p className="text-[10px] text-gray-500 mt-1">= 평단 + {(targetRate * 100).toFixed(0)}%</p>
-                  <p className="text-[10px] text-gray-400 mt-0.5">전량: {position.shares.toFixed(2)}주</p>
+                  <p className="text-[10px] text-gray-400 mt-0.5">전량: {Math.round(position.shares)}주</p>
                 </div>
               </div>
 
@@ -754,7 +754,7 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy, mark
                       </div>
                       <div className="text-right">
                         <p className="text-sm font-bold text-green-700">{fmtP(unitBuy, market)}</p>
-                        <p className="text-[10px] text-gray-400">≈ {(unitBuy / currentPrice).toFixed(2)}주</p>
+                        <p className="text-[10px] text-gray-400">≈ {Math.round(unitBuy / currentPrice)}주</p>
                       </div>
                     </div>
                   </div>
@@ -783,7 +783,7 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy, mark
                     </div>
                     <div className="text-right">
                       <p className="text-sm font-bold text-green-700">{fmtP(unitBuy, market)}</p>
-                      <p className="text-[10px] text-gray-400">≈ {(unitBuy / currentPrice).toFixed(2)}주</p>
+                      <p className="text-[10px] text-gray-400">≈ {Math.round(unitBuy / currentPrice)}주</p>
                     </div>
                   </div>
                 </div>
