@@ -44,12 +44,18 @@ export interface DayPayment {
   frequency: DividendFrequency;
 }
 
+// 세율: US 15%, KR 15.4%
+const TAX_RATE: Record<'USD' | 'KRW', number> = { USD: 0.15, KRW: 0.154 };
+
+// 비과세 계좌 타입
+const TAX_EXEMPT_ACCOUNT_TYPES = ['ISA', '연금저축', '퇴직연금'];
+
 /** Compact amount label above bar (matches therich.io style) */
 export function formatBarLabel(amount: number, currency: 'USD' | 'KRW'): string {
   if (amount === 0) return '';
   if (currency === 'KRW') {
-    if (amount >= 10_000_000) return `${Math.round(amount / 1_000_000)}백만`;
-    if (amount >= 10_000) return `${Math.round(amount / 10_000)}만`;
+    if (amount >= 10_000_000) return `${(amount / 1_000_000).toFixed(1)}백만`;
+    if (amount >= 10_000) return `${(amount / 10_000).toFixed(1)}만`;
     return `${Math.round(amount).toLocaleString()}`;
   }
   if (amount >= 1_000_000) return `$${(amount / 1_000_000).toFixed(1)}M`;
@@ -83,7 +89,8 @@ export function getDividendMonths(holding: PortfolioHoldingWithStock): number[] 
 export function buildMonthPayments(
   holdings: PortfolioHoldingWithStock[],
   year: number,
-  month: number
+  month: number,
+  applyTax: boolean = true
 ): Map<number, DayPayment[]> {
   const map = new Map<number, DayPayment[]>();
 
@@ -93,14 +100,20 @@ export function buildMonthPayments(
 
     const dps = h.latestDividend.dividendAmount;
     const shares = Number(h.shares);
+    const currency = h.stock.currency as 'USD' | 'KRW';
+
+    // 비과세 계좌(ISA, 연금저축, 퇴직연금)는 세금 미적용
+    const isTaxExempt = h.account?.type && TAX_EXEMPT_ACCOUNT_TYPES.includes(h.account.type);
+    const taxRate = (applyTax && !isTaxExempt) ? (TAX_RATE[currency] ?? 0.15) : 0;
+    const afterTaxMultiplier = 1 - taxRate;
 
     const entry: DayPayment = {
       symbol: h.stock.symbol,
       name: h.stock.name !== h.stock.symbol ? h.stock.name : h.stock.symbol,
       shares,
-      dps,
-      total: dps * shares,
-      currency: h.stock.currency,
+      dps: dps * afterTaxMultiplier,
+      total: dps * shares * afterTaxMultiplier,
+      currency,
       market: h.stock.market,
       frequency: h.latestDividend.frequency,
     };

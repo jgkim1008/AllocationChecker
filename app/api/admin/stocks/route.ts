@@ -51,11 +51,14 @@ export async function POST(request: NextRequest) {
   const cleanSymbol = symbol.toUpperCase().trim();
   const supabase = await createServiceClient();
 
+  // .KS, .KQ 접미사 제거 (저장용)
+  const symbolToSave = cleanSymbol.replace(/\.(KS|KQ)$/i, '');
+
   // 중복 체크
   const { data: existing } = await supabase
     .from('stocks')
     .select('symbol')
-    .eq('symbol', cleanSymbol)
+    .eq('symbol', symbolToSave)
     .single();
 
   if (existing) {
@@ -66,12 +69,12 @@ export async function POST(request: NextRequest) {
   let currentPrice = null;
   let yearHigh = null;
   let yearLow = null;
-  let fetchedName = cleanSymbol;
+  let fetchedName = symbolToSave;
 
   try {
-    let ticker = cleanSymbol;
+    let ticker = symbolToSave;
     if (market === 'KR') {
-      ticker = `${cleanSymbol}.KS`;
+      ticker = `${symbolToSave}.KS`;
     }
 
     const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?range=1y&interval=1d`;
@@ -105,7 +108,7 @@ export async function POST(request: NextRequest) {
 
     // 코스닥 시도 (KR이고 데이터가 없으면)
     if (market === 'KR' && !currentPrice) {
-      ticker = `${cleanSymbol}.KQ`;
+      ticker = `${symbolToSave}.KQ`;
       const kosqRes = await fetch(
         `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?range=1y&interval=1d`,
         { headers: { 'User-Agent': 'Mozilla/5.0' } }
@@ -131,13 +134,41 @@ export async function POST(request: NextRequest) {
     console.error('Yahoo Finance fetch error:', e);
   }
 
+  // Yahoo Finance 실패 시 네이버 증권에서 가져오기 (한국 주식만)
+  if (!currentPrice && market === 'KR') {
+    try {
+      const naverRes = await fetch(
+        `https://m.stock.naver.com/api/stock/${symbolToSave}/basic`,
+        {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X)',
+          },
+        }
+      );
+
+      if (naverRes.ok) {
+        const data = await naverRes.json();
+        if (data?.stockEndPrice || data?.closePrice) {
+          currentPrice = data.stockEndPrice || data.closePrice;
+          fetchedName = data.stockName || data.stockNameEng || symbolToSave;
+
+          // 52주 고가/저가
+          if (data.high52wPrice) yearHigh = data.high52wPrice;
+          if (data.low52wPrice) yearLow = data.low52wPrice;
+        }
+      }
+    } catch (e) {
+      console.error('Naver Finance fetch error:', e);
+    }
+  }
+
   if (!currentPrice) {
-    return NextResponse.json({ error: '유효하지 않은 티커입니다. Yahoo Finance에서 데이터를 찾을 수 없습니다.' }, { status: 400 });
+    return NextResponse.json({ error: '유효하지 않은 티커입니다. Yahoo/네이버에서 데이터를 찾을 수 없습니다.' }, { status: 400 });
   }
 
   // DB에 저장
   const { error: insertError } = await supabase.from('stocks').insert({
-    symbol: cleanSymbol,
+    symbol: symbolToSave,
     name: fetchedName,
     market,
     currency: market === 'KR' ? 'KRW' : 'USD',
@@ -153,7 +184,7 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({
     success: true,
-    stock: { symbol: cleanSymbol, name: fetchedName, market, current_price: currentPrice }
+    stock: { symbol: symbolToSave, name: fetchedName, market, current_price: currentPrice }
   });
 }
 

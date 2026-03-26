@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import {
   BarChart,
   Bar,
@@ -28,12 +28,13 @@ export function DividendProjectionChart({ holdings, onOpenCalendar }: Props) {
   const now = new Date();
   const currentYear = now.getFullYear();
   const currentMonth = now.getMonth() + 1;
+  const [applyTax, setApplyTax] = useState(false);
 
   // Compute per-month totals for the current year (Jan-Dec)
   const monthlyData = useMemo(() => {
     return Array.from({ length: 12 }, (_, i) => {
       const month = i + 1;
-      const payMap = buildMonthPayments(holdings, currentYear, month);
+      const payMap = buildMonthPayments(holdings, currentYear, month, applyTax);
       let usd = 0;
       let krw = 0;
       payMap.forEach((payments) => {
@@ -44,7 +45,7 @@ export function DividendProjectionChart({ holdings, onOpenCalendar }: Props) {
       });
       return { month, usd, krw };
     });
-  }, [holdings, currentYear]);
+  }, [holdings, currentYear, applyTax]);
 
   // Dominant currency
   const totalUSD = monthlyData.reduce((s, m) => s + m.usd, 0);
@@ -91,9 +92,15 @@ export function DividendProjectionChart({ holdings, onOpenCalendar }: Props) {
           <p className="text-sm font-bold text-gray-900">
             예상 배당금 (단위: {currencyLabel})
           </p>
-          <button className="flex items-center gap-1 text-xs font-semibold bg-green-50 text-green-600 px-2 py-0.5 rounded-full hover:bg-green-100 transition-colors">
-            세금 15% 미적용
-            <span>›</span>
+          <button
+            onClick={() => setApplyTax((p) => !p)}
+            className={`text-xs font-semibold px-2.5 py-1 rounded-full border transition-all ${
+              applyTax
+                ? 'bg-amber-50 text-amber-700 border-amber-200'
+                : 'bg-gray-50 text-gray-600 border-gray-200'
+            }`}
+          >
+            {applyTax ? '세후' : '세전'}
           </button>
         </div>
         <button

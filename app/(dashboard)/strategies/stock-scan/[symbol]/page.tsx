@@ -1195,7 +1195,11 @@ function AISentimentSection({ symbol, market }: { symbol: string; market: string
 export default function AnalystAlphaDetailPage({ params }: { params: Promise<{ symbol: string }> }) {
   const { symbol } = use(params);
   const searchParams = useSearchParams();
-  const market = searchParams.get('market') ?? 'US';
+  // 심볼에서 market 자동 감지: .KS/.KQ 또는 6자리 숫자면 KR
+  const upperSymbol = symbol.toUpperCase();
+  const baseSymbol = upperSymbol.replace(/\.(KS|KQ)$/i, '');
+  const isKoreanSymbol = upperSymbol.endsWith('.KS') || upperSymbol.endsWith('.KQ') || /^\d{6}$/.test(baseSymbol);
+  const market = searchParams.get('market') ?? (isKoreanSymbol ? 'KR' : 'US');
   const [data, setData] = useState<AnalystAlphaData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -1325,7 +1329,7 @@ export default function AnalystAlphaDetailPage({ params }: { params: Promise<{ s
                 <span className="text-xs font-bold">종목스캔</span>
               </div>
             </div>
-            <h1 className="text-4xl font-black text-gray-900 tracking-tighter">{symbol.toUpperCase()}</h1>
+            <h1 className="text-4xl font-black text-gray-900 tracking-tighter">{baseSymbol}</h1>
             {f && <p className="text-gray-500 font-medium mt-1">{f.name} · {translateSector(f.sector, market === 'KR')}</p>}
           </div>
           <button onClick={fetchData} disabled={loading}

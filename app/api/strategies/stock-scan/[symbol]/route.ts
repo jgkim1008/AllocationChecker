@@ -78,6 +78,83 @@ async function fetchQuoteSummary(symbol: string, modules: string) {
 }
 
 // ─────────────────────────────────────────────
+// 한국 ETF 분배금 정보 (네이버 증권 모바일 API)
+// ─────────────────────────────────────────────
+interface KrEtfDividend {
+  dividendYield: number | null;
+  dividendPerShare: number | null;
+  exDividendDate: string | null;
+  frequency: string | null;
+  history: { date: string; amount: number }[];
+}
+
+async function getKrEtfDividend(symbol: string): Promise<KrEtfDividend | null> {
+  const clean = symbol.replace(/\.[A-Z]+$/, '');
+
+  try {
+    // 네이버 증권 모바일 API - ETF 통합 정보
+    const res = await fetch(
+      `https://m.stock.naver.com/api/stock/${clean}/integration`,
+      {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X)',
+          'Referer': 'https://m.stock.naver.com/',
+        },
+        next: { revalidate: 3600 },
+      }
+    );
+
+    if (!res.ok) return null;
+
+    const data = await res.json();
+
+    // ETF가 아니면 null 반환
+    if (data?.stockEndType !== 'etf') return null;
+
+    let dividendYield: number | null = null;
+    let dividendPerShare: number | null = null;
+    const exDividendDate: string | null = null;
+    let frequency: string | null = null;
+    const history: { date: string; amount: number }[] = [];
+
+    // etfKeyIndicator에서 분배금 수익률(TTM) 가져오기
+    const etfIndicator = data?.etfKeyIndicator;
+    if (etfIndicator?.dividendYieldTtm != null) {
+      dividendYield = etfIndicator.dividendYieldTtm;
+    }
+
+    // 현재가에서 연간 분배금 추정 (수익률 * 현재가 / 100)
+    if (dividendYield != null && dividendYield > 0) {
+      const currentPrice = parseFloat(String(data?.totalInfos?.find((i: {code: string}) => i.code === 'lastClosePrice')?.value ?? '0').replace(/,/g, ''));
+      if (currentPrice > 0) {
+        dividendPerShare = Math.round(currentPrice * dividendYield / 100);
+      }
+
+      // 고배당 ETF는 보통 월배당 또는 분기배당
+      // dividendYield가 3% 이상이면 월배당으로 추정
+      if (dividendYield >= 3) {
+        frequency = 'monthly';
+      } else if (dividendYield >= 1) {
+        frequency = 'quarterly';
+      } else {
+        frequency = 'annual';
+      }
+    }
+
+    // isDividend 확인
+    const isDividend = data?.iconInfos?.find((i: {code: string}) => i.code === 'isDividend')?.value === 'Y';
+
+    if (dividendYield != null || isDividend) {
+      return { dividendYield, dividendPerShare, exDividendDate, frequency, history };
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+// ─────────────────────────────────────────────
 // 네이버 금융 PER/PBR/EPS + 종목명 (한국 주식 전용)
 // finance.naver.com HTML에서 파싱
 // ─────────────────────────────────────────────
@@ -325,13 +402,22 @@ export async function GET(
   { params }: { params: Promise<{ symbol: string }> }
 ) {
   const { symbol } = await params;
-  const upperSymbol = symbol.toUpperCase();
-  const market = (request.nextUrl.searchParams.get('market') ?? 'US') as 'US' | 'KR';
+  const rawSymbol = symbol.toUpperCase();
+
+  // .KS/.KQ 접미사 제거한 기본 심볼
+  const baseSymbol = rawSymbol.replace(/\.(KS|KQ)$/i, '');
+
+  // 심볼에서 market 자동 감지: .KS/.KQ 또는 6자리 숫자면 KR
+  const isKoreanSymbol = rawSymbol.endsWith('.KS') || rawSymbol.endsWith('.KQ') || /^\d{6}$/.test(baseSymbol);
+  const market = (request.nextUrl.searchParams.get('market') ?? (isKoreanSymbol ? 'KR' : 'US')) as 'US' | 'KR';
+
+  // 최종 심볼 (DB 저장용)
+  const upperSymbol = market === 'KR' ? baseSymbol : rawSymbol;
 
   // KR: .KS 접미사 / US: BRK.B → BRK-B (Yahoo Finance dot-to-dash)
   const yahooTicker = market === 'KR'
-    ? (!upperSymbol.endsWith('.KS') && !upperSymbol.endsWith('.KQ') ? `${upperSymbol}.KS` : upperSymbol)
-    : upperSymbol.replace(/\./g, '-');
+    ? `${baseSymbol}.KS`
+    : rawSymbol.replace(/\./g, '-');
 
   // 1. 기본 가격 정보 (Yahoo v8/chart — 인증 불필요)
   const chartRes = await fetch(
@@ -362,8 +448,8 @@ export async function GET(
     }
   } catch { /* ignore */ }
 
-  // 3. quoteSummary + Naver + 배당 히스토리 + DB 종목명 병렬 호출
-  const [summary, krx, dividendHistory, dbStock] = await Promise.all([
+  // 3. quoteSummary + Naver + 배당 히스토리 + DB 종목명 + 네이버 ETF 분배금 병렬 호출
+  const [summary, krx, dividendHistory, dbStock, krEtfDiv] = await Promise.all([
     fetchQuoteSummary(
       yahooTicker,
       'financialData,summaryDetail,defaultKeyStatistics,assetProfile,recommendationTrend,price'
@@ -371,6 +457,7 @@ export async function GET(
     market === 'KR' ? getNaverFundamentals(upperSymbol) : Promise.resolve(null),
     getYahooDividendHistory(yahooTicker),
     market === 'KR' ? createServiceClient().then(s => s.from('stocks').select('name').eq('symbol', upperSymbol).single()).then(r => r.data).catch(() => null) : Promise.resolve(null),
+    market === 'KR' ? getKrEtfDividend(upperSymbol) : Promise.resolve(null),
   ]);
 
   // 배당 주기 결정
@@ -433,26 +520,49 @@ export async function GET(
   const rawExDate   = sd.exDividendDate ?? null;             // unix timestamp (seconds)
 
   // KR: Naver에서 배당수익률 보완 (네이버는 % 단위로 제공)
-  const dividendYield = rawDivYield != null
+  // Yahoo 데이터 없으면 네이버 ETF 분배금 정보 사용
+  let dividendYield = rawDivYield != null
     ? Math.round(rawDivYield * 10000) / 100  // 0.025 → 2.5
     : (krx?.dvr ?? null);                    // Naver _dvr = 이미 % 단위
 
-  const dividendPerShare = rawDivRate ?? null;
+  let dividendPerShare = rawDivRate ?? null;
 
-  const exDividendDate = rawExDate != null
+  let exDividendDate = rawExDate != null
     ? new Date(rawExDate * 1000).toISOString().split('T')[0]
     : null;
 
-  // KR 배당 주기 추정: Yahoo 데이터만으로는 확인 어려우므로 null
-  const finalDividendFrequency = dividendFrequency;
+  // KR 배당 주기 추정
+  let finalDividendFrequency = dividendFrequency;
+
+  // 배당 히스토리 (Yahoo 우선, 없으면 네이버 ETF)
+  let finalDividendHistory = dividendHistory;
+
+  // 한국 ETF: Yahoo 데이터가 없으면 네이버 ETF 분배금 정보로 대체
+  if (market === 'KR' && krEtfDiv) {
+    if (dividendYield == null && krEtfDiv.dividendYield != null) {
+      dividendYield = krEtfDiv.dividendYield;
+    }
+    if (dividendPerShare == null && krEtfDiv.dividendPerShare != null) {
+      dividendPerShare = krEtfDiv.dividendPerShare;
+    }
+    if (exDividendDate == null && krEtfDiv.exDividendDate != null) {
+      exDividendDate = krEtfDiv.exDividendDate;
+    }
+    if (finalDividendFrequency == null && krEtfDiv.frequency != null) {
+      finalDividendFrequency = krEtfDiv.frequency;
+    }
+    if (finalDividendHistory.length === 0 && krEtfDiv.history.length > 0) {
+      finalDividendHistory = krEtfDiv.history;
+    }
+  }
 
   const dividendInfo = {
-    hasDividend: dividendYield != null && dividendYield > 0,
+    hasDividend: (dividendYield != null && dividendYield > 0) || finalDividendHistory.length > 0,
     yield: dividendYield,
     perShare: dividendPerShare,
     exDate: exDividendDate,
     frequency: finalDividendFrequency,
-    history: dividendHistory, // 10년 배당 히스토리
+    history: finalDividendHistory,
   };
 
   // 5-1. 버핏 스코어 계산 후 DB 저장 (fire-and-forget)

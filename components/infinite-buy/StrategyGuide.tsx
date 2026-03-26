@@ -66,21 +66,27 @@ export function StrategyGuide({ version = 'v2.2' }: StrategyGuideProps) {
               <div className="bg-orange-50 border border-orange-100 rounded-lg p-3 space-y-2">
                 <p className="font-medium text-orange-800">V3.0 공격형 — 핵심 규칙</p>
                 <p className="text-orange-700">
-                  20분할 · 종목별 고정 목표 (TQQQ +15%, SOXL +20%) · 전량 매도 · 복리 전환
+                  20분할 · 동적 별% (TQQQ 15-1.5T%, SOXL 20-2T%) · 분할 매도 (25%+75%) · 반복리
                 </p>
               </div>
               <div className="bg-gray-50 rounded-lg p-3 space-y-1.5">
                 <p className="font-medium text-gray-800 text-xs uppercase tracking-wide">V3.0 전략 상세</p>
-                <p className="font-medium text-amber-700">📌 매수 규칙</p>
+                <p className="font-medium text-amber-700">📌 매수 규칙 (동적 별% 적용)</p>
                 <ul className="list-disc list-inside space-y-1 text-gray-600 mb-3">
-                  <li>매일 <strong>평단+목표수익률%</strong> LOC 주문</li>
-                  <li>TQQQ: +15%, SOXL: +20%, 기타: +10%</li>
-                  <li>체결되면 평단 하락 → 다음날 더 낮은 가격에 주문</li>
+                  <li><strong>전반전 (T &lt; 10)</strong>: 절반 평단가 + 절반 별% LOC 주문</li>
+                  <li><strong>후반전 (T ≥ 10)</strong>: 전액 별% LOC 주문</li>
+                  <li>별% = TQQQ: (15-1.5×T)%, SOXL: (20-2×T)%</li>
+                  <li>T = 회차 (누적매수액 ÷ 1회매수액, 올림)</li>
                 </ul>
-                <p className="font-medium text-blue-700">📌 매도 규칙</p>
+                <p className="font-medium text-blue-700">📌 매도 규칙 (분할 매도)</p>
+                <ul className="list-disc list-inside space-y-1 text-gray-600 mb-3">
+                  <li><strong>25% 물량</strong>: 평단+별% LOC 매도</li>
+                  <li><strong>75% 물량</strong>: 평단+기본목표% 지정가 매도 (TQQQ 15%, SOXL 20%)</li>
+                </ul>
+                <p className="font-medium text-green-700">📌 반복리 규칙</p>
                 <ul className="list-disc list-inside space-y-1 text-gray-600">
-                  <li><strong>전량</strong> 평단+목표수익률% LOC 매도</li>
-                  <li>익절 시 수익금 복리 전환 (원금 + 수익금 재투자)</li>
+                  <li>익절 수익금의 <strong>절반</strong>을 40등분하여 원금에 추가</li>
+                  <li>나머지 절반은 별도 수익금으로 보관</li>
                 </ul>
                 <p className="font-medium text-red-600 mt-3">⚠️ 주의: V3.0은 고위험 공격형 전략입니다</p>
               </div>
@@ -224,19 +230,19 @@ export function StrategyGuide({ version = 'v2.2' }: StrategyGuideProps) {
             ) : (
               <div className="grid grid-cols-2 gap-2 text-xs text-gray-600">
                 <div>
-                  <span className="font-medium text-orange-700">V3.0 분할 횟수</span>
+                  <span className="font-medium text-orange-700">V3.0 분할 및 별%</span>
                   <ul className="mt-1 space-y-0.5">
                     <li>표준: <strong>20등분</strong> (권장)</li>
-                    <li>적은 분할 = 빠른 소진</li>
-                    <li>수익금 복리 전환 중요</li>
+                    <li>전반전: T &lt; 10 (2가지 주문)</li>
+                    <li>후반전: T ≥ 10 (1가지 주문)</li>
                   </ul>
                 </div>
                 <div>
-                  <span className="font-medium text-orange-700">V3.0 목표 수익률</span>
+                  <span className="font-medium text-orange-700">V3.0 동적 별%</span>
                   <ul className="mt-1 space-y-0.5">
-                    <li>TQQQ: <strong>+15%</strong></li>
-                    <li>SOXL: <strong>+20%</strong></li>
-                    <li>기타: <strong>+10%</strong></li>
+                    <li>TQQQ: <strong>(15 - 1.5×T)%</strong></li>
+                    <li>SOXL: <strong>(20 - 2×T)%</strong></li>
+                    <li>기본목표: TQQQ 15%, SOXL 20%</li>
                   </ul>
                 </div>
               </div>

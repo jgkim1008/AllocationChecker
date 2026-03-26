@@ -30,7 +30,7 @@ const TAX_RATE: Record<'USD' | 'KRW', number> = { USD: 0.15, KRW: 0.154 };
 
 export function DividendGoalCard({ holdings, usdKrw, currentPrices = {} }: Props) {
   const [targetInput, setTargetInput] = useState('');
-  const [currency, setCurrency] = useState<'USD' | 'KRW'>('USD');
+  const [currency, setCurrency] = useState<'USD' | 'KRW'>('KRW');
   const [expanded, setExpanded] = useState(true);
   const [applyTax, setApplyTax] = useState(false);
 

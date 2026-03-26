@@ -9,16 +9,31 @@ export interface SimParams {
   symbol?: string;      // 종목 심볼 (V3.0 종목별 목표수익률에 사용)
 }
 
-// V3.0 종목별 목표수익률
-const V3_TARGET_RATES: Record<string, number> = {
-  TQQQ: 0.15,
-  SOXL: 0.20,
-  // 기타 종목은 기본값(targetRate) 사용
+// V3.0 종목별 기본 목표수익률 및 별% 계수
+const V3_CONFIG: Record<string, { baseRate: number; starCoeff: number }> = {
+  TQQQ: { baseRate: 15, starCoeff: 1.5 },  // 별% = 15 - 1.5*T
+  SOXL: { baseRate: 20, starCoeff: 2.0 },  // 별% = 20 - 2*T
 };
 
 // V2.2 동적 목표수익률 계산: T회차에서 (10 - T/2)%
 function getDynamicTargetRate(t: number): number {
   return Math.max(0, (10 - t / 2)) / 100;
+}
+
+// V3.0 별% 계산: TQQQ는 (15 - 1.5*T)%, SOXL은 (20 - 2*T)%
+// T는 소수점 둘째 자리 올림
+function getV3StarRate(symbol: string, t: number): number {
+  const config = V3_CONFIG[symbol.toUpperCase()];
+  if (!config) return 0.10; // 기본값 10%
+  const starPct = Math.max(0, config.baseRate - config.starCoeff * t);
+  return starPct / 100;
+}
+
+// V3.0 기본 목표수익률 (매도용)
+function getV3BaseTargetRate(symbol: string): number {
+  const config = V3_CONFIG[symbol.toUpperCase()];
+  if (!config) return 0.10;
+  return config.baseRate / 100;
 }
 
 export interface SimCycle {
@@ -52,28 +67,32 @@ export interface SimResult {
 /**
  * 라오어 무한매수법 시뮬레이션 (V2.2/V3.0 지원)
  *
- * == V2.2 안정형 ==
+ * == V2.2 안정형 (40분할) ==
  * 매수 규칙:
  *   - 전반전 (T < 20): 절반 평단가, 절반 평단+(10-T/2)% LOC 주문
  *   - 후반전 (T >= 20): 전액 평단+(10-T/2)% LOC 주문
  * 매도 규칙:
  *   - 1/4 수량: 평단+(10-T/2)% LOC 매도
- *   - 3/4 수량: 평단+10% LOC 매도
+ *   - 3/4 수량: 평단+10% LOC 매도 (고정)
  *
- * == V3.0 공격형 ==
+ * == V3.0 공격형 (20분할, 동적 별%) ==
+ * 별% 계산:
+ *   - TQQQ: (15 - 1.5×T)%
+ *   - SOXL: (20 - 2×T)%
  * 매수 규칙:
- *   - 매일 평단+목표수익률% LOC 주문 (TQQQ +15%, SOXL +20%, 기타 +10%)
+ *   - 전반전 (T < 10): 절반 평단가, 절반 평단+별% LOC 주문
+ *   - 후반전 (T >= 10): 전액 평단+별% LOC 주문
  * 매도 규칙:
- *   - 전량 평단+목표수익률% LOC 매도
- *   - 수익금 복리 전환
+ *   - 25% 수량: 평단+별% LOC 매도
+ *   - 75% 수량: 평단+기본목표% 지정가 매도 (TQQQ +15%, SOXL +20%)
+ * 반복리:
+ *   - 익절 수익금 절반을 원금에 추가 (40등분)
  */
 export function simulateInfiniteBuy(prices: number[], params: SimParams): SimResult {
   const { capital: initialCapital, n, targetRate, variableBuy, version = 'v2.2', symbol = '' } = params;
 
-  // V3.0의 경우 종목별 목표수익률 적용
-  const effectiveTargetRate = version === 'v3.0'
-    ? (V3_TARGET_RATES[symbol.toUpperCase()] ?? targetRate)
-    : targetRate;
+  // V3.0의 경우 종목별 기본 목표수익률 적용
+  const v3BaseRate = version === 'v3.0' ? getV3BaseTargetRate(symbol) : targetRate;
 
   const cycles: SimCycle[] = [];
   const portfolioValues: number[] = [];
@@ -106,8 +125,19 @@ export function simulateInfiniteBuy(prices: number[], params: SimParams): SimRes
       let soldAt = 0;
 
       if (version === 'v3.0') {
-        // V3.0: 전량 평단+목표수익률% 매도
-        if (price >= avgCost * (1 + effectiveTargetRate)) {
+        // V3.0: 분할 매도 (25% 별% LOC + 75% 지정가)
+        // 백테스트에서는 기본 목표수익률(TQQQ +15%, SOXL +20%) 도달 시 전량 매도로 단순화
+        const starRate = getV3StarRate(symbol, t);
+        const sellPriceStar = avgCost * (1 + starRate); // 25% 물량 매도가
+        const sellPriceBase = avgCost * (1 + v3BaseRate); // 75% 물량 매도가
+
+        // 75% 물량 목표가 도달 시 전량 매도
+        if (price >= sellPriceBase) {
+          shouldSell = true;
+          soldShares = shares;
+          soldAt = soldShares * price;
+        } else if (price >= sellPriceStar && starRate > 0) {
+          // 25% 물량만 부분 익절 (백테스트 단순화: 전량 매도)
           shouldSell = true;
           soldShares = shares;
           soldAt = soldShares * price;
@@ -148,7 +178,17 @@ export function simulateInfiniteBuy(prices: number[], params: SimParams): SimRes
         });
 
         totalCash += soldAt;
-        currentCapital = totalCash; // 수익 포함 복리 재투자
+
+        if (version === 'v3.0' && profit > 0) {
+          // V3.0 반복리: 수익금 절반을 원금에 추가
+          // 다음 사이클의 1회 매수액이 증가하는 효과
+          const halfProfit = profit / 2;
+          currentCapital = initialCapital + halfProfit;
+          // 나머지 절반은 별도 수익으로 (총 현금에는 이미 포함)
+        } else {
+          currentCapital = totalCash; // V2.2: 전액 복리 재투자
+        }
+
         shares = 0;
         invested = 0;
         divisionsUsed = 0;
@@ -163,16 +203,42 @@ export function simulateInfiniteBuy(prices: number[], params: SimParams): SimRes
     // ── 2. 매수 ─────────────────────────────────────────────────────
     if (divisionsUsed < n) {
       if (version === 'v3.0') {
-        // V3.0: 매일 평단+목표수익률% LOC 주문
-        // 체결 조건: 현재가 <= 평단+목표수익률% (역으로 생각하면 평단 기준 LOC)
-        // 첫 매수 또는 LOC 조건 충족 시 매수
-        const buyPrice = shares > 0 ? avgCost * (1 + effectiveTargetRate) : price;
-        if (price <= buyPrice || shares === 0) {
-          const buyAmount = unitBuy;
-          shares += buyAmount / price;
-          invested += buyAmount;
-          totalCash -= buyAmount;
+        // V3.0: 20분할, 동적 별% 적용
+        // 전반전 (T < 10): 절반 별% LOC + 절반 평단가 매수
+        // 후반전 (T >= 10): 전액 별% LOC 매수
+        const starRate = getV3StarRate(symbol, t);
+
+        if (t < 10) {
+          // 전반전: 절반은 평단가, 절반은 별% LOC
+          const halfUnit = unitBuy / 2;
+
+          // 첫 매수이거나 현재가 <= 평단 → 절반 체결
+          if (shares === 0 || price <= avgCost) {
+            shares += halfUnit / price;
+            invested += halfUnit;
+            totalCash -= halfUnit;
+          }
+
+          // 나머지 절반: 별% LOC (현재가 <= 평단+별%)
+          const starBuyPrice = shares > 0 ? avgCost * (1 + starRate) : price * (1 + starRate);
+          if (price <= starBuyPrice) {
+            shares += halfUnit / price;
+            invested += halfUnit;
+            totalCash -= halfUnit;
+          }
+
           divisionsUsed += 1;
+        } else {
+          // 후반전: 전액 별% LOC
+          const starBuyPrice = shares > 0 ? avgCost * (1 + starRate) : price;
+
+          if (price <= starBuyPrice || shares === 0) {
+            const buyAmount = unitBuy;
+            shares += buyAmount / price;
+            invested += buyAmount;
+            totalCash -= buyAmount;
+            divisionsUsed += 1;
+          }
         }
       } else {
         // V2.2: 전반전/후반전 구분 매수

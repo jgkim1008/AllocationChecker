@@ -193,32 +193,41 @@ export async function POST(request: NextRequest) {
     const successCount = results.filter(r => r.success).length;
     const failCount = results.length - successCount;
 
-    // 매수 성공 주문을 infinite_buy_records에 자동 기록
-    const successfulBuys = results.filter(r => r.success && r.order.side === 'buy');
-    let trackerCount = 0;
-    if (successfulBuys.length > 0 && capital) {
-      const n = strategyVersion === 'V3.0' ? 20 : 40;
-      const today = new Date().toISOString().split('T')[0];
+    // 성공한 주문을 pending_orders에 저장 (체결 확인 대기)
+    const successfulOrders = results.filter(r => r.success && r.result?.orderId);
+    let pendingCount = 0;
+    if (successfulOrders.length > 0) {
       const serviceClient = await createServiceClient();
-      await serviceClient.from('infinite_buy_records').insert(
-        successfulBuys.map(r => ({
+      const n = strategyVersion === 'V3.0' ? 20 : 40;
+
+      await serviceClient.from('pending_orders').insert(
+        successfulOrders.map(r => ({
+          user_id: user.id,
+          broker_type: brokerType,
+          broker_order_id: r.result.orderId,
           symbol: r.order.symbol,
-          buy_date: today,
-          price: r.order.targetPrice,
-          shares: r.order.quantity,
-          amount: r.order.targetPrice * r.order.quantity,
-          capital: Number(capital),
-          n,
-          target_rate: 0.10,
+          symbol_name: r.order.symbolName,
+          market,
+          side: r.order.side,
+          order_type: r.order.orderType,
+          order_quantity: r.order.quantity,
+          order_price: r.order.targetPrice,
+          status: 'submitted',
+          strategy_version: strategyVersion,
+          capital: capital ? Number(capital) : null,
+          cycle_number: r.order.cycleNumber,
+          round_number: r.order.roundNumber,
+          reason: r.order.reason,
+          order_time: new Date().toISOString(),
         }))
       );
-      trackerCount = successfulBuys.length;
+      pendingCount = successfulOrders.length;
     }
 
     return NextResponse.json({
       success: true,
-      message: `${successCount}건 성공, ${failCount}건 실패`,
-      trackerCount,
+      message: `${successCount}건 주문 제출, ${failCount}건 실패`,
+      pendingCount,
       data: {
         results,
         summary: {

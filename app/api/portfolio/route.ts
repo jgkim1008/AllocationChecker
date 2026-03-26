@@ -221,14 +221,15 @@ export async function POST(request: NextRequest) {
     const currency = getCurrency(market);
 
     // 종목명 + 배당 데이터 + 실시간 시세 병렬 조회
-    const ticker = market === 'KR' ? `${symbol.toUpperCase()}.KS` : symbol.toUpperCase();
-    
+    const cleanSymbol = symbol.toUpperCase().replace(/\.(KS|KQ)$/i, '');
+    const ticker = market === 'KR' ? `${cleanSymbol}.KS` : cleanSymbol;
+
     const [stockName, yahooData] = await Promise.all([
       resolveStockName(symbol),
       fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?range=1y&interval=1d`, { headers: { 'User-Agent': 'Mozilla/5.0' } })
         .then(r => r.ok ? r.json() : null)
         .catch(() => null),
-      getOrFetchDividends(symbol),
+      getOrFetchDividends(cleanSymbol),
     ]);
 
     let currentPrice = null;
@@ -244,18 +245,57 @@ export async function POST(request: NextRequest) {
       if (lows.length > 0) yearLow = Math.min(...lows);
     }
 
+    // Yahoo 실패 시 코스닥 시도 (한국 주식)
+    if (!currentPrice && market === 'KR') {
+      try {
+        const kosqRes = await fetch(
+          `https://query1.finance.yahoo.com/v8/finance/chart/${cleanSymbol}.KQ?range=1y&interval=1d`,
+          { headers: { 'User-Agent': 'Mozilla/5.0' } }
+        );
+        if (kosqRes.ok) {
+          const data = await kosqRes.json();
+          const res = data?.chart?.result?.[0];
+          if (res) {
+            currentPrice = res.meta?.regularMarketPrice;
+            const highs = (res.indicators?.quote?.[0]?.high ?? []).filter((h: any) => h !== null);
+            const lows = (res.indicators?.quote?.[0]?.low ?? []).filter((l: any) => l !== null);
+            if (highs.length > 0) yearHigh = Math.max(...highs);
+            if (lows.length > 0) yearLow = Math.min(...lows);
+          }
+        }
+      } catch {}
+    }
+
+    // Yahoo 실패 시 네이버 증권에서 가져오기 (한국 주식)
+    if (!currentPrice && market === 'KR') {
+      try {
+        const naverRes = await fetch(
+          `https://m.stock.naver.com/api/stock/${cleanSymbol}/basic`,
+          { headers: { 'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X)' } }
+        );
+        if (naverRes.ok) {
+          const data = await naverRes.json();
+          if (data?.stockEndPrice || data?.closePrice) {
+            currentPrice = data.stockEndPrice || data.closePrice;
+            if (data.high52wPrice) yearHigh = data.high52wPrice;
+            if (data.low52wPrice) yearLow = data.low52wPrice;
+          }
+        }
+      } catch {}
+    }
+
     const { data: stock, error: stockError } = await supabase
       .from('stocks')
       .upsert(
-        { 
-          symbol: symbol.toUpperCase(), 
-          market, 
-          currency, 
-          name: stockName, 
+        {
+          symbol: cleanSymbol,
+          market,
+          currency,
+          name: stockName,
           current_price: currentPrice,
           year_high: yearHigh,
           year_low: yearLow,
-          last_fetched_at: new Date().toISOString() 
+          last_fetched_at: new Date().toISOString()
         },
         { onConflict: 'symbol' }
       )

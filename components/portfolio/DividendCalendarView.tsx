@@ -21,8 +21,8 @@ interface Props {
 
 function formatCompact(amount: number, currency: 'USD' | 'KRW'): string {
   if (currency === 'KRW') {
-    if (amount >= 10_000_000) return `${Math.round(amount / 1_000_000)}백만`;
-    if (amount >= 10_000) return `${Math.round(amount / 10_000)}만`;
+    if (amount >= 10_000_000) return `${(amount / 1_000_000).toFixed(1)}백만`;
+    if (amount >= 10_000) return `${(amount / 10_000).toFixed(1)}만`;
     return `${Math.round(amount).toLocaleString()}`;
   }
   if (amount >= 1_000) return `$${(amount / 1_000).toFixed(1)}k`;
@@ -45,13 +45,14 @@ function StockAvatar({ symbol, market }: { symbol: string; market: string }) {
 
 export function DividendCalendarView({ holdings, onClose }: Props) {
   const [viewDate, setViewDate] = useState(() => startOfMonth(new Date()));
+  const [applyTax, setApplyTax] = useState(false);
 
   const year = viewDate.getFullYear();
   const month = viewDate.getMonth() + 1;
 
   const paymentsByDay = useMemo(
-    () => buildMonthPayments(holdings, year, month),
-    [holdings, year, month]
+    () => buildMonthPayments(holdings, year, month, applyTax),
+    [holdings, year, month, applyTax]
   );
 
   const monthTotals = useMemo(() => {
@@ -173,8 +174,18 @@ export function DividendCalendarView({ holdings, onClose }: Props) {
             <div className="flex items-center justify-between mb-5">
               <div className="flex items-center gap-2 flex-wrap">
                 <p className="text-sm font-semibold text-gray-900">{month}월 예상 배당금</p>
-                <span className="text-xs bg-green-50 text-green-700 font-semibold px-2 py-0.5 rounded-full border border-green-100">
-                  세금 15% 미적용
+                <button
+                  onClick={() => setApplyTax((p) => !p)}
+                  className={`text-xs font-semibold px-2.5 py-1 rounded-full border transition-all ${
+                    applyTax
+                      ? 'bg-amber-50 text-amber-700 border-amber-200'
+                      : 'bg-gray-50 text-gray-600 border-gray-200'
+                  }`}
+                >
+                  {applyTax ? '세후' : '세전'}
+                </button>
+                <span className="text-[10px] text-gray-400">
+                  {applyTax ? '(ISA/연금 비과세)' : ''}
                 </span>
               </div>
               <div className="text-right">

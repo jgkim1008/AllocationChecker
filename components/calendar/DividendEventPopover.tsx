@@ -32,7 +32,7 @@ export function DividendEventPopover({ event, onClose }: Props) {
 
         <div className="space-y-2 text-sm">
           <div className="flex justify-between">
-            <span className="text-gray-500">배당금</span>
+            <span className="text-gray-500">배당금 (세전)</span>
             <span className="font-medium">
               {formatCurrency(extendedProps.dividendAmount, extendedProps.currency)}
             </span>

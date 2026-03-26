@@ -117,7 +117,7 @@ export async function GET(request: NextRequest) {
 
         events.push({
           id: `${symbol}-${d.exDividendDate}`,
-          title: `${displayName} ${amountStr}`,
+          title: `${displayName} ${amountStr} (세전)`,
           date: d.exDividendDate,
           backgroundColor: colors.bg,
           borderColor: colors.border,

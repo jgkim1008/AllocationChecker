@@ -202,7 +202,7 @@ function HoldingCard({
         <div className="flex-1 min-w-0">
           <div className="flex items-baseline gap-2">
             <Link 
-              href={`/stocks/${symbol}`}
+              href={`/strategies/stock-scan/${symbol}`}
               className="text-base font-bold text-gray-900 truncate leading-tight hover:text-green-600 transition-colors flex items-center gap-1 group/link"
             >
               {displayName}
@@ -212,7 +212,7 @@ function HoldingCard({
           </div>
           {displayName !== symbol && (
             <Link 
-              href={`/stocks/${symbol}`}
+              href={`/strategies/stock-scan/${symbol}`}
               className="text-xs text-gray-400 mt-0.5 hover:text-green-600 transition-colors"
             >
               {symbol}
