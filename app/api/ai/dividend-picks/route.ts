@@ -3,7 +3,7 @@ import { createServiceClient } from '@/lib/supabase/server';
 import { createCompletion } from '@/lib/ai/github-models';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 30;
+export const maxDuration = 60;
 
 interface DividendStock {
   symbol: string;
@@ -17,30 +17,37 @@ interface DividendStock {
   buffett_score?: number;
 }
 
-async function fetchUpcomingDividends(year: number, month: number, baseUrl: string): Promise<DividendStock[]> {
-  const url = `${baseUrl}/api/dividends/upcoming?year=${year}&month=${month + 1}`;
-  console.log('[dividend-picks] Fetching:', url);
+async function fetchUpcomingDividends(year: number, month: number): Promise<DividendStock[]> {
+  // targetMonth: 1-indexed
+  const targetMonth = month + 1;
+  const rangeStart = new Date(year, targetMonth - 1, 1).toISOString().split('T')[0];
+  const rangeEnd = new Date(year, targetMonth + 1, 0).toISOString().split('T')[0]; // 다음달 말일
 
   try {
-    // 내부 API 호출로 Yahoo Finance 데이터 포함 조회
-    const res = await fetch(url, {
-      cache: 'no-store',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
+    const supabase = await createServiceClient();
+    const { data: stocks, error } = await supabase
+      .from('stocks')
+      .select('symbol, name, market, current_price, ex_dividend_date, dividend_yield, dividend_per_share, dividend_frequency')
+      .not('symbol', 'like', '^%')
+      .gte('ex_dividend_date', rangeStart)
+      .lte('ex_dividend_date', rangeEnd)
+      .order('ex_dividend_date');
 
-    console.log('[dividend-picks] Response status:', res.status);
-
-    if (!res.ok) {
-      const errorText = await res.text();
-      console.error('[dividend-picks] fetchUpcomingDividends failed:', res.status, errorText);
+    if (error) {
+      console.error('[dividend-picks] DB query error:', error);
       return [];
     }
 
-    const data = await res.json();
-    console.log('[dividend-picks] Got stocks count:', data.stocks?.length ?? 0);
-    return data.stocks || [];
+    return (stocks ?? []).map(s => ({
+      symbol: s.symbol,
+      name: s.name,
+      market: s.market as 'US' | 'KR',
+      exDividendDate: s.ex_dividend_date,
+      dividendYield: s.dividend_yield,
+      dividendPerShare: s.dividend_per_share,
+      currentPrice: s.current_price,
+      dividendFrequency: s.dividend_frequency ?? null,
+    }));
   } catch (err) {
     console.error('[dividend-picks] fetchUpcomingDividends error:', err);
     return [];
@@ -114,9 +121,6 @@ export async function GET(request: NextRequest) {
   const year = parseInt(searchParams.get('year') ?? String(now.getFullYear()));
   const month = parseInt(searchParams.get('month') ?? String(now.getMonth() + 1)) - 1;
 
-  // 요청의 origin에서 baseUrl 추출
-  const baseUrl = request.nextUrl.origin;
-
   try {
     // 1. 캐시 확인 (1시간)
     const supabase = await createServiceClient();
@@ -148,14 +152,13 @@ export async function GET(request: NextRequest) {
     }
 
     // 2. 배당 예정 종목 가져오기
-    const stocks = await fetchUpcomingDividends(year, month, baseUrl);
+    const stocks = await fetchUpcomingDividends(year, month);
 
     if (stocks.length === 0) {
       return NextResponse.json({
         period: cacheKey,
         picks: [],
         analysis: '이번 달에 배당락일이 예정된 종목이 없습니다.',
-        debug: { baseUrl, year, month: month + 1 },
         cached: false,
         generatedAt: new Date().toISOString(),
       });

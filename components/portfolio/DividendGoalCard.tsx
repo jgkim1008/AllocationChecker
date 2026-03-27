@@ -240,8 +240,8 @@ export function DividendGoalCard({ holdings, usdKrw, currentPrices = {} }: Props
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-50">
-                        {rowsWithGoal.map((r) => (
-                          <tr key={r.symbol} className="hover:bg-gray-50 transition-colors">
+                        {rowsWithGoal.map((r, i) => (
+                          <tr key={`${r.symbol}-${i}`} className="hover:bg-gray-50 transition-colors">
                             <td className="px-3 py-2.5">
                               <div className="flex items-center gap-1.5">
                                 <span
