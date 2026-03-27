@@ -225,8 +225,8 @@ export function DividendCalendarView({ holdings, onClose }: Props) {
                         </span>
                       </div>
                       <div className="divide-y divide-gray-50">
-                        {payments.map((p) => (
-                          <PaymentRow key={p.symbol} payment={p} />
+                        {payments.map((p, i) => (
+                          <PaymentRow key={`${p.symbol}-${i}`} payment={p} />
                         ))}
                       </div>
                     </div>
