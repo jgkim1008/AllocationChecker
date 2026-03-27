@@ -226,9 +226,9 @@ export function DividendYearView({ holdings, onOpenCalendar }: Props) {
                         </span>
                       </div>
                       <div className="space-y-2">
-                        {payments.map((p) => (
+                        {payments.map((p, i) => (
                           <div
-                            key={p.symbol}
+                            key={`${p.symbol}-${i}`}
                             className="flex items-center gap-3 bg-gray-50 rounded-xl px-4 py-3"
                           >
                             <StockAvatar symbol={p.symbol} market={p.market} />
