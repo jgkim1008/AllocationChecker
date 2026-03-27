@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'name and type are required' }, { status: 400 });
     }
 
-    const validTypes = ['ISA', '연금저축', '퇴직연금', '일반', '기타'];
+    const validTypes = ['과세', '비과세'];
     if (!validTypes.includes(type)) {
       return NextResponse.json({ error: 'Invalid account type' }, { status: 400 });
     }

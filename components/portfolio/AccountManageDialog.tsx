@@ -19,22 +19,46 @@ import {
 import { Trash2, Plus } from 'lucide-react';
 import type { Account, AccountType } from '@/types/portfolio';
 
-const ACCOUNT_TYPES: AccountType[] = ['ISA', '연금저축', '퇴직연금', '일반', '기타'];
+const ACCOUNT_TYPES: AccountType[] = ['과세', '비과세'];
+
+// 기존 타입을 과세/비과세로 매핑
+const mapToTaxType = (type: string): AccountType => {
+  if (type === '과세' || type === '비과세') return type as AccountType;
+  // ISA, 연금저축, 퇴직연금 → 비과세 / 일반, 기타 → 과세
+  if (['ISA', '연금저축', '퇴직연금'].includes(type)) return '비과세';
+  return '과세';
+};
 
 interface Props {
   open: boolean;
   onClose: () => void;
   accounts: Account[];
   onAdd: (name: string, type: AccountType) => Promise<unknown>;
+  onUpdate: (id: string, name: string, type: AccountType) => Promise<unknown>;
   onDelete: (id: string) => Promise<void>;
 }
 
-export function AccountManageDialog({ open, onClose, accounts, onAdd, onDelete }: Props) {
+export function AccountManageDialog({ open, onClose, accounts, onAdd, onUpdate, onDelete }: Props) {
   const [newName, setNewName] = useState('');
-  const [newType, setNewType] = useState<AccountType>('일반');
+  const [newType, setNewType] = useState<AccountType>('과세');
   const [adding, setAdding] = useState(false);
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const handleTypeChange = async (account: Account, newType: AccountType) => {
+    const currentMappedType = mapToTaxType(account.type);
+    if (currentMappedType === newType) return;
+    setUpdatingId(account.id);
+    setError(null);
+    try {
+      await onUpdate(account.id, account.name, newType);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '타입 변경 실패');
+    } finally {
+      setUpdatingId(null);
+    }
+  };
 
   const handleAdd = async () => {
     if (!newName.trim()) {
@@ -46,7 +70,7 @@ export function AccountManageDialog({ open, onClose, accounts, onAdd, onDelete }
     try {
       await onAdd(newName.trim(), newType);
       setNewName('');
-      setNewType('일반');
+      setNewType('과세');
     } catch (err) {
       setError(err instanceof Error ? err.message : '계좌 추가 실패');
     } finally {
@@ -84,20 +108,31 @@ export function AccountManageDialog({ open, onClose, accounts, onAdd, onDelete }
                   key={account.id}
                   className="flex items-center justify-between p-3 rounded-lg border border-border bg-card"
                 >
-                  <div>
-                    <span className="font-medium text-sm">{account.name}</span>
-                    <span className="ml-2 text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
-                      {account.type}
-                    </span>
+                  <span className="font-medium text-sm flex-1">{account.name}</span>
+                  <div className="flex items-center gap-2">
+                    <Select
+                      value={mapToTaxType(account.type)}
+                      onValueChange={(v) => handleTypeChange(account, v as AccountType)}
+                      disabled={updatingId === account.id}
+                    >
+                      <SelectTrigger className="w-20 h-8 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {ACCOUNT_TYPES.map((t) => (
+                          <SelectItem key={t} value={t}>{t}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <button
+                      className="text-muted-foreground hover:text-destructive transition-colors disabled:opacity-40"
+                      onClick={() => handleDelete(account.id)}
+                      disabled={deletingId === account.id}
+                      aria-label="계좌 삭제"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
                   </div>
-                  <button
-                    className="text-muted-foreground hover:text-destructive transition-colors disabled:opacity-40"
-                    onClick={() => handleDelete(account.id)}
-                    disabled={deletingId === account.id}
-                    aria-label="계좌 삭제"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
                 </div>
               ))
             )}

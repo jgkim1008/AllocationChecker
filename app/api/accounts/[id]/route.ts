@@ -19,6 +19,13 @@ export async function PUT(
       return NextResponse.json({ error: 'name or type is required' }, { status: 400 });
     }
 
+    if (type) {
+      const validTypes = ['과세', '비과세'];
+      if (!validTypes.includes(type)) {
+        return NextResponse.json({ error: 'Invalid account type' }, { status: 400 });
+      }
+    }
+
     const updates: Record<string, string> = {};
     if (name) updates.name = name;
     if (type) updates.type = type;

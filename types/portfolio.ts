@@ -1,7 +1,7 @@
 import type { Stock } from './stock';
 import type { NormalizedDividend } from './dividend';
 
-export type AccountType = 'ISA' | '연금저축' | '퇴직연금' | '일반' | '기타';
+export type AccountType = '과세' | '비과세';
 
 export interface Account {
   id: string;
