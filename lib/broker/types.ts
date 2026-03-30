@@ -9,7 +9,7 @@ export type BrokerType = 'kis' | 'kiwoom';
 export type MarketType = 'domestic' | 'overseas';
 
 // 주문 유형
-export type OrderType = 'market' | 'limit' | 'loc'; // LOC = Limit On Close
+export type OrderType = 'market' | 'limit' | 'loc' | 'moc'; // LOC = Limit On Close, MOC = Market On Close
 
 // 주문 방향
 export type OrderSide = 'buy' | 'sell';

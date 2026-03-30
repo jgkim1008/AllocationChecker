@@ -25,8 +25,8 @@ function detectFrequency(dividends: { date: number; amount: number }[]): Dividen
 function ensureSuffix(symbol: string): string {
   const upper = symbol.toUpperCase();
   if (upper.endsWith('.KS') || upper.endsWith('.KQ')) return upper;
-  // 6-digit Korean stock codes default to KOSPI
-  if (/^\d{6}$/.test(upper)) return `${upper}.KS`;
+  // 6-digit Korean stock codes (all digits or alphanumeric starting with digit) default to KOSPI
+  if (/^\d{6}$/.test(upper) || (/^\d[0-9A-Z]{5}$/.test(upper) && /[A-Z]/.test(upper))) return `${upper}.KS`;
   return upper;
 }
 

@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { ChevronDown, ChevronUp, BookOpen, TrendingUp, Calculator, AlertTriangle } from 'lucide-react';
 
-type StrategyVersion = 'v2.2' | 'v3.0';
+type StrategyVersion = 'v2.2' | 'v3.0' | 'v4.0';
 
 interface Section {
   id: string;
@@ -37,58 +37,79 @@ export function StrategyGuide({ version = 'v2.2' }: StrategyGuideProps) {
             그리고 목표 수익에 도달하면 팔고 처음부터 다시 시작합니다.
           </p>
 
-          {version === 'v2.2' ? (
+          {version === 'v2.2' && (
             <>
               <div className="bg-green-50 border border-green-100 rounded-lg p-3 space-y-2">
                 <p className="font-medium text-green-800">V2.2 안정형 — 핵심 규칙</p>
-                <p className="text-green-700">
-                  40분할 · 동적 목표수익률 (10-T/2)% · 분할 매도 (1/4 + 3/4)
-                </p>
+                <p className="text-green-700">40분할 · 별% (TQQQ 10-T/2, SOXL 12-T×0.6) · 분할 매도 (1/4 LOC + 3/4 지정가)</p>
               </div>
               <div className="bg-gray-50 rounded-lg p-3 space-y-1.5">
-                <p className="font-medium text-gray-800 text-xs uppercase tracking-wide">V2.2 전략 상세</p>
                 <p className="font-medium text-amber-700">📌 매수 규칙</p>
                 <ul className="list-disc list-inside space-y-1 text-gray-600 mb-3">
-                  <li><strong>전반전 (T &lt; 20)</strong>: 절반 평단가 + 절반 평단+(10-T/2)% LOC 주문</li>
-                  <li><strong>후반전 (T ≥ 20)</strong>: 전액 평단+(10-T/2)% LOC 주문</li>
-                  <li>T = 회차 (누적매수액 ÷ 1회매수액, 올림)</li>
+                  <li><strong>전반전 (T &lt; 20)</strong>: 절반 별지점-$0.01 LOC + 절반 평단가 LOC</li>
+                  <li><strong>후반전 (T ≥ 20)</strong>: 전액 별지점-$0.01 LOC</li>
+                  <li>T = 누적매수액 ÷ 1회매수액 (소수점 올림)</li>
                 </ul>
                 <p className="font-medium text-blue-700">📌 매도 규칙</p>
                 <ul className="list-disc list-inside space-y-1 text-gray-600">
-                  <li><strong>1/4 수량</strong>: 평단+(10-T/2)% LOC 매도</li>
-                  <li><strong>3/4 수량</strong>: 평단+10% LOC 매도 (고정)</li>
-                  <li>익절 후 수익금 포함 새 원금으로 사이클 재시작</li>
+                  <li><strong>1/4 수량</strong>: 별지점 LOC 매도</li>
+                  <li><strong>3/4 수량</strong>: TQQQ +10% / SOXL +12% 지정가 매도</li>
                 </ul>
               </div>
             </>
-          ) : (
+          )}
+          {version === 'v3.0' && (
             <>
               <div className="bg-orange-50 border border-orange-100 rounded-lg p-3 space-y-2">
                 <p className="font-medium text-orange-800">V3.0 공격형 — 핵심 규칙</p>
-                <p className="text-orange-700">
-                  20분할 · 동적 별% (TQQQ 15-1.5T%, SOXL 20-2T%) · 분할 매도 (25%+75%) · 반복리
-                </p>
+                <p className="text-orange-700">20분할 · 별% (TQQQ 15-1.5T, SOXL 20-2T) · 분할 매도 (25%+75%) · 반복리</p>
               </div>
               <div className="bg-gray-50 rounded-lg p-3 space-y-1.5">
-                <p className="font-medium text-gray-800 text-xs uppercase tracking-wide">V3.0 전략 상세</p>
-                <p className="font-medium text-amber-700">📌 매수 규칙 (동적 별% 적용)</p>
+                <p className="font-medium text-amber-700">📌 매수 규칙</p>
                 <ul className="list-disc list-inside space-y-1 text-gray-600 mb-3">
-                  <li><strong>전반전 (T &lt; 10)</strong>: 절반 평단가 + 절반 별% LOC 주문</li>
-                  <li><strong>후반전 (T ≥ 10)</strong>: 전액 별% LOC 주문</li>
-                  <li>별% = TQQQ: (15-1.5×T)%, SOXL: (20-2×T)%</li>
-                  <li>T = 회차 (누적매수액 ÷ 1회매수액, 올림)</li>
+                  <li><strong>전반전 (T &lt; 10)</strong>: 절반 별지점-$0.01 LOC + 절반 평단가 LOC</li>
+                  <li><strong>후반전 (T ≥ 10)</strong>: 전액 별지점-$0.01 LOC</li>
                 </ul>
-                <p className="font-medium text-blue-700">📌 매도 규칙 (분할 매도)</p>
+                <p className="font-medium text-blue-700">📌 매도 규칙</p>
                 <ul className="list-disc list-inside space-y-1 text-gray-600 mb-3">
-                  <li><strong>25% 물량</strong>: 평단+별% LOC 매도</li>
-                  <li><strong>75% 물량</strong>: 평단+기본목표% 지정가 매도 (TQQQ 15%, SOXL 20%)</li>
+                  <li><strong>25% 수량</strong>: 별지점 LOC 매도</li>
+                  <li><strong>75% 수량</strong>: TQQQ +15% / SOXL +20% 지정가 매도</li>
                 </ul>
-                <p className="font-medium text-green-700">📌 반복리 규칙</p>
+                <p className="font-medium text-green-700">📌 반복리</p>
                 <ul className="list-disc list-inside space-y-1 text-gray-600">
-                  <li>익절 수익금의 <strong>절반</strong>을 40등분하여 원금에 추가</li>
-                  <li>나머지 절반은 별도 수익금으로 보관</li>
+                  <li>수익금 ÷ 40 → 다음 1회매수금에 즉시 반영</li>
+                  <li>나머지 절반은 별도 보관 (잔금 부족 시 충당)</li>
                 </ul>
-                <p className="font-medium text-red-600 mt-3">⚠️ 주의: V3.0은 고위험 공격형 전략입니다</p>
+                <p className="font-medium text-red-600 mt-3">⚠️ V3.0은 고위험 공격형 전략입니다</p>
+              </div>
+            </>
+          )}
+          {version === 'v4.0' && (
+            <>
+              <div className="bg-purple-50 border border-purple-100 rounded-lg p-3 space-y-2">
+                <p className="font-medium text-purple-800">V4.0 — 핵심 규칙</p>
+                <p className="text-purple-700">동적 1회매수금 · 이벤트 기반 T값 · 일반모드 + 리버스모드</p>
+              </div>
+              <div className="bg-gray-50 rounded-lg p-3 space-y-1.5">
+                <p className="font-medium text-amber-700">📌 일반모드 매수</p>
+                <ul className="list-disc list-inside space-y-1 text-gray-600 mb-3">
+                  <li>1회매수금 = 잔금 ÷ (분할수 - T) <strong>(매일 동적 계산)</strong></li>
+                  <li><strong>전반전</strong>: 절반 별지점-$0.01 LOC + 절반 평단가 LOC</li>
+                  <li><strong>후반전</strong>: 전액 별지점-$0.01 LOC</li>
+                </ul>
+                <p className="font-medium text-blue-700">📌 T값 이벤트 계산</p>
+                <ul className="list-disc list-inside space-y-1 text-gray-600 mb-3">
+                  <li>전체매수: T += 1 / 절반매수: T += 0.5</li>
+                  <li>쿼터매도: T = T × 0.75</li>
+                  <li>지정가매도 후 LOC매수: T = T×0.75 + 1(또는 +0.5)</li>
+                </ul>
+                <p className="font-medium text-red-700">📌 리버스모드 (소진 후)</p>
+                <ul className="list-disc list-inside space-y-1 text-gray-600">
+                  <li>별지점 = 직전 5거래일 종가 평균</li>
+                  <li>첫날: MOC로 보유수량 ÷ 10 무조건 매도</li>
+                  <li>이후: 별지점 이상 → LOC 매도 / 이하 → LOC 매수</li>
+                  <li>종료: TQQQ 종가 &gt; 평단×0.85 / SOXL 종가 &gt; 평단×0.80</li>
+                </ul>
               </div>
             </>
           )}

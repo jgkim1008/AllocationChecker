@@ -1198,7 +1198,7 @@ export default function AnalystAlphaDetailPage({ params }: { params: Promise<{ s
   // 심볼에서 market 자동 감지: .KS/.KQ 또는 6자리 숫자면 KR
   const upperSymbol = symbol.toUpperCase();
   const baseSymbol = upperSymbol.replace(/\.(KS|KQ)$/i, '');
-  const isKoreanSymbol = upperSymbol.endsWith('.KS') || upperSymbol.endsWith('.KQ') || /^\d{6}$/.test(baseSymbol);
+  const isKoreanSymbol = upperSymbol.endsWith('.KS') || upperSymbol.endsWith('.KQ') || /^\d{6}$/.test(baseSymbol) || (/^\d[0-9A-Z]{5}$/.test(baseSymbol) && /[A-Z]/.test(baseSymbol));
   const market = searchParams.get('market') ?? (isKoreanSymbol ? 'KR' : 'US');
   const [data, setData] = useState<AnalystAlphaData | null>(null);
   const [loading, setLoading] = useState(true);

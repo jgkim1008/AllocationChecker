@@ -4,6 +4,7 @@ export function detectMarket(symbol: string): Market {
   const upper = symbol.toUpperCase();
   if (upper.endsWith('.KS') || upper.endsWith('.KQ')) return 'KR';
   if (/^\d{6}$/.test(symbol)) return 'KR';  // Korean stock codes are 6 digits
+  if (/^\d[0-9A-Z]{5}$/i.test(upper) && /[A-Z]/.test(upper)) return 'KR';  // KRX alphanumeric codes starting with digit (e.g. 0040Y0)
   return 'US';
 }
 

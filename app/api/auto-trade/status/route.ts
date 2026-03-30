@@ -11,7 +11,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { getBrokerClient } from '@/lib/broker/session';
 import type { BrokerType, AutoTradeStatus, MarketType } from '@/lib/broker/types';
-import type { StrategyVersion } from '@/lib/broker/auto-trade';
+import type { StrategyVersion } from '@/lib/infinite-buy/core/types';
 
 interface AutoTradeSettings {
   userId: string;

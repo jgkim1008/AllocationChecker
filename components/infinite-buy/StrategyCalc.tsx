@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { RefreshCw, ChevronDown, ChevronUp } from 'lucide-react';
 
-type StrategyVersion = 'v2.2' | 'v3.0';
+type StrategyVersion = 'v2.2' | 'v3.0' | 'v4.0';
 
 interface StrategyCalcProps {
   symbol: string;
@@ -30,84 +30,140 @@ interface TrackerPosition {
 const DROP_RATES = [0, -0.1, -0.2, -0.3, -0.4, -0.5];
 const ADDITIONAL_DROP_RATES = [0, -0.05, -0.1, -0.15, -0.2, -0.25, -0.3, -0.4, -0.5];
 
-/**
- * V2.2 동적 목표 수익률 계산
- * T: 현재 회차 (누적매수액 / 1회매수액, 올림)
- * 전반전/후반전 모두 (10 - T/2)%
- */
-function getDynamicTargetRate(t: number): number {
-  return (10 - t / 2) / 100;
+// ── 공통 유틸 ────────────────────────────────────────────────────────
+// T값: 매수누적액 / 1회매수금 (소수점 둘째자리 올림)
+function calcT(invested: number, unitBuy: number): number {
+  if (unitBuy <= 0) return 0;
+  return Math.ceil((invested / unitBuy) * 100) / 100;
 }
 
-/**
- * V2.2 매수 규칙
- * 전반전 (T < 20): 절반 평단가, 절반 평단+(10-T/2)%
- * 후반전 (T >= 20): 전액 평단+(10-T/2)%
- */
-function getV22BuyPrices(avgCost: number, t: number): { price1: number; price2: number | null; ratio1: number; ratio2: number } {
-  const dynamicRate = getDynamicTargetRate(t);
+// ── V2.2 ─────────────────────────────────────────────────────────────
+// 별% 공식: TQQQ 10-T/2, SOXL 12-T×0.6 (a분할 일반식 적용)
+function getV22StarPct(symbol: string, t: number, divisions = 40): number {
+  const ticker = symbol.toUpperCase();
+  let pct: number;
+  if (ticker === 'SOXL') {
+    pct = 12 - t * 0.6 * (40 / divisions);
+  } else {
+    pct = 10 - (t / 2) * (40 / divisions);
+  }
+  return Math.max(0, pct);
+}
 
-  if (t < 20) {
-    // 전반전: 절반 평단가, 절반 평단+(10-T/2)%
+// 기본 익절 목표율: TQQQ 10%, SOXL 12%
+function getV22BaseRate(symbol: string): number {
+  return symbol.toUpperCase() === 'SOXL' ? 0.12 : 0.10;
+}
+
+// V2.2 매수 주문: 전반전 절반(별지점-$0.01) + 절반(평단), 후반전 전체(별지점-$0.01)
+function getV22BuyPrices(symbol: string, avgCost: number, t: number, divisions = 40): {
+  price1: number; label1: string;
+  price2: number | null; label2: string | null;
+  ratio1: number; ratio2: number;
+} {
+  const starPct = getV22StarPct(symbol, t, divisions);
+  const starBuyPrice = +(avgCost * (1 + starPct / 100) - 0.01).toFixed(2);
+  const halfPoint = divisions / 2;
+
+  if (t < halfPoint) {
     return {
-      price1: avgCost,
-      price2: avgCost * (1 + dynamicRate),
+      price1: starBuyPrice,
+      label1: `별지점(${starPct.toFixed(2)}%)-$0.01 LOC 매수 (절반)`,
+      price2: +avgCost.toFixed(2),
+      label2: '평단 LOC 매수 (절반)',
       ratio1: 0.5,
       ratio2: 0.5,
     };
   } else {
-    // 후반전: 전액 평단+(10-T/2)%
     return {
-      price1: avgCost * (1 + dynamicRate),
+      price1: starBuyPrice,
+      label1: `별지점(${starPct.toFixed(2)}%)-$0.01 LOC 매수 (전체)`,
       price2: null,
+      label2: null,
       ratio1: 1,
       ratio2: 0,
     };
   }
 }
 
-/**
- * V2.2 매도 규칙
- * 1/4 수량: 평단+(10-T/2)%
- * 3/4 수량: 평단+10%
- */
-function getV22SellPrices(avgCost: number, t: number): { price1: number; price2: number; ratio1: number; ratio2: number } {
-  const dynamicRate = getDynamicTargetRate(t);
+// V2.2 매도 주문: 1/4 별지점 LOC + 3/4 기본목표 지정가
+function getV22SellPrices(symbol: string, avgCost: number, t: number, divisions = 40): {
+  price1: number; label1: string;
+  price2: number; label2: string;
+  ratio1: number; ratio2: number;
+} {
+  const starPct = getV22StarPct(symbol, t, divisions);
+  const baseRate = getV22BaseRate(symbol);
   return {
-    price1: avgCost * (1 + dynamicRate), // 1/4 수량
-    price2: avgCost * 1.10, // 3/4 수량
+    price1: +(avgCost * (1 + starPct / 100)).toFixed(2),
+    label1: `별지점(${starPct.toFixed(2)}%) LOC 매도 (1/4)`,
+    price2: +(avgCost * (1 + baseRate)).toFixed(2),
+    label2: `기본목표(+${(baseRate * 100).toFixed(0)}%) 지정가 매도 (3/4)`,
     ratio1: 0.25,
     ratio2: 0.75,
   };
 }
 
-// V3.0 종목별 설정: baseRate (기본 목표수익률%), starCoeff (별% 감소 계수)
-const V3_CONFIG: Record<string, { baseRate: number; starCoeff: number }> = {
-  TQQQ: { baseRate: 15, starCoeff: 1.5 },  // 별% = 15 - 1.5*T
-  SOXL: { baseRate: 20, starCoeff: 2.0 },  // 별% = 20 - 2*T
-};
-
-/**
- * V3.0 별% 계산
- * TQQQ: (15 - 1.5*T)%
- * SOXL: (20 - 2*T)%
- * T는 현재 회차 (올림 적용)
- */
-function getV3StarRate(symbol: string, t: number): number {
-  const config = V3_CONFIG[symbol.toUpperCase()];
-  if (!config) return 0.10; // 기본값 10%
-  const starPct = Math.max(0, config.baseRate - config.starCoeff * t);
-  return starPct / 100;
+// ── V3.0 ─────────────────────────────────────────────────────────────
+// 별% 공식: TQQQ 15-1.5T, SOXL 20-2T
+function getV3StarPct(symbol: string, t: number): number {
+  const ticker = symbol.toUpperCase();
+  const pct = ticker === 'SOXL' ? 20 - 2 * t : 15 - 1.5 * t;
+  return Math.max(0, pct);
 }
 
-/**
- * V3.0 기본 목표수익률 (매도용)
- * TQQQ: 15%, SOXL: 20%
- */
+// 기본 익절 목표율: TQQQ 15%, SOXL 20%
 function getV3BaseRate(symbol: string): number {
-  const config = V3_CONFIG[symbol.toUpperCase()];
-  if (!config) return 0.10;
-  return config.baseRate / 100;
+  return symbol.toUpperCase() === 'SOXL' ? 0.20 : 0.15;
+}
+
+// V3.0 매수: 전반전 절반(별지점-$0.01)+절반(평단), 후반전 전체(별지점-$0.01)
+function getV3BuyPrices(symbol: string, avgCost: number, t: number, divisions = 20): {
+  price1: number; label1: string;
+  price2: number | null; label2: string | null;
+  ratio1: number; ratio2: number;
+} {
+  const starPct = getV3StarPct(symbol, t);
+  const starBuyPrice = +(avgCost * (1 + starPct / 100) - 0.01).toFixed(2);
+  const halfPoint = divisions / 2;
+
+  if (t < halfPoint) {
+    return {
+      price1: starBuyPrice,
+      label1: `별지점(${starPct.toFixed(2)}%)-$0.01 LOC 매수 (절반)`,
+      price2: +avgCost.toFixed(2),
+      label2: '평단 LOC 매수 (절반)',
+      ratio1: 0.5,
+      ratio2: 0.5,
+    };
+  } else {
+    return {
+      price1: starBuyPrice,
+      label1: `별지점(${starPct.toFixed(2)}%)-$0.01 LOC 매수 (전체)`,
+      price2: null,
+      label2: null,
+      ratio1: 1,
+      ratio2: 0,
+    };
+  }
+}
+
+// V3.0 매도: 1/4 별지점 LOC + 3/4 기본목표 지정가
+function getV3SellPrices(symbol: string, avgCost: number, t: number): {
+  price1: number; label1: string;
+  price2: number; label2: string;
+  ratio1: number; ratio2: number;
+} {
+  const starPct = getV3StarPct(symbol, t);
+  const baseRate = getV3BaseRate(symbol);
+  return {
+    price1: +(avgCost * (1 + starPct / 100)).toFixed(2),
+    label1: `별지점(${starPct.toFixed(2)}%) LOC 매도 (1/4)`,
+    price2: +(avgCost * (1 + baseRate)).toFixed(2),
+    label2: `기본목표(+${(baseRate * 100).toFixed(0)}%) 지정가 매도 (3/4)`,
+    ratio1: 0.25,
+    ratio2: 0.75,
+  };
 }
 
 // API에서 포지션 데이터 가져오기
@@ -192,10 +248,14 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy, mark
   const [loadingPrice, setLoadingPrice] = useState(false);
   const [position, setPosition] = useState<TrackerPosition | null>(null);
   const [loadingPosition, setLoadingPosition] = useState(false);
+  // V4.0 리버스모드용 최근 5일 종가
+  const [recentCloses, setRecentCloses] = useState<number[]>([]);
 
   // 시나리오 섹션 접힘 상태 (기본: 접힘)
   const [showAddScenario, setShowAddScenario] = useState(false);
   const [showFreshScenario, setShowFreshScenario] = useState(false);
+  // V4.0 리버스모드 수동 토글
+  const [forceReverse, setForceReverse] = useState(false);
 
   // 현재가 가져오기
   useEffect(() => {
@@ -210,6 +270,18 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy, mark
       .catch(() => {})
       .finally(() => setLoadingPrice(false));
   }, [symbol]);
+
+  // V4.0 리버스모드용 최근 5거래일 종가 가져오기
+  useEffect(() => {
+    if (!symbol || version !== 'v4.0') return;
+    fetch(`/api/infinite-buy/prices?symbol=${symbol}&range=1`)
+      .then((r) => r.json())
+      .then((data: { prices: number[] }) => {
+        const prices = data?.prices ?? [];
+        setRecentCloses(prices.slice(-5));
+      })
+      .catch(() => {});
+  }, [symbol, version]);
 
   // 트래커 포지션 가져오기 (API에서)
   const loadPosition = useCallback(async () => {
@@ -389,14 +461,11 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy, mark
 
       {/* ── V2.2 오늘의 매매 가이드 ── */}
       {!loadingPosition && version === 'v2.2' && position && currentPrice && (() => {
-        const effDivUsed = unitBuy > 0
-          ? Math.min(Math.round(position.invested / unitBuy), n)
-          : position.divisionsUsed;
-        const t = effDivUsed + 1; // 다음 매수 회차
-        const dynamicRate = getDynamicTargetRate(t);
-        const isFirstHalf = t < 20;
-        const buyInfo = getV22BuyPrices(position.avgCost, t);
-        const sellInfo = getV22SellPrices(position.avgCost, t);
+        const t = calcT(position.invested, unitBuy); // T값: 누적투자액 / 1회매수금 (올림)
+        const starPct = getV22StarPct(symbol, t, n);
+        const isFirstHalf = t < n / 2;
+        const buyInfo = getV22BuyPrices(symbol, position.avgCost, t, n);
+        const sellInfo = getV22SellPrices(symbol, position.avgCost, t, n);
 
         return (
           <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200 rounded-xl overflow-hidden">
@@ -432,12 +501,12 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy, mark
                   <p className="text-sm font-bold text-gray-900">{fmtP(position.avgCost, market)}</p>
                 </div>
                 <div className="bg-white/60 rounded-lg p-2.5">
-                  <p className="text-[10px] text-gray-500 mb-0.5">동적 목표율</p>
-                  <p className="text-sm font-bold text-indigo-600">+{(dynamicRate * 100).toFixed(1)}%</p>
+                  <p className="text-[10px] text-gray-500 mb-0.5">별%</p>
+                  <p className="text-sm font-bold text-indigo-600">+{starPct.toFixed(2)}%</p>
                 </div>
                 <div className="bg-white/60 rounded-lg p-2.5">
-                  <p className="text-[10px] text-gray-500 mb-0.5">진행률</p>
-                  <p className="text-sm font-bold text-gray-900">{effDivUsed}/{n}회</p>
+                  <p className="text-[10px] text-gray-500 mb-0.5">T값</p>
+                  <p className="text-sm font-bold text-gray-900">T={t.toFixed(2)}</p>
                 </div>
               </div>
 
@@ -461,7 +530,7 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy, mark
                         </div>
                         <div className="text-right">
                           <p className="text-sm font-bold text-green-700">{fmtP(buyInfo.price1, market)}</p>
-                          <p className="text-[10px] text-gray-400">= 평단가</p>
+                          <p className="text-[10px] text-gray-400">{buyInfo.label1}</p>
                         </div>
                       </div>
                       <div className="flex items-center justify-between p-2 bg-green-50/50 rounded-lg">
@@ -471,7 +540,7 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy, mark
                         </div>
                         <div className="text-right">
                           <p className="text-sm font-bold text-green-700">{fmtP(buyInfo.price2!, market)}</p>
-                          <p className="text-[10px] text-gray-400">= 평단 + {(dynamicRate * 100).toFixed(1)}%</p>
+                          <p className="text-[10px] text-gray-400">{buyInfo.label2}</p>
                         </div>
                       </div>
                     </div>
@@ -483,7 +552,7 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy, mark
                       </div>
                       <div className="text-right">
                         <p className="text-sm font-bold text-green-700">{fmtP(buyInfo.price1, market)}</p>
-                        <p className="text-[10px] text-gray-400">= 평단 + {(dynamicRate * 100).toFixed(1)}%</p>
+                        <p className="text-[10px] text-gray-400">{buyInfo.label1}</p>
                       </div>
                     </div>
                   )}
@@ -493,8 +562,8 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy, mark
               {/* 매도 주문 가이드 */}
               <div className="bg-white rounded-xl border border-red-200 overflow-hidden">
                 <div className="px-3 py-2 bg-red-50 border-b border-red-100">
-                  <p className="text-xs font-bold text-red-800">📤 매도 주문 (LOC)</p>
-                  <p className="text-[10px] text-red-600 mt-0.5">2개의 LOC 주문: 1/4 물량 먼저, 3/4 물량 나중에</p>
+                  <p className="text-xs font-bold text-red-800">📤 매도 주문</p>
+                  <p className="text-[10px] text-red-600 mt-0.5">1/4 별지점 LOC + 3/4 기본목표 지정가</p>
                 </div>
                 <div className="p-3 space-y-2">
                   <div className="flex items-center justify-between p-2 bg-red-50/50 rounded-lg">
@@ -504,7 +573,7 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy, mark
                     </div>
                     <div className="text-right">
                       <p className="text-sm font-bold text-red-600">{fmtP(sellInfo.price1, market)}</p>
-                      <p className="text-[10px] text-gray-400">= 평단 + {(dynamicRate * 100).toFixed(1)}%</p>
+                      <p className="text-[10px] text-gray-400">{sellInfo.label1}</p>
                     </div>
                   </div>
                   <div className="flex items-center justify-between p-2 bg-red-50/50 rounded-lg">
@@ -514,7 +583,7 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy, mark
                     </div>
                     <div className="text-right">
                       <p className="text-sm font-bold text-red-600">{fmtP(sellInfo.price2, market)}</p>
-                      <p className="text-[10px] text-gray-400">= 평단 + 10% (고정)</p>
+                      <p className="text-[10px] text-gray-400">{sellInfo.label2}</p>
                     </div>
                   </div>
                 </div>
@@ -526,17 +595,17 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy, mark
                 {isFirstHalf ? (
                   <>
                     <p>• <strong>전반전</strong>이므로 매수 주문을 2개로 나눠서 걸어요</p>
-                    <p>• 주문1은 평단가에, 주문2는 평단보다 {(dynamicRate * 100).toFixed(1)}% 높은 가격에 걸어요</p>
-                    <p>• 가격이 내려가면 주문1이 체결되고, 올라가면 주문2가 체결돼요</p>
+                    <p>• 주문1은 별지점({starPct.toFixed(2)}%)-$0.01, 주문2는 평단가에 걸어요</p>
+                    <p>• 별%는 T값이 커질수록 줄어들어요 (현재 T={t.toFixed(2)})</p>
                   </>
                 ) : (
                   <>
                     <p>• <strong>후반전</strong>이므로 매수 주문을 1개만 걸어요</p>
-                    <p>• 평단보다 {(dynamicRate * 100).toFixed(1)}% 높은 가격에만 주문을 걸어요</p>
-                    <p>• 주가가 살짝 오를 때만 매수되므로 추격 매수를 줄여요</p>
+                    <p>• 별지점({starPct.toFixed(2)}%)-$0.01 LOC 주문을 걸어요</p>
+                    <p>• 주가가 별지점 이하로 내려올 때만 체결돼요</p>
                   </>
                 )}
-                <p className="pt-1 border-t border-gray-200 mt-2">• 매도는 1/4을 먼저 익절하고, 나머지 3/4은 +10%에서 익절해요</p>
+                <p className="pt-1 border-t border-gray-200 mt-2">• 1/4은 별지점 LOC, 나머지 3/4은 기본목표(+{(getV22BaseRate(symbol)*100).toFixed(0)}%) 지정가로 매도해요</p>
               </div>
             </div>
           </div>
@@ -545,21 +614,12 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy, mark
 
       {/* V3.0 오늘의 매매 가이드 */}
       {!loadingPosition && version === 'v3.0' && position && currentPrice && (() => {
-        const effDivUsed = unitBuy > 0
-          ? Math.min(Math.ceil(position.invested / unitBuy), n)
-          : position.divisionsUsed;
-        const t = effDivUsed + 1; // 다음 매수 회차
-        const isFirstHalf = t < 10;
-        const starRate = getV3StarRate(symbol, t);
+        const t = calcT(position.invested, unitBuy);
+        const isFirstHalf = t < n / 2;
+        const starPct = getV3StarPct(symbol, t);
         const baseRate = getV3BaseRate(symbol);
-
-        // 매수 가격
-        const starBuyPrice = position.avgCost * (1 + starRate);
-        const avgBuyPrice = position.avgCost; // 평단가 매수
-
-        // 매도 가격
-        const starSellPrice = position.avgCost * (1 + starRate); // 25% 물량
-        const baseSellPrice = position.avgCost * (1 + baseRate); // 75% 물량
+        const buyInfo = getV3BuyPrices(symbol, position.avgCost, t, n);
+        const sellInfo = getV3SellPrices(symbol, position.avgCost, t);
 
         return (
           <div className="bg-gradient-to-br from-orange-50 to-amber-50 border border-orange-200 rounded-xl overflow-hidden">
@@ -582,7 +642,7 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy, mark
                   <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${isFirstHalf ? 'bg-amber-100 text-amber-700' : 'bg-purple-100 text-purple-700'}`}>
                     {isFirstHalf ? '전반전' : '후반전'}
                   </span>
-                  <p className="text-xs text-orange-600 mt-1">T = {t}회차 · 별% = {(starRate * 100).toFixed(1)}%</p>
+                  <p className="text-xs text-orange-600 mt-1">T = {t.toFixed(2)} · 별% = {starPct.toFixed(2)}%</p>
                 </div>
               </div>
             </div>
@@ -595,12 +655,12 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy, mark
                   <p className="text-sm font-bold text-gray-900">{fmtP(position.avgCost, market)}</p>
                 </div>
                 <div className="bg-white/60 rounded-lg p-2.5">
-                  <p className="text-[10px] text-gray-500 mb-0.5">동적 별%</p>
-                  <p className="text-sm font-bold text-orange-600">+{(starRate * 100).toFixed(1)}%</p>
+                  <p className="text-[10px] text-gray-500 mb-0.5">별%</p>
+                  <p className="text-sm font-bold text-orange-600">+{starPct.toFixed(2)}%</p>
                 </div>
                 <div className="bg-white/60 rounded-lg p-2.5">
-                  <p className="text-[10px] text-gray-500 mb-0.5">진행률</p>
-                  <p className="text-sm font-bold text-gray-900">{effDivUsed}/{n}회</p>
+                  <p className="text-[10px] text-gray-500 mb-0.5">T값</p>
+                  <p className="text-sm font-bold text-gray-900">T={t.toFixed(2)}</p>
                 </div>
               </div>
 
@@ -623,8 +683,8 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy, mark
                           <span className="text-[10px] text-gray-500 ml-1.5">절반 금액 ({fmtP(unitBuy / 2, market)})</span>
                         </div>
                         <div className="text-right">
-                          <p className="text-sm font-bold text-green-700">{fmtP(avgBuyPrice, market)}</p>
-                          <p className="text-[10px] text-gray-400">= 평단가</p>
+                          <p className="text-sm font-bold text-green-700">{fmtP(buyInfo.price1, market)}</p>
+                          <p className="text-[10px] text-gray-400">{buyInfo.label1}</p>
                         </div>
                       </div>
                       <div className="flex items-center justify-between p-2 bg-green-50/50 rounded-lg">
@@ -633,8 +693,8 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy, mark
                           <span className="text-[10px] text-gray-500 ml-1.5">절반 금액 ({fmtP(unitBuy / 2, market)})</span>
                         </div>
                         <div className="text-right">
-                          <p className="text-sm font-bold text-green-700">{fmtP(starBuyPrice, market)}</p>
-                          <p className="text-[10px] text-gray-400">= 평단 + {(starRate * 100).toFixed(1)}% (별%)</p>
+                          <p className="text-sm font-bold text-green-700">{fmtP(buyInfo.price2!, market)}</p>
+                          <p className="text-[10px] text-gray-400">{buyInfo.label2}</p>
                         </div>
                       </div>
                     </div>
@@ -645,8 +705,8 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy, mark
                         <span className="text-[10px] text-gray-500 ml-1.5">{fmtP(unitBuy, market)}</span>
                       </div>
                       <div className="text-right">
-                        <p className="text-sm font-bold text-green-700">{fmtP(starBuyPrice, market)}</p>
-                        <p className="text-[10px] text-gray-400">= 평단 + {(starRate * 100).toFixed(1)}% (별%)</p>
+                        <p className="text-sm font-bold text-green-700">{fmtP(buyInfo.price1, market)}</p>
+                        <p className="text-[10px] text-gray-400">{buyInfo.label1}</p>
                       </div>
                     </div>
                   )}
@@ -666,8 +726,8 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy, mark
                       <span className="text-[10px] text-gray-500 ml-1.5">25% 물량 ({Math.round(position.shares / 4)}주)</span>
                     </div>
                     <div className="text-right">
-                      <p className="text-sm font-bold text-red-600">{fmtP(starSellPrice, market)}</p>
-                      <p className="text-[10px] text-gray-400">= 평단 + {(starRate * 100).toFixed(1)}% (별%)</p>
+                      <p className="text-sm font-bold text-red-600">{fmtP(sellInfo.price1, market)}</p>
+                      <p className="text-[10px] text-gray-400">{sellInfo.label1}</p>
                     </div>
                   </div>
                   <div className="flex items-center justify-between p-2 bg-red-50/50 rounded-lg">
@@ -676,8 +736,8 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy, mark
                       <span className="text-[10px] text-gray-500 ml-1.5">75% 물량 ({Math.round(position.shares * 3 / 4)}주)</span>
                     </div>
                     <div className="text-right">
-                      <p className="text-sm font-bold text-red-600">{fmtP(baseSellPrice, market)}</p>
-                      <p className="text-[10px] text-gray-400">= 평단 + {(baseRate * 100).toFixed(0)}% (기본)</p>
+                      <p className="text-sm font-bold text-red-600">{fmtP(sellInfo.price2, market)}</p>
+                      <p className="text-[10px] text-gray-400">{sellInfo.label2}</p>
                     </div>
                   </div>
                 </div>
@@ -686,17 +746,254 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy, mark
               {/* 쉬운 설명 */}
               <div className="bg-gray-50 rounded-lg p-3 text-xs text-gray-600 space-y-1.5">
                 <p className="font-medium text-gray-800">💡 V3.0 동적 별% 이해하기</p>
-                <p>• <strong>별%</strong>는 회차(T)가 증가할수록 낮아져요 ({symbol.toUpperCase() === 'TQQQ' ? '15-1.5×T' : symbol.toUpperCase() === 'SOXL' ? '20-2×T' : '기본 10'}%)</p>
-                <p>• 현재 T={t}이므로 별% = {(starRate * 100).toFixed(1)}%</p>
+                <p>• <strong>별%</strong>는 T가 커질수록 낮아져요 ({symbol.toUpperCase() === 'TQQQ' ? '15-1.5×T' : symbol.toUpperCase() === 'SOXL' ? '20-2×T' : '기본 15-1.5×T'}%)</p>
+                <p>• 현재 T={t.toFixed(2)}이므로 별% = {starPct.toFixed(2)}%</p>
                 {isFirstHalf ? (
                   <p>• <strong>전반전</strong>이므로 절반은 평단가, 절반은 별%로 분산 매수해요</p>
                 ) : (
                   <p>• <strong>후반전</strong>이므로 전액 별% 가격에만 매수해요</p>
                 )}
-                <p className="pt-1 border-t border-gray-200 mt-2">• 매도는 25%를 별%에, 75%를 기본목표({(baseRate * 100).toFixed(0)}%)에 분산해요</p>
-                <p>• 익절 후 수익금 절반을 원금에 추가하는 <strong>반복리</strong> 적용</p>
+                <p className="pt-1 border-t border-gray-200 mt-2">• 매도는 25%를 별지점 LOC, 75%를 기본목표(+{(baseRate * 100).toFixed(0)}%) 지정가로 걸어요</p>
+                <p>• 익절 후 수익금/40 → 다음 1회매수금에 반영 (<strong>반복리</strong>)</p>
               </div>
             </div>
+          </div>
+        );
+      })()}
+
+      {/* ── V4.0 오늘의 매매 가이드 ── */}
+      {!loadingPosition && version === 'v4.0' && position && currentPrice && (() => {
+        const t = calcT(position.invested, unitBuy);
+        const autoReverse = t > n - 1;
+        const isReverseMode = forceReverse || autoReverse;
+        const isFirstHalf = t < n / 2;
+        // V4.0 별% (20분할 기준)
+        const starPct = Math.max(0, symbol.toUpperCase() === 'SOXL' ? 20 - 2 * t : 15 - 1.5 * t);
+        const starPoint = position.avgCost * (1 + starPct / 100);
+        const starBuyPrice = +(starPoint - 0.01).toFixed(2);
+        const starSellPrice = +starPoint.toFixed(2);
+        const baseRate = symbol.toUpperCase() === 'SOXL' ? 0.20 : 0.15;
+        const baseSellPrice = +(position.avgCost * (1 + baseRate)).toFixed(2);
+        // V4.0 동적 1회매수금
+        const remaining = Math.max(1, n - t);
+        const dynamicUnitBuy = (capital - position.invested) / remaining;
+        // 리버스모드 종료 기준
+        const reverseExitThreshold = +(position.avgCost * (symbol.toUpperCase() === 'SOXL' ? 0.80 : 0.85)).toFixed(2);
+        // 리버스모드 LOC 매수금액: (잔금 + 매도금) / 4 — 매도금은 알 수 없으므로 잔금/4로 표시
+        const reverseBuyAmt = (capital - position.invested) / 4;
+        // MOC 매도 수량: 보유수량 ÷ 10
+        const mocSellShares = Math.floor(position.shares / 10);
+        // 리버스 별지점: 최근 5거래일 종가 평균
+        const reverseStarPoint = recentCloses.length > 0
+          ? +(recentCloses.reduce((a, b) => a + b, 0) / recentCloses.length).toFixed(2)
+          : null;
+        const reverseLOCSell = reverseStarPoint;
+        const reverseLOCBuy  = reverseStarPoint ? +(reverseStarPoint - 0.01).toFixed(2) : null;
+
+        return (
+          <div className="bg-gradient-to-br from-purple-50 to-violet-50 border border-purple-200 rounded-xl overflow-hidden">
+            <div className="px-4 py-3 bg-purple-100/50 border-b border-purple-200">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div>
+                    <p className="text-sm font-bold text-purple-900">오늘의 매매 가이드</p>
+                    <p className="text-xs text-purple-600 mt-0.5">V4.0 · {isReverseMode ? '리버스모드' : '일반모드 · 동적 1회매수금'}</p>
+                  </div>
+                  <button onClick={loadPosition} className="p-1.5 rounded-lg hover:bg-purple-200/50 transition-colors">
+                    <RefreshCw className={`h-3.5 w-3.5 text-purple-600 ${loadingPosition ? 'animate-spin' : ''}`} />
+                  </button>
+                </div>
+                <div className="flex items-center gap-2">
+                  {!autoReverse && (
+                    <button
+                      onClick={() => setForceReverse(!forceReverse)}
+                      className={`text-xs px-2.5 py-1 rounded-full border transition-colors font-medium ${forceReverse ? 'bg-red-100 text-red-700 border-red-200' : 'bg-white text-gray-500 border-gray-200 hover:border-red-200 hover:text-red-600'}`}
+                    >
+                      {forceReverse ? '리버스 해제' : '리버스 보기'}
+                    </button>
+                  )}
+                  <div className="text-right">
+                    <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${isReverseMode ? 'bg-red-100 text-red-700' : isFirstHalf ? 'bg-amber-100 text-amber-700' : 'bg-purple-100 text-purple-700'}`}>
+                      {isReverseMode ? '리버스모드' : isFirstHalf ? '전반전' : '후반전'}
+                    </span>
+                    <p className="text-xs text-purple-600 mt-1">T={t.toFixed(2)} / {n}분할</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {isReverseMode ? (
+              /* ── 리버스모드 UI ── */
+              <div className="p-4 space-y-4">
+                <div className="grid grid-cols-2 gap-3 text-center">
+                  <div className="bg-white/60 rounded-lg p-2.5">
+                    <p className="text-[10px] text-gray-500 mb-0.5">평균단가</p>
+                    <p className="text-sm font-bold text-gray-900">{fmtP(position.avgCost, market)}</p>
+                  </div>
+                  <div className="bg-white/60 rounded-lg p-2.5">
+                    <p className="text-[10px] text-gray-500 mb-0.5">리버스 종료 기준가</p>
+                    <p className="text-sm font-bold text-orange-600">{fmtP(reverseExitThreshold, market)}</p>
+                    <p className="text-[10px] text-gray-400">평단×{symbol.toUpperCase() === 'SOXL' ? '80%' : '85%'}</p>
+                  </div>
+                </div>
+
+                {/* 별지점 */}
+                <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 text-xs text-orange-800">
+                  <div className="flex items-center justify-between">
+                    <p className="font-semibold">⭐ 리버스 별지점 (최근 5일 종가 평균)</p>
+                    {reverseStarPoint
+                      ? <p className="text-base font-bold text-orange-700">{fmtP(reverseStarPoint, market)}</p>
+                      : <p className="text-orange-500">로딩 중...</p>
+                    }
+                  </div>
+                  {recentCloses.length > 0 && (
+                    <p className="text-orange-600 mt-1">
+                      {recentCloses.map((p, i) => `${i === recentCloses.length - 1 ? '오늘' : `${recentCloses.length - 1 - i}일전`}: ${fmtP(p, market)}`).join(' · ')}
+                    </p>
+                  )}
+                </div>
+
+                {/* 첫날 MOC 매도 */}
+                <div className="bg-white rounded-xl border border-red-200 overflow-hidden">
+                  <div className="px-3 py-2 bg-red-50 border-b border-red-100">
+                    <p className="text-xs font-bold text-red-800">📤 첫날 매도 (MOC)</p>
+                    <p className="text-[10px] text-red-600 mt-0.5">리버스모드 진입 첫날에만 — 보유수량 ÷ 10</p>
+                  </div>
+                  <div className="p-3">
+                    <div className="flex items-center justify-between p-2 bg-red-50/50 rounded-lg">
+                      <div>
+                        <span className="text-xs font-medium text-red-700">MOC 매도</span>
+                        <span className="text-[10px] text-gray-500 ml-1.5">{mocSellShares}주 ({position.shares}주 ÷ 10)</span>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-bold text-red-600">시장가 (장마감)</p>
+                        <p className="text-[10px] text-gray-400">T × 0.9 적용</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 이후 일상 매매 */}
+                <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                  <div className="px-3 py-2 bg-gray-50 border-b border-gray-100">
+                    <p className="text-xs font-bold text-gray-800">📊 이후 매일 (별지점 기준)</p>
+                  </div>
+                  <div className="p-3 space-y-2">
+                    <div className="flex items-center justify-between p-2 bg-red-50/50 rounded-lg">
+                      <div>
+                        <span className="text-xs font-medium text-red-700">종가 ≥ 별지점 → LOC 매도</span>
+                        <span className="text-[10px] text-gray-500 ml-1.5">{Math.floor(position.shares / 10)}주</span>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-bold text-red-600">{reverseLOCSell ? fmtP(reverseLOCSell, market) : '-'}</p>
+                        <p className="text-[10px] text-gray-400">T × 0.9</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between p-2 bg-green-50/50 rounded-lg">
+                      <div>
+                        <span className="text-xs font-medium text-green-700">종가 {'<'} 별지점 → LOC 매수</span>
+                        <span className="text-[10px] text-gray-500 ml-1.5">{fmtP(reverseBuyAmt, market)}</span>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-bold text-green-600">{reverseLOCBuy ? fmtP(reverseLOCBuy, market) : '-'}</p>
+                        <p className="text-[10px] text-gray-400">T × 0.95</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 리버스모드 종료 안내 */}
+                <div className="bg-gray-50 rounded-lg p-3 text-xs text-gray-600 space-y-1.5">
+                  <p className="font-medium text-gray-800">🔄 리버스모드 종료 조건</p>
+                  <p>• 종가가 <strong>{fmtP(reverseExitThreshold, market)}</strong> (평단×{symbol.toUpperCase() === 'SOXL' ? '80%' : '85%'}) 이상이면 일반모드로 복귀</p>
+                  <p>• 복귀 시 T값 재계산하여 일반모드 매매 재개</p>
+                </div>
+              </div>
+            ) : (
+              /* ── 일반모드 UI ── */
+              <div className="p-4 space-y-4">
+                <div className="grid grid-cols-3 gap-3 text-center">
+                  <div className="bg-white/60 rounded-lg p-2.5">
+                    <p className="text-[10px] text-gray-500 mb-0.5">평균단가</p>
+                    <p className="text-sm font-bold text-gray-900">{fmtP(position.avgCost, market)}</p>
+                  </div>
+                  <div className="bg-white/60 rounded-lg p-2.5">
+                    <p className="text-[10px] text-gray-500 mb-0.5">별지점</p>
+                    <p className="text-sm font-bold text-purple-600">{fmtP(starPoint, market)}</p>
+                  </div>
+                  <div className="bg-white/60 rounded-lg p-2.5">
+                    <p className="text-[10px] text-gray-500 mb-0.5">동적 1회매수금</p>
+                    <p className="text-sm font-bold text-gray-900">{fmtP(dynamicUnitBuy, market)}</p>
+                  </div>
+                </div>
+                {/* 매수 */}
+                <div className="bg-white rounded-xl border border-green-200 overflow-hidden">
+                  <div className="px-3 py-2 bg-green-50 border-b border-green-100">
+                    <p className="text-xs font-bold text-green-800">📥 매수 주문 (LOC)</p>
+                    <p className="text-[10px] text-green-600 mt-0.5">{isFirstHalf ? '전반전: 절반 별지점-$0.01 + 절반 평단가' : '후반전: 전액 별지점-$0.01'}</p>
+                  </div>
+                  <div className="p-3 space-y-2">
+                    <div className="flex items-center justify-between p-2 bg-green-50/50 rounded-lg">
+                      <div>
+                        <span className="text-xs font-medium text-green-700">{isFirstHalf ? '주문 1 (절반)' : '전액 주문'}</span>
+                        <span className="text-[10px] text-gray-500 ml-1.5">{fmtP(isFirstHalf ? dynamicUnitBuy / 2 : dynamicUnitBuy, market)}</span>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-bold text-green-700">{fmtP(starBuyPrice, market)}</p>
+                        <p className="text-[10px] text-gray-400">별지점-$0.01 LOC</p>
+                      </div>
+                    </div>
+                    {isFirstHalf && (
+                      <div className="flex items-center justify-between p-2 bg-green-50/50 rounded-lg">
+                        <div>
+                          <span className="text-xs font-medium text-green-700">주문 2 (절반)</span>
+                          <span className="text-[10px] text-gray-500 ml-1.5">{fmtP(dynamicUnitBuy / 2, market)}</span>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-bold text-green-700">{fmtP(+position.avgCost.toFixed(2), market)}</p>
+                          <p className="text-[10px] text-gray-400">평단가 LOC</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                {/* 매도 */}
+                <div className="bg-white rounded-xl border border-red-200 overflow-hidden">
+                  <div className="px-3 py-2 bg-red-50 border-b border-red-100">
+                    <p className="text-xs font-bold text-red-800">📤 매도 주문</p>
+                    <p className="text-[10px] text-red-600 mt-0.5">1/4 별지점 LOC + 3/4 기본목표(+{(baseRate*100).toFixed(0)}%) 지정가</p>
+                  </div>
+                  <div className="p-3 space-y-2">
+                    <div className="flex items-center justify-between p-2 bg-red-50/50 rounded-lg">
+                      <div>
+                        <span className="text-xs font-medium text-red-700">1차 익절 (1/4)</span>
+                        <span className="text-[10px] text-gray-500 ml-1.5">{Math.floor(position.shares / 4)}주</span>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-bold text-red-600">{fmtP(starSellPrice, market)}</p>
+                        <p className="text-[10px] text-gray-400">별지점({starPct.toFixed(2)}%) LOC</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between p-2 bg-red-50/50 rounded-lg">
+                      <div>
+                        <span className="text-xs font-medium text-red-700">2차 익절 (3/4)</span>
+                        <span className="text-[10px] text-gray-500 ml-1.5">{position.shares - Math.floor(position.shares / 4)}주</span>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-bold text-red-600">{fmtP(baseSellPrice, market)}</p>
+                        <p className="text-[10px] text-gray-400">+{(baseRate*100).toFixed(0)}% 지정가</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-3 text-xs text-gray-600 space-y-1.5">
+                  <p className="font-medium text-gray-800">💡 V4.0 특징</p>
+                  <p>• 1회매수금이 매일 바뀌어요: 잔금 ÷ (분할수-T) = {fmtP(dynamicUnitBuy, market)}</p>
+                  <p>• T값은 이벤트로 계산: 전체매수 +1, 절반매수 +0.5, 쿼터매도 ×0.75</p>
+                  <p>• T ≥ {n - 1}이 되면 <strong>리버스모드</strong>로 전환 (현재 T={t.toFixed(2)})</p>
+                </div>
+              </div>
+            )}
           </div>
         );
       })()}

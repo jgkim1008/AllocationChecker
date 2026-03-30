@@ -43,20 +43,19 @@ import {
 } from 'lucide-react';
 
 type BrokerType = 'kis' | 'kiwoom';
-type StrategyVersion = 'V2.2' | 'V3.0';
+type StrategyVersion = 'v2.2' | 'v3.0' | 'v4.0';
 
 interface AutoTradeOrder {
   id: string;
   symbol: string;
-  symbolName: string;
   side: 'buy' | 'sell';
   orderType: string;
   quantity: number;
   targetPrice: number;
+  price: number;
   reason: string;
-  cycleNumber: number;
-  roundNumber: number;
   status: string;
+  market: string;
 }
 
 interface DailyOrders {
@@ -64,11 +63,13 @@ interface DailyOrders {
   sellOrders: AutoTradeOrder[];
   summary: {
     symbol: string;
-    symbolName: string;
-    currentPrice: number;
+    t: number;
+    starPct: number;
+    starPoint: number;
     avgCost: number;
-    currentRound: number;
-    totalBuyAmount: number;
+    shares: number;
+    invested: number;
+    mode: string;
     message: string;
   };
 }
@@ -92,10 +93,9 @@ export function AutoTradePanel({
 }: AutoTradePanelProps) {
   const [brokerType, setBrokerType] = useState<BrokerType>(defaultBroker);
   const [symbol, setSymbol] = useState(defaultSymbol);
-  const [strategyVersion, setStrategyVersion] = useState<StrategyVersion>('V2.2');
+  const [strategyVersion, setStrategyVersion] = useState<StrategyVersion>('v2.2');
   const [totalCapital, setTotalCapital] = useState(5000);
-  const [currentCycle, setCurrentCycle] = useState(1);
-  const [currentRound, setCurrentRound] = useState(0);
+  const [currentT, setCurrentT] = useState(0);
   const [currentShares, setCurrentShares] = useState(0);
   const [currentInvested, setCurrentInvested] = useState(0);
 
@@ -167,12 +167,10 @@ export function AutoTradePanel({
       const totalShares = records.reduce((sum, r) => sum + r.shares, 0);
       const totalInvested = records.reduce((sum, r) => sum + r.amount, 0);
       const capital = records[0].capital;
-
-      const savedCycle = parseInt(localStorage.getItem(`inf-buy-cycle-${symbol.toUpperCase()}`) || '1', 10);
+      const t = Math.ceil((totalInvested / (capital / (strategyVersion === 'v3.0' ? 20 : 40))) * 100) / 100;
 
       setTotalCapital(capital);
-      setCurrentCycle(savedCycle);
-      setCurrentRound(records.length);
+      setCurrentT(t);
       setCurrentShares(Math.round(totalShares * 10000) / 10000);
       setCurrentInvested(Math.round(totalInvested * 100) / 100);
       setTrackerLoaded(true);
@@ -190,15 +188,17 @@ export function AutoTradePanel({
 
     try {
       const market = /^\d{6}$/.test(symbol) ? 'domestic' : 'overseas';
+      const divisions = strategyVersion === 'v3.0' ? '20' : '40';
       const params = new URLSearchParams({
         brokerType,
         symbol: symbol.toUpperCase(),
         strategy: strategyVersion,
         capital: totalCapital.toString(),
-        cycle: currentCycle.toString(),
-        round: currentRound.toString(),
+        divisions,
+        t: currentT.toString(),
         shares: currentShares.toString(),
         invested: currentInvested.toString(),
+        cash: (totalCapital - currentInvested).toString(),
         market,
       });
 
@@ -267,16 +267,9 @@ export function AutoTradePanel({
       }));
 
       if (failCount > 0) {
-        // 일부 또는 전체 실패 → UI 유지, 이유 표시
         setExecutionResult({ success: false, message: data.message, details });
       } else {
-        // 전부 성공 → UI 초기화
-        const trackerCount: number = data.trackerCount ?? 0;
-        const msg = trackerCount > 0
-          ? `${data.message} · 트래커 ${trackerCount}건 기록됨`
-          : data.message;
-        setExecutionResult({ success: true, message: msg });
-        setCurrentRound(prev => prev + 1);
+        setExecutionResult({ success: true, message: data.message });
         setDailyOrders(null);
         setConfirmedOrders(new Set());
       }
@@ -417,8 +410,9 @@ export function AutoTradePanel({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="V2.2">V2.2 안정형 (40분할)</SelectItem>
-                <SelectItem value="V3.0">V3.0 공격형 (20분할)</SelectItem>
+                <SelectItem value="v2.2">V2.2 안정형 (40분할)</SelectItem>
+                <SelectItem value="v3.0">V3.0 공격형 (20분할)</SelectItem>
+                <SelectItem value="v4.0">V4.0 동적분할 (20/40분할)</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -433,12 +427,13 @@ export function AutoTradePanel({
           </div>
 
           <div className="space-y-2">
-            <Label>현재 회차 (T)</Label>
+            <Label>현재 T값</Label>
             <Input
               type="number"
-              value={currentRound}
-              onChange={(e) => setCurrentRound(parseInt(e.target.value) || 0)}
+              value={currentT}
+              onChange={(e) => setCurrentT(parseFloat(e.target.value) || 0)}
               min={0}
+              step="0.01"
             />
           </div>
 
@@ -533,7 +528,14 @@ export function AutoTradePanel({
             <div className="flex items-center justify-between">
               <div>
                 <CardTitle>오늘의 주문</CardTitle>
-                <CardDescription>{dailyOrders.summary.message}</CardDescription>
+                <CardDescription>
+                {dailyOrders.summary.message}
+                {dailyOrders.summary.avgCost > 0 && (
+                  <span className="ml-2 text-xs text-gray-400">
+                    평단 ${dailyOrders.summary.avgCost.toFixed(2)} · 별% {dailyOrders.summary.starPct.toFixed(2)}% · T={dailyOrders.summary.t.toFixed(2)}
+                  </span>
+                )}
+              </CardDescription>
               </div>
               <div className="flex gap-2">
                 <Button variant="outline" size="sm" onClick={confirmAllOrders}>

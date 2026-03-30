@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { TrendingUp, Infinity, ChevronRight, Activity, Zap, BookOpen } from 'lucide-react';
+import { TrendingUp, Infinity, ChevronRight, Activity, Zap, BookOpen, CalendarDays } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { PremiumGate } from '@/components/PremiumGate';
 
@@ -87,14 +87,14 @@ const STRATEGIES = [
     tagColor: 'bg-orange-100 text-orange-700',
   },
   {
-    id: 'new-strategy',
-    title: '새로운 전략',
-    description: '준비 중인 새로운 전략들이 이곳에 추가될 예정입니다.',
-    icon: Zap,
-    href: '#',
-    color: 'bg-gray-50 text-gray-400',
-    tag: '준비중',
-    tagColor: 'bg-gray-200 text-gray-600',
+    id: '2weeks',
+    title: '배당의만장 2WEEKS 전략',
+    description: '월(초) + 월(중순) 배당 ETF를 조합해 한 달에 두 번 배당을 수령하고 복리로 재투자하는 월배당 현금흐름 전략입니다.',
+    icon: CalendarDays,
+    href: '/2weeks',
+    color: 'bg-emerald-50 text-emerald-600',
+    tag: '신규',
+    tagColor: 'bg-emerald-100 text-emerald-700',
   },
 ];
 

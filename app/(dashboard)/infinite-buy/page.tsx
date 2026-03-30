@@ -21,13 +21,23 @@ const SYMBOL_DESC: Record<string, string> = {
 const KR_SYMBOLS = new Set(['122630']);
 
 // 전략 버전
-type StrategyVersion = 'v2.2' | 'v3.0';
+type StrategyVersion = 'v2.2' | 'v3.0' | 'v4.0';
+
+// V2.2 종목별 기본 목표 수익률 (SOXL 12%, 나머지 10%)
+const V22_TARGET_RATES: Record<string, number> = {
+  SOXL: 0.12,
+};
 
 // V3.0 종목별 목표 수익률
 const V3_TARGET_RATES: Record<string, number> = {
   TQQQ: 0.15,
   SOXL: 0.20,
 };
+
+function getDefaultTargetRate(version: StrategyVersion, sym: string): number {
+  if (version === 'v3.0' || version === 'v4.0') return V3_TARGET_RATES[sym] ?? 0.15;
+  return V22_TARGET_RATES[sym] ?? 0.10;
+}
 
 type Tab = 'calc' | 'tracker' | 'backtest';
 
@@ -68,20 +78,17 @@ export default function InfiniteBuyPage() {
   // 버전 변경 시 분할 횟수 자동 조정
   const handleVersionChange = (v: StrategyVersion) => {
     setVersion(v);
-    if (v === 'v3.0') {
+    const activeSymbol = isCustom ? customSymbol.trim().toUpperCase() : symbol;
+    const rate = getDefaultTargetRate(v, activeSymbol);
+    if (v === 'v3.0' || v === 'v4.0') {
       setN(20);
       setNInput('20');
-      // V3.0 종목별 목표 수익률 적용
-      const activeSymbol = isCustom ? customSymbol.trim().toUpperCase() : symbol;
-      const v3Rate = V3_TARGET_RATES[activeSymbol] ?? 0.10;
-      setTargetRate(v3Rate);
-      setTargetRateInput((v3Rate * 100).toString());
     } else {
       setN(40);
       setNInput('40');
-      setTargetRate(0.10);
-      setTargetRateInput('10');
     }
+    setTargetRate(rate);
+    setTargetRateInput((rate * 100).toString());
   };
 
   // 실시간 현재가 (프리셋 버튼 표시용)
@@ -120,6 +127,9 @@ export default function InfiniteBuyPage() {
   function handlePresetClick(sym: string) {
     setSymbol(sym);
     setIsCustom(false);
+    const rate = getDefaultTargetRate(version, sym);
+    setTargetRate(rate);
+    setTargetRateInput((rate * 100).toString());
   }
 
   function handleCustomInput(val: string) {
@@ -160,6 +170,17 @@ export default function InfiniteBuyPage() {
           >
             V3.0
             <span className="block text-[10px] font-normal opacity-70">20분할 · 공격형</span>
+          </button>
+          <button
+            onClick={() => handleVersionChange('v4.0')}
+            className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${
+              version === 'v4.0'
+                ? 'bg-white text-purple-600 shadow-sm'
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            V4.0
+            <span className="block text-[10px] font-normal opacity-70">동적분할 · 리버스</span>
           </button>
         </div>
       </div>
@@ -346,8 +367,9 @@ export default function InfiniteBuyPage() {
           <div className={`ml-auto px-2.5 py-1 rounded-lg text-xs font-medium ${
             version === 'v3.0' ? 'bg-orange-100 text-orange-700' : 'bg-green-100 text-green-700'
           }`}>
-            {version === 'v2.2' && '전반전 2주문 · 후반전 1주문'}
-            {version === 'v3.0' && '평단+목표% LOC 1주문'}
+            {version === 'v2.2' && '전반전 2주문 · 후반전 1주문 · TQQQ/SOXL별% 적용'}
+            {version === 'v3.0' && '별지점-$0.01 LOC · 수익금/40 반복리'}
+            {version === 'v4.0' && '동적 1회매수금 · 리버스모드 지원'}
           </div>
         </div>
       </div>

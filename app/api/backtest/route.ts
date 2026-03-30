@@ -24,7 +24,7 @@ const US_COLORS = ['#3B82F6', '#EC4899', '#8B5CF6', '#06B6D4', '#EF4444', '#14B8
 const KR_COLORS = ['#F97316', '#14B8A6', '#84CC16', '#A855F7', '#F43F5E', '#3B82F6', '#EC4899'];
 
 function getStockColor(symbol: string, index: number): string {
-  const isKR = symbol.endsWith('.KS') || symbol.endsWith('.KQ') || /^\d{6}$/.test(symbol);
+  const isKR = symbol.endsWith('.KS') || symbol.endsWith('.KQ') || /^\d{6}$/.test(symbol) || (/^\d[0-9A-Z]{5}$/.test(symbol) && /[A-Z]/.test(symbol));
   const palette = isKR ? KR_COLORS : US_COLORS;
   return palette[index % palette.length];
 }

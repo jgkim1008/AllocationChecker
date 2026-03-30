@@ -8,7 +8,7 @@ export interface PricePoint {
 
 function isKoreanSymbol(symbol: string): boolean {
   const upper = symbol.toUpperCase();
-  return upper.endsWith('.KS') || upper.endsWith('.KQ') || /^\d{6}$/.test(upper);
+  return upper.endsWith('.KS') || upper.endsWith('.KQ') || /^\d{6}$/.test(upper) || (/^\d[0-9A-Z]{5}$/.test(upper) && /[A-Z]/.test(upper));
 }
 
 function extractKrCode(symbol: string): string {
@@ -18,7 +18,7 @@ function extractKrCode(symbol: string): string {
 function ensureSuffix(symbol: string): string {
   const upper = symbol.toUpperCase();
   if (upper.endsWith('.KS') || upper.endsWith('.KQ')) return upper;
-  if (/^\d{6}$/.test(upper)) return `${upper}.KS`;
+  if (/^\d{6}$/.test(upper) || (/^\d[0-9A-Z]{5}$/.test(upper) && /[A-Z]/.test(upper))) return `${upper}.KS`;
   return upper;
 }
 

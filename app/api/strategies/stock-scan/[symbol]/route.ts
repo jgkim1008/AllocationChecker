@@ -408,7 +408,7 @@ export async function GET(
   const baseSymbol = rawSymbol.replace(/\.(KS|KQ)$/i, '');
 
   // 심볼에서 market 자동 감지: .KS/.KQ 또는 6자리 숫자면 KR
-  const isKoreanSymbol = rawSymbol.endsWith('.KS') || rawSymbol.endsWith('.KQ') || /^\d{6}$/.test(baseSymbol);
+  const isKoreanSymbol = rawSymbol.endsWith('.KS') || rawSymbol.endsWith('.KQ') || /^\d{6}$/.test(baseSymbol) || (/^\d[0-9A-Z]{5}$/i.test(baseSymbol) && /[A-Z]/i.test(baseSymbol));
   const market = (request.nextUrl.searchParams.get('market') ?? (isKoreanSymbol ? 'KR' : 'US')) as 'US' | 'KR';
 
   // 최종 심볼 (DB 저장용)

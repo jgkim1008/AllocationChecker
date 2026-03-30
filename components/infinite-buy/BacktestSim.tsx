@@ -14,10 +14,10 @@ import {
   Cell,
   ResponsiveContainer,
 } from 'recharts';
-import { simulateInfiniteBuy } from '@/lib/utils/infinite-buy-calc';
-import type { SimCycle } from '@/lib/utils/infinite-buy-calc';
+import { runBacktest } from '@/lib/infinite-buy/backtest/engine';
+import type { CycleResult } from '@/lib/infinite-buy/core/types';
 
-type StrategyVersion = 'v2.2' | 'v3.0';
+type StrategyVersion = 'v2.2' | 'v3.0' | 'v4.0';
 
 interface BacktestSimProps {
   symbol: string;
@@ -74,7 +74,13 @@ export function BacktestSim({ symbol, capital, n, targetRate, variableBuy, marke
   // 시뮬레이션: 가격 또는 파라미터 변경 시 재계산 (API 호출 없음)
   const result = useMemo(() => {
     if (prices.length === 0) return null;
-    return simulateInfiniteBuy(prices, { capital, n, targetRate, variableBuy, version, symbol });
+    return runBacktest(prices, {
+      version,
+      ticker: symbol,
+      principal: capital,
+      divisions: n,
+      market: 'overseas',
+    });
   }, [prices, capital, n, targetRate, variableBuy, version, symbol]);
 
   // Build comparison chart data (normalize to 100)
@@ -96,7 +102,7 @@ export function BacktestSim({ symbol, capital, n, targetRate, variableBuy, marke
   })();
 
   // Cycle bar chart data
-  const cycleBarData = result?.cycles.map((c: SimCycle, i: number) => ({
+  const cycleBarData = result?.cycles.map((c: CycleResult, i: number) => ({
     name: `사이클 ${i + 1}`,
     returnRate: Math.round(c.returnRate * 10000) / 100, // percentage
     days: c.days,
@@ -109,9 +115,11 @@ export function BacktestSim({ symbol, capital, n, targetRate, variableBuy, marke
         <div className={`px-3 py-1.5 rounded-lg text-sm font-semibold ${
           version === 'v3.0'
             ? 'bg-orange-100 text-orange-700 border border-orange-200'
+            : version === 'v4.0'
+            ? 'bg-purple-100 text-purple-700 border border-purple-200'
             : 'bg-green-100 text-green-700 border border-green-200'
         }`}>
-          {version === 'v3.0' ? 'V3.0 공격형' : 'V2.2 안정형'} 백테스트
+          {version === 'v3.0' ? 'V3.0 공격형' : version === 'v4.0' ? 'V4.0 동적분할' : 'V2.2 안정형'} 백테스트
         </div>
         <div className="flex items-center gap-2">
           {(['1Y', '2Y', '3Y', '5Y'] as RangeOption[]).map((r) => (
@@ -175,7 +183,7 @@ export function BacktestSim({ symbol, capital, n, targetRate, variableBuy, marke
             <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 text-sm">
               <p className="font-medium text-yellow-800 mb-1">진행 중인 포지션</p>
               <div className="flex flex-wrap gap-4 text-yellow-700">
-                <span>분할 {result.openPosition.divisionsUsed}/{n}회</span>
+                <span>T = {result.openPosition.t.toFixed(2)}</span>
                 <span>투자금 ${result.openPosition.invested.toFixed(2)}</span>
                 <span>평균단가 ${result.openPosition.avgCost.toFixed(2)}</span>
                 <span>{result.openPosition.shares.toFixed(4)}주</span>
