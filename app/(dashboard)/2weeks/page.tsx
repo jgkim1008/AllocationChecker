@@ -142,11 +142,11 @@ export default function TwoWeeksPage() {
   const [aiError, setAiError] = useState('');
   const [aiCachedAt, setAiCachedAt] = useState<string | null>(null);
 
-  // 개별 ETF 대안
-  const [altLoading, setAltLoading] = useState(false);
+  // 개별 ETF 대안 (각 전략별로 관리)
+  const [altLoadingId, setAltLoadingId] = useState<number | null>(null); // 로딩 중인 전략 ID
   const [strategyAlternatives, setStrategyAlternatives] = useState<StrategyAlternatives[]>([]);
   const [altError, setAltError] = useState('');
-  const [showAlternatives, setShowAlternatives] = useState(false);
+  const [expandedAlts, setExpandedAlts] = useState<Set<number>>(new Set()); // 펼쳐진 대안들
   const [altCachedAt, setAltCachedAt] = useState<string | null>(null);
 
   // 페이지 로드 시 캐시 확인 및 자동 로드
@@ -210,14 +210,33 @@ export default function TwoWeeksPage() {
     }
   }, [aiRecommendations.length, aiCachedAt]);
 
-  const fetchAlternatives = useCallback(async (forceRefresh = false) => {
-    // 캐시가 있고 강제 새로고침이 아니면 바로 표시
-    if (!forceRefresh && strategyAlternatives.length > 0 && altCachedAt) {
-      setShowAlternatives(true);
+  // 개별 전략 대안 토글
+  const toggleAlternative = useCallback(async (strategyId: number) => {
+    // 이미 펼쳐져 있으면 닫기
+    if (expandedAlts.has(strategyId)) {
+      setExpandedAlts(prev => {
+        const next = new Set(prev);
+        next.delete(strategyId);
+        return next;
+      });
       return;
     }
 
-    setAltLoading(true);
+    // 이미 캐시된 대안이 있으면 바로 표시
+    const existingAlt = strategyAlternatives.find(a => a.strategyId === strategyId);
+    if (existingAlt) {
+      setExpandedAlts(prev => new Set(prev).add(strategyId));
+      return;
+    }
+
+    // 전체 캐시가 있으면 사용
+    if (strategyAlternatives.length > 0) {
+      setExpandedAlts(prev => new Set(prev).add(strategyId));
+      return;
+    }
+
+    // API 호출 (전체 대안 가져오기)
+    setAltLoadingId(strategyId);
     setAltError('');
     try {
       const res = await fetch('/api/ai/2weeks-recommend', {
@@ -228,17 +247,17 @@ export default function TwoWeeksPage() {
       if (!res.ok) throw new Error('API 오류');
       const data = await res.json();
       setStrategyAlternatives(data.alternatives || []);
-      setShowAlternatives(true);
       setAltCachedAt(data.generatedAt);
+      setExpandedAlts(prev => new Set(prev).add(strategyId));
 
       // localStorage에 캐시
       localStorage.setItem('2weeks-alternatives', JSON.stringify(data));
     } catch {
       setAltError('대안 ETF를 불러오는데 실패했습니다.');
     } finally {
-      setAltLoading(false);
+      setAltLoadingId(null);
     }
-  }, [strategyAlternatives.length, altCachedAt]);
+  }, [strategyAlternatives, expandedAlts]);
 
   // 시간 포맷
   const formatCachedTime = (isoString: string | null) => {
@@ -375,7 +394,7 @@ export default function TwoWeeksPage() {
               </div>
 
               {/* 테이블 헤더 */}
-              <div className="grid grid-cols-[48px_1fr_40px_1fr] gap-2 mb-3 px-2">
+              <div className="grid grid-cols-[48px_1fr_40px_1fr_36px] gap-2 mb-3 px-2">
                 <div></div>
                 <div className="text-center">
                   <span className="inline-block bg-blue-500 text-white text-xs font-bold px-3 py-1.5 rounded-full">
@@ -386,6 +405,11 @@ export default function TwoWeeksPage() {
                 <div className="text-center">
                   <span className="inline-block bg-emerald-500 text-white text-xs font-bold px-3 py-1.5 rounded-full">
                     월중순배당지급
+                  </span>
+                </div>
+                <div className="text-center">
+                  <span className="inline-block bg-purple-500 text-white text-[10px] font-bold px-1.5 py-1 rounded-full">
+                    AI
                   </span>
                 </div>
               </div>
@@ -413,7 +437,7 @@ export default function TwoWeeksPage() {
                       )}
 
                       {/* 메인 전략 행 */}
-                      <div className="grid grid-cols-[48px_1fr_40px_1fr] gap-2 items-center bg-gray-800/50 rounded-xl px-2 py-3 hover:bg-gray-800/80 transition-colors">
+                      <div className="grid grid-cols-[48px_1fr_40px_1fr_36px] gap-2 items-center bg-gray-800/50 rounded-xl px-2 py-3 hover:bg-gray-800/80 transition-colors">
                         {/* 국기 */}
                         <div className="flex justify-center">
                           <span className="text-2xl">{isKr ? '🇰🇷' : '🇺🇸'}</span>
@@ -439,11 +463,31 @@ export default function TwoWeeksPage() {
                             연 {pair.mid.yieldRate}%
                           </span>
                         </div>
+
+                        {/* AI 대안 토글 버튼 */}
+                        <div className="flex justify-center">
+                          <button
+                            onClick={() => toggleAlternative(pair.id)}
+                            disabled={altLoadingId === pair.id}
+                            className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${
+                              expandedAlts.has(pair.id)
+                                ? 'bg-purple-500 text-white'
+                                : 'bg-gray-700 text-gray-400 hover:bg-purple-600 hover:text-white'
+                            }`}
+                            title="AI 대안 보기"
+                          >
+                            {altLoadingId === pair.id ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <Sparkles className="w-4 h-4" />
+                            )}
+                          </button>
+                        </div>
                       </div>
 
                       {/* AI 대안 ETF */}
-                      {showAlternatives && alt && (
-                        <div className="grid grid-cols-[48px_1fr_40px_1fr] gap-2 items-center mt-1 px-2 animate-in fade-in slide-in-from-top-2 duration-300">
+                      {expandedAlts.has(pair.id) && alt && (
+                        <div className="grid grid-cols-[48px_1fr_40px_1fr_36px] gap-2 items-center mt-1 px-2 animate-in fade-in slide-in-from-top-2 duration-300">
                           <div className="flex justify-center">
                             <Sparkles className="w-4 h-4 text-purple-400" />
                           </div>
@@ -463,6 +507,9 @@ export default function TwoWeeksPage() {
                             <p className="text-white font-medium text-xs leading-snug">{alt.midAlt.name}</p>
                             <p className="text-purple-300 text-[10px] mt-0.5">{alt.midAlt.yield}</p>
                           </div>
+
+                          {/* 빈 셀 (버튼 열 맞춤) */}
+                          <div></div>
                         </div>
                       )}
                     </div>
@@ -470,69 +517,22 @@ export default function TwoWeeksPage() {
                 })}
               </div>
 
-              {/* AI 대안 버튼 */}
+              {/* 하단 안내 */}
               <div className="mt-6 pt-4 border-t border-gray-700 text-center">
-                <div className="flex items-center justify-center gap-2 flex-wrap">
-                  <button
-                    onClick={() => {
-                      if (showAlternatives) {
-                        setShowAlternatives(false);
-                      } else {
-                        fetchAlternatives();
-                      }
-                    }}
-                    disabled={altLoading}
-                    className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 text-white text-sm font-bold rounded-full hover:from-purple-500 hover:to-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-purple-500/25"
-                  >
-                    {altLoading ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        AI 분석 중...
-                      </>
-                    ) : showAlternatives ? (
-                      <>
-                        <RefreshCw className="w-4 h-4" />
-                        대안 숨기기
-                      </>
-                    ) : strategyAlternatives.length > 0 && altCachedAt ? (
-                      <>
-                        <Sparkles className="w-4 h-4" />
-                        AI 대안 보기
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles className="w-4 h-4" />
-                        각 종목별 AI 대안 보기
-                      </>
-                    )}
-                  </button>
-
-                  {/* 새로고침 버튼 (캐시가 있을 때만 표시) */}
-                  {showAlternatives && altCachedAt && (
-                    <button
-                      onClick={() => fetchAlternatives(true)}
-                      disabled={altLoading}
-                      className="inline-flex items-center gap-1.5 px-3 py-2.5 bg-gray-700 text-gray-300 text-xs font-medium rounded-full hover:bg-gray-600 disabled:opacity-50 transition-colors"
-                      title="새로 분석하기"
-                    >
-                      <RefreshCw className="w-3.5 h-3.5" />
-                      새로고침
-                    </button>
-                  )}
-                </div>
-
-                {/* 캐시 상태 표시 */}
-                {altCachedAt && showAlternatives && (
-                  <p className="text-purple-400 text-xs mt-2 flex items-center justify-center gap-1">
+                {altError && (
+                  <p className="text-red-400 text-xs mb-2">{altError}</p>
+                )}
+                {altCachedAt && expandedAlts.size > 0 && (
+                  <p className="text-purple-400 text-xs mb-2 flex items-center justify-center gap-1">
                     <Clock className="w-3 h-3" />
                     {formatCachedTime(altCachedAt)} 분석됨
                   </p>
                 )}
-
-                {altError && (
-                  <p className="text-red-400 text-xs mt-2">{altError}</p>
-                )}
-                <p className="text-gray-500 text-xs mt-3">
+                <p className="text-gray-500 text-xs flex items-center justify-center gap-1.5">
+                  <Sparkles className="w-3 h-3" />
+                  각 종목 우측의 버튼을 눌러 AI 대안을 확인하세요
+                </p>
+                <p className="text-gray-600 text-[10px] mt-2">
                   * 예시이며, 시장상황에 따라 달라질 수 있습니다
                 </p>
               </div>
@@ -1008,7 +1008,7 @@ export default function TwoWeeksPage() {
                       />
                       <YAxis tickFormatter={v => fmt원(v)} tick={{ fontSize: 10 }} width={80} />
                       <Tooltip
-                        formatter={(value: number, name: string) => [fmt원(value), name]}
+                        formatter={(value) => fmt원(value as number)}
                         labelFormatter={(label) => `${label}개월차`}
                       />
                       <Legend wrapperStyle={{ fontSize: 12 }} />
@@ -1036,7 +1036,7 @@ export default function TwoWeeksPage() {
                       />
                       <YAxis tickFormatter={v => fmt원(v)} tick={{ fontSize: 10 }} width={70} />
                       <Tooltip
-                        formatter={(value: number, name: string) => [fmt원(value), name]}
+                        formatter={(value) => fmt원(value as number)}
                         labelFormatter={(label) => `${label}개월차`}
                       />
                       <Legend wrapperStyle={{ fontSize: 12 }} />
