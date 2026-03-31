@@ -15,7 +15,7 @@ export async function analyzeStocksFromDB(market: 'US' | 'KR' | 'INDEX'): Promis
   let query = supabase.from('stocks').select('*');
   
   if (market === 'INDEX') {
-    query = query.like('symbol', '^%');
+    query = query.or('symbol.like.^%,symbol.eq.SOXL');
   } else {
     query = query.eq('market', market).not('symbol', 'like', '^%');
   }

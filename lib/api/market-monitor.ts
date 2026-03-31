@@ -9,6 +9,7 @@ const INDICES = [
   { symbol: '^KS11', name: 'KOSPI', market: 'KR' },
   { symbol: '^KQ11', name: 'KOSDAQ', market: 'KR' },
   { symbol: '^N225', name: 'Nikkei 225', market: 'JP' },
+  { symbol: 'SOXL',  name: 'Direxion 반도체 3x ETF', market: 'US' },
 ];
 
 // S&P 500 시총 상위 100개 고정 목록 (FMP v3 screener 폐기 대응)
