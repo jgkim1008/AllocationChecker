@@ -33,10 +33,16 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ step: 'no_api_key', message: 'KAKAO_REST_API_KEY 환경변수가 없습니다.' }, { status: 500 });
   }
 
-  const ok = await issueTokenFromCode(code, REDIRECT_URI);
+  let ok = false;
+  let errorDetail = '';
+  try {
+    ok = await issueTokenFromCode(code, REDIRECT_URI);
+  } catch (e) {
+    errorDetail = String(e);
+  }
 
   if (!ok) {
-    return NextResponse.json({ step: 'token_issue_failed', message: '카카오 토큰 발급 실패' }, { status: 500 });
+    return NextResponse.json({ step: 'token_issue_failed', error: errorDetail, redirectUri: REDIRECT_URI }, { status: 500 });
   }
 
   return NextResponse.json({

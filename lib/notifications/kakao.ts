@@ -147,9 +147,10 @@ export async function issueTokenFromCode(code: string, redirectUri: string): Pro
     body: params.toString(),
   });
 
+  const resText = await res.text();
   if (!res.ok) {
-    console.error('[Kakao] 토큰 발급 실패:', await res.text());
-    return false;
+    console.error('[Kakao] 토큰 발급 실패:', resText);
+    throw new Error(resText);
   }
 
   const json = await res.json();
