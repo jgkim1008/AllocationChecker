@@ -5,14 +5,17 @@ import {
 import { createServiceClient } from '@/lib/supabase/server';
 import { sendKakaoListTemplate } from './kakao';
 
-const ALERT_SYMBOLS = ['^GSPC', '^IXIC', '^KS11', '^KQ11', '^N225', 'SOXL'];
+const ALERT_SYMBOLS = ['^GSPC', '^IXIC', '^KS11', '^KQ11', 'SOXL'];
+
+// 시장별 표시 순서 (앞 3개가 기본 노출)
+const US_CLOSE_ORDER  = ['^GSPC', '^IXIC', 'SOXL',  '^KS11', '^KQ11'];
+const KR_CLOSE_ORDER  = ['^KS11', '^KQ11', 'SOXL',  '^GSPC', '^IXIC'];
 
 const DISPLAY_NAME: Record<string, string> = {
   '^GSPC': 'S&P500',
   '^IXIC': 'NASDAQ',
   '^KS11': 'KOSPI',
   '^KQ11': 'KOSDAQ',
-  '^N225': 'Nikkei',
   'SOXL':  'SOXL',
 };
 
@@ -38,54 +41,24 @@ function fmtPrice(price: number, market: string): string {
   return '$' + price.toFixed(2);
 }
 
-function buildListItems(statuses: SymbolStatus[]): { title: string; description: string }[] {
-  const items: { title: string; description: string }[] = [];
+function buildListItems(statuses: SymbolStatus[], order: string[]): { title: string; description: string }[] {
+  const map = new Map(statuses.map(s => [s.symbol, s]));
 
-  // KOSPI + KOSDAQ를 한 아이템으로 합쳐서 5개 이내 맞춤
-  const ks11 = statuses.find(s => s.symbol === '^KS11');
-  const kq11 = statuses.find(s => s.symbol === '^KQ11');
-  const others = statuses.filter(s => s.symbol !== '^KS11' && s.symbol !== '^KQ11');
-
-  for (const s of others) {
-    const pos   = (s.fibonacciValue * 100).toFixed(1);
-    const lvl   = (s.nearestLevel   * 100).toFixed(1);
-    const dist  = s.distanceFromLevel.toFixed(1);
-    const emoji = alertEmoji(s.distanceFromLevel);
-    const price = fmtPrice(s.currentPrice, s.market);
-    const name  = DISPLAY_NAME[s.symbol] ?? s.symbol;
-    items.push({
-      title:       `${emoji} ${name}`,
-      description: `현재 ${pos}% → Fib ${lvl}%  (거리 ${dist}%)  ${price}`,
+  return order
+    .map(sym => map.get(sym))
+    .filter((s): s is SymbolStatus => !!s)
+    .map(s => {
+      const pos   = (s.fibonacciValue * 100).toFixed(1);
+      const lvl   = (s.nearestLevel   * 100).toFixed(1);
+      const dist  = s.distanceFromLevel.toFixed(1);
+      const emoji = alertEmoji(s.distanceFromLevel);
+      const price = fmtPrice(s.currentPrice, s.market);
+      const name  = DISPLAY_NAME[s.symbol] ?? s.symbol;
+      return {
+        title:       `${emoji} ${name}`,
+        description: `현재 ${pos}% → Fib ${lvl}%  (거리 ${dist}%)  ${price}`,
+      };
     });
-  }
-
-  // KOSPI / KOSDAQ 합산 아이템
-  if (ks11 && kq11) {
-    const fmt = (s: SymbolStatus) => {
-      const pos  = (s.fibonacciValue * 100).toFixed(1);
-      const lvl  = (s.nearestLevel   * 100).toFixed(1);
-      const dist = s.distanceFromLevel.toFixed(1);
-      return `${alertEmoji(s.distanceFromLevel)} ${pos}%→${lvl}%(${dist}%)  ${fmtPrice(s.currentPrice, s.market)}`;
-    };
-    items.push({
-      title:       `KOSPI / KOSDAQ`,
-      description: `${fmt(ks11)}\n${fmt(kq11)}`,
-    });
-  } else {
-    // 둘 중 하나만 있으면 개별 추가
-    for (const s of [ks11, kq11].filter(Boolean) as SymbolStatus[]) {
-      const pos  = (s.fibonacciValue * 100).toFixed(1);
-      const lvl  = (s.nearestLevel   * 100).toFixed(1);
-      const dist = s.distanceFromLevel.toFixed(1);
-      items.push({
-        title:       `${alertEmoji(s.distanceFromLevel)} ${DISPLAY_NAME[s.symbol] ?? s.symbol}`,
-        description: `현재 ${pos}% → Fib ${lvl}%  (거리 ${dist}%)  ${fmtPrice(s.currentPrice, s.market)}`,
-      });
-    }
-  }
-
-  // ALERT_SYMBOLS 순서 기준 정렬 (others는 KOSPI/KOSDAQ 제외 순서대로 들어왔으므로 KOSPI/KOSDAQ 아이템은 마지막)
-  return items;
 }
 
 async function fetchTargetStatuses(): Promise<SymbolStatus[]> {
@@ -145,7 +118,8 @@ export async function sendMarketCloseAlert(market: 'US' | 'KR'): Promise<void> {
     : '  ✅ 여유 있음';
 
   const headerTitle = `📊 피보나치 현황 [${label}] ${today}${alertSuffix}`;
-  const items = buildListItems(statuses);
+  const order = market === 'US' ? US_CLOSE_ORDER : KR_CLOSE_ORDER;
+  const items = buildListItems(statuses, order);
 
   await sendKakaoListTemplate(headerTitle, items);
 }
