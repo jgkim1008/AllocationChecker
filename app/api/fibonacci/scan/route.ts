@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { runFibonacciScan } from '@/lib/api/fibonacci';
 import { refreshMarketData } from '@/lib/api/market-monitor';
-import { checkAndSendFibonacciAlerts } from '@/lib/notifications/fibonacci-alert';
+import { sendMarketCloseAlert } from '@/lib/notifications/fibonacci-alert';
 
 export const maxDuration = 300; 
 
@@ -49,10 +49,9 @@ export async function GET(request: NextRequest) {
 
     if (error) throw error;
 
-    // INDEX 스캔 시 피보나치 레벨 근접 카카오톡 알림
-    if (market === 'INDEX' || !market) {
-      await checkAndSendFibonacciAlerts(indices);
-    }
+    // 마감 후 카카오톡 알림
+    if (market === 'US') await sendMarketCloseAlert('US');
+    if (market === 'KR') await sendMarketCloseAlert('KR');
 
     return NextResponse.json({
       success: true,

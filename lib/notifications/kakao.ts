@@ -82,21 +82,25 @@ async function getValidAccessToken(): Promise<string | null> {
 }
 
 /**
- * 카카오톡 나에게 보내기
+ * 카카오톡 나에게 보내기 (feed 템플릿 - title + description)
  */
-export async function sendKakaoNotification(text: string): Promise<boolean> {
+export async function sendKakaoNotification(title: string, description: string): Promise<boolean> {
   const token = await getValidAccessToken();
   if (!token) {
     console.warn('[Kakao] 유효한 액세스 토큰이 없습니다. 카카오 인증을 먼저 완료해주세요.');
     return false;
   }
 
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://allocation-checker-mu.vercel.app';
   const template = JSON.stringify({
-    object_type: 'text',
-    text: text.slice(0, 200), // 카카오 텍스트 메시지 최대 200자
-    link: {
-      web_url:    `${process.env.NEXT_PUBLIC_APP_URL}/strategies/fibonacci`,
-      mobile_web_url: `${process.env.NEXT_PUBLIC_APP_URL}/strategies/fibonacci`,
+    object_type: 'feed',
+    content: {
+      title:       title.slice(0, 200),
+      description: description.slice(0, 400),
+      link: {
+        web_url:        `${appUrl}/strategies/fibonacci`,
+        mobile_web_url: `${appUrl}/strategies/fibonacci`,
+      },
     },
   });
 
