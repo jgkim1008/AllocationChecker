@@ -51,7 +51,7 @@ export function MetricsTable({ series }: Props) {
           <tbody>
             {rows.map((s, i) => (
               <tr
-                key={s.id}
+                key={`${s.id}-${i}`}
                 className={`border-b border-gray-50 last:border-0 ${
                   s.id === 'portfolio' ? 'bg-green-50/40' : i % 2 === 0 ? '' : 'bg-gray-50/40'
                 }`}

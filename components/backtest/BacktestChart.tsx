@@ -141,11 +141,11 @@ export function BacktestChart({ dates, series, range, onRangeChange }: Props) {
 
       {/* Legend toggles */}
       <div className="flex flex-wrap gap-2 mb-4">
-        {series.map((s) => {
+        {series.map((s, idx) => {
           const isHidden = hidden.has(s.id);
           return (
             <button
-              key={s.id}
+              key={`${s.id}-${idx}`}
               onClick={() => toggleHidden(s.id)}
               className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
                 isHidden
@@ -186,9 +186,9 @@ export function BacktestChart({ dates, series, range, onRangeChange }: Props) {
             />
             <ReferenceLine y={100} stroke="#D1D5DB" strokeDasharray="4 4" />
             <Tooltip content={<CustomTooltip />} />
-            {series.map((s) => (
+            {series.map((s, idx) => (
               <Line
-                key={s.id}
+                key={`${s.id}-${idx}`}
                 type="monotone"
                 dataKey={s.id}
                 name={s.name}

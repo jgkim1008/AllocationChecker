@@ -1,12 +1,56 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Calendar, TrendingUp, Info, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Calendar, TrendingUp, Info, RefreshCw, Sparkles, Calculator, Loader2, Clock, Play, BarChart3 } from 'lucide-react';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
-  Legend, ResponsiveContainer, BarChart, Bar,
+  Legend, ResponsiveContainer, BarChart, Bar, LineChart, Line, ComposedChart,
 } from 'recharts';
+import { runTwoWeeksBacktest, type TwoWeeksBacktestResult } from '@/lib/2weeks/backtest';
+
+// ── 메인 전략 조합 (배당의만장 2WEEKS) ──────────────────────────────────────────
+interface StrategyPair {
+  id: number;
+  country: 'kr' | 'us';
+  early: { code: string; name: string; yieldRate: number };
+  mid: { code: string; name: string; yieldRate: number };
+}
+
+const MAIN_STRATEGIES: StrategyPair[] = [
+  // 한국 ETF
+  { id: 1, country: 'kr', early: { code: '475720', name: 'RISE 200 위클리커버드콜', yieldRate: 15 }, mid: { code: '498400', name: 'KODEX 200타겟 위클리커버드콜', yieldRate: 15 } },
+  { id: 2, country: 'kr', early: { code: '161510', name: 'PLUS 고배당주', yieldRate: 4 }, mid: { code: '466940', name: 'TIGER 코리아배당다우존스', yieldRate: 5 } },
+  // 미국 ETF
+  { id: 3, country: 'us', early: { code: '483290', name: 'KODEX 미국성장 커버드콜액티브', yieldRate: 12 }, mid: { code: '483280', name: 'KODEX 미국배당 커버드콜액티브', yieldRate: 10 } },
+  { id: 4, country: 'us', early: { code: '473540', name: 'TIGER 미국나스닥100 타겟데일리커버드콜', yieldRate: 15 }, mid: { code: '474220', name: 'TIGER 미국테크TOP10 타겟커버드콜', yieldRate: 10 } },
+  { id: 5, country: 'us', early: { code: '458730', name: 'TIGER 미국배당다우존스', yieldRate: 4 }, mid: { code: '489250', name: 'KODEX 미국배당다우존스', yieldRate: 4 } },
+  { id: 6, country: 'us', early: { code: '495090', name: 'KIWOOM 미국고배당&AI테크', yieldRate: 10 }, mid: { code: '494330', name: 'RISE 미국고배당 다우존스TOP10', yieldRate: 8 } },
+];
+
+// AI 추천 타입
+interface AiRecommendation {
+  id: number;
+  country: 'kr' | 'us';
+  early: { code: string; name: string; yield: string };
+  mid: { code: string; name: string; yield: string };
+  reason: string;
+  risk: string;
+}
+
+// 개별 ETF 대안 타입
+interface EtfAlternative {
+  code: string;
+  name: string;
+  yield: string;
+  reason: string;
+}
+
+interface StrategyAlternatives {
+  strategyId: number;
+  earlyAlt: EtfAlternative;
+  midAlt: EtfAlternative;
+}
 
 // ── ETF 데이터 ────────────────────────────────────────────────────────────────
 
@@ -55,12 +99,18 @@ const ETF_LIST: EtfItem[] = [
 ];
 
 // ── 탭 타입 ───────────────────────────────────────────────────────────────────
-type Tab = 'guide' | 'etf' | 'sim';
+type Tab = 'guide' | 'etf' | 'backtest';
 
 // ── 숫자 포맷 ─────────────────────────────────────────────────────────────────
 function fmt만(n: number) {
   if (n >= 10000) return `${(n / 10000).toFixed(1)}억원`;
   return `${Math.round(n).toLocaleString()}만원`;
+}
+
+function fmt원(n: number) {
+  if (n >= 100000000) return `${(n / 100000000).toFixed(2)}억원`;
+  if (n >= 10000) return `${Math.round(n / 10000).toLocaleString()}만원`;
+  return `${Math.round(n).toLocaleString()}원`;
 }
 
 // ── 커스텀 툴팁 ───────────────────────────────────────────────────────────────
@@ -82,46 +132,181 @@ function SimTooltip({ active, payload, label }: { active?: boolean; payload?: Ar
 export default function TwoWeeksPage() {
   const [tab, setTab] = useState<Tab>('guide');
 
-  // 시뮬레이터 입력값
-  const [principal, setPrincipal] = useState(5000);       // 만원
-  const [earlyRatio, setEarlyRatio] = useState(50);       // 월초 비율 %
-  const [earlyYield, setEarlyYield] = useState(10);       // 월초 연분배율 %
-  const [midYield, setMidYield] = useState(12);           // 월중순 연분배율 %
-  const [reinvest, setReinvest] = useState(100);          // 재투자율 %
-  const [simMonths, setSimMonths] = useState(36);
+  // 월배당 계산기
+  const [calcAmount, setCalcAmount] = useState(1000); // 만원
 
-  // 시뮬레이션 계산
-  const simData = useMemo(() => {
-    let earlyAmt = principal * (earlyRatio / 100);
-    let midAmt   = principal * ((100 - earlyRatio) / 100);
-    let cumDiv   = 0;
-    const rows = [];
+  // AI 추천
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiRecommendations, setAiRecommendations] = useState<AiRecommendation[]>([]);
+  const [aiSummary, setAiSummary] = useState('');
+  const [aiError, setAiError] = useState('');
+  const [aiCachedAt, setAiCachedAt] = useState<string | null>(null);
 
-    for (let m = 1; m <= simMonths; m++) {
-      const earlyDiv = earlyAmt * (earlyYield / 1200);
-      const midDiv   = midAmt   * (midYield   / 1200);
-      const totalDiv = earlyDiv + midDiv;
+  // 개별 ETF 대안
+  const [altLoading, setAltLoading] = useState(false);
+  const [strategyAlternatives, setStrategyAlternatives] = useState<StrategyAlternatives[]>([]);
+  const [altError, setAltError] = useState('');
+  const [showAlternatives, setShowAlternatives] = useState(false);
+  const [altCachedAt, setAltCachedAt] = useState<string | null>(null);
 
-      // 재투자: 월초 분배금 → 월중순, 월중순 분배금 → 월초
-      earlyAmt += midDiv   * (reinvest / 100);
-      midAmt   += earlyDiv * (reinvest / 100);
-
-      cumDiv += totalDiv;
-      const totalAsset = earlyAmt + midAmt;
-
-      rows.push({
-        month: m,
-        월초분배금: +earlyDiv.toFixed(1),
-        월중순분배금: +midDiv.toFixed(1),
-        월분배금합계: +totalDiv.toFixed(1),
-        누적분배금: +cumDiv.toFixed(1),
-        총자산: +totalAsset.toFixed(1),
-      });
+  // 페이지 로드 시 캐시 확인 및 자동 로드
+  useEffect(() => {
+    // localStorage에서 캐시 확인
+    const cachedAlt = localStorage.getItem('2weeks-alternatives');
+    if (cachedAlt) {
+      try {
+        const parsed = JSON.parse(cachedAlt);
+        const cachedTime = new Date(parsed.generatedAt).getTime();
+        const now = Date.now();
+        // 24시간 이내면 캐시 사용
+        if (now - cachedTime < 24 * 60 * 60 * 1000) {
+          setStrategyAlternatives(parsed.alternatives || []);
+          setAltCachedAt(parsed.generatedAt);
+        }
+      } catch {
+        // 파싱 실패 - 무시
+      }
     }
-    return rows;
-  }, [principal, earlyRatio, earlyYield, midYield, reinvest, simMonths]);
 
-  const last = simData[simData.length - 1];
+    const cachedRec = localStorage.getItem('2weeks-recommend');
+    if (cachedRec) {
+      try {
+        const parsed = JSON.parse(cachedRec);
+        const cachedTime = new Date(parsed.generatedAt).getTime();
+        const now = Date.now();
+        if (now - cachedTime < 24 * 60 * 60 * 1000) {
+          setAiRecommendations(parsed.recommendations || []);
+          setAiSummary(parsed.summary || '');
+          setAiCachedAt(parsed.generatedAt);
+        }
+      } catch {
+        // 파싱 실패 - 무시
+      }
+    }
+  }, []);
+
+  const fetchAiRecommend = useCallback(async (forceRefresh = false) => {
+    // 캐시가 있고 강제 새로고침이 아니면 스킵
+    if (!forceRefresh && aiRecommendations.length > 0 && aiCachedAt) {
+      return;
+    }
+
+    setAiLoading(true);
+    setAiError('');
+    try {
+      const res = await fetch('/api/ai/2weeks-recommend');
+      if (!res.ok) throw new Error('API 오류');
+      const data = await res.json();
+      setAiRecommendations(data.recommendations || []);
+      setAiSummary(data.summary || '');
+      setAiCachedAt(data.generatedAt);
+
+      // localStorage에 캐시
+      localStorage.setItem('2weeks-recommend', JSON.stringify(data));
+    } catch {
+      setAiError('AI 추천을 불러오는데 실패했습니다.');
+    } finally {
+      setAiLoading(false);
+    }
+  }, [aiRecommendations.length, aiCachedAt]);
+
+  const fetchAlternatives = useCallback(async (forceRefresh = false) => {
+    // 캐시가 있고 강제 새로고침이 아니면 바로 표시
+    if (!forceRefresh && strategyAlternatives.length > 0 && altCachedAt) {
+      setShowAlternatives(true);
+      return;
+    }
+
+    setAltLoading(true);
+    setAltError('');
+    try {
+      const res = await fetch('/api/ai/2weeks-recommend', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ all: true }),
+      });
+      if (!res.ok) throw new Error('API 오류');
+      const data = await res.json();
+      setStrategyAlternatives(data.alternatives || []);
+      setShowAlternatives(true);
+      setAltCachedAt(data.generatedAt);
+
+      // localStorage에 캐시
+      localStorage.setItem('2weeks-alternatives', JSON.stringify(data));
+    } catch {
+      setAltError('대안 ETF를 불러오는데 실패했습니다.');
+    } finally {
+      setAltLoading(false);
+    }
+  }, [strategyAlternatives.length, altCachedAt]);
+
+  // 시간 포맷
+  const formatCachedTime = (isoString: string | null) => {
+    if (!isoString) return null;
+    const date = new Date(isoString);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    const diffMins = Math.floor(diffMs / (1000 * 60));
+
+    if (diffMins < 1) return '방금 전';
+    if (diffMins < 60) return `${diffMins}분 전`;
+    if (diffHours < 24) return `${diffHours}시간 전`;
+    return date.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' });
+  };
+
+  // 월배당 계산
+  const monthlyDividends = useMemo(() => {
+    return MAIN_STRATEGIES.map((s) => {
+      const perPair = calcAmount / MAIN_STRATEGIES.length; // 각 조합당 투자금
+      const earlyDiv = (perPair / 2) * (s.early.yieldRate / 1200); // 월초 ETF 월배당
+      const midDiv = (perPair / 2) * (s.mid.yieldRate / 1200); // 월중순 ETF 월배당
+      return {
+        ...s,
+        investAmount: perPair,
+        earlyMonthly: earlyDiv,
+        midMonthly: midDiv,
+        totalMonthly: earlyDiv + midDiv,
+      };
+    });
+  }, [calcAmount]);
+
+  const totalMonthlyDiv = monthlyDividends.reduce((sum, d) => sum + d.totalMonthly, 0);
+
+  // 백테스팅 입력값
+  const [btPrincipal, setBtPrincipal] = useState(5000);       // 초기 투자금 (만원)
+  const [btMonthlyDeposit, setBtMonthlyDeposit] = useState(100); // 월 납입금 (만원)
+  const [btEarlyRatio, setBtEarlyRatio] = useState(50);       // 월초 비율 %
+  const [btEarlyYield, setBtEarlyYield] = useState(12);       // 월초 연분배율 %
+  const [btMidYield, setBtMidYield] = useState(12);           // 월중순 연분배율 %
+  const [btReinvest, setBtReinvest] = useState(100);          // 재투자율 %
+  const [btMonths, setBtMonths] = useState(60);               // 기간 (개월)
+  const [btEarlyGrowth, setBtEarlyGrowth] = useState(5);      // 월초 ETF 연간 성장률 %
+  const [btMidGrowth, setBtMidGrowth] = useState(5);          // 월중순 ETF 연간 성장률 %
+  const [btTaxRate, setBtTaxRate] = useState(0);              // 배당소득세율 %
+  const [btResult, setBtResult] = useState<TwoWeeksBacktestResult | null>(null);
+
+  // 백테스팅 실행
+  const runBacktest = useCallback(() => {
+    const result = runTwoWeeksBacktest({
+      principal: btPrincipal * 10000, // 만원 → 원
+      monthlyDeposit: btMonthlyDeposit * 10000, // 만원 → 원
+      earlyRatio: btEarlyRatio,
+      earlyYield: btEarlyYield,
+      midYield: btMidYield,
+      reinvestRate: btReinvest,
+      months: btMonths,
+      earlyGrowth: btEarlyGrowth,
+      midGrowth: btMidGrowth,
+      taxRate: btTaxRate,
+    });
+    setBtResult(result);
+  }, [btPrincipal, btMonthlyDeposit, btEarlyRatio, btEarlyYield, btMidYield, btReinvest, btMonths, btEarlyGrowth, btMidGrowth, btTaxRate]);
+
+  // 초기 백테스팅 실행
+  useEffect(() => {
+    runBacktest();
+  }, []);  // eslint-disable-line react-hooks/exhaustive-deps
 
   // ETF 필터
   const earlyUs = ETF_LIST.filter(e => e.divTime === 'early' && e.assetType === 'us');
@@ -132,7 +317,7 @@ export default function TwoWeeksPage() {
   const TABS: { id: Tab; label: string }[] = [
     { id: 'guide', label: '전략 소개' },
     { id: 'etf',   label: 'ETF 목록' },
-    { id: 'sim',   label: '복리 시뮬레이터' },
+    { id: 'backtest', label: '백테스팅' },
   ];
 
   return (
@@ -174,6 +359,360 @@ export default function TwoWeeksPage() {
         {/* ── 전략 소개 ── */}
         {tab === 'guide' && (
           <div className="space-y-6">
+
+            {/* 메인 전략 조합 */}
+            <div className="bg-gradient-to-br from-gray-900 via-gray-900 to-gray-800 rounded-2xl p-6 text-white overflow-hidden">
+              {/* 헤더 */}
+              <div className="text-center mb-8">
+                <h2 className="text-2xl sm:text-3xl font-black mb-2 tracking-tight">배당의만장 2WEEKS 전략</h2>
+                <p className="text-lg font-bold">
+                  <span className="text-gray-400">[</span>
+                  <span className="text-white">한달에 2번 </span>
+                  <span className="text-red-500 animate-pulse">따박따박</span>
+                  <span className="text-yellow-400"> 배당월급</span>
+                  <span className="text-gray-400">]</span>
+                </p>
+              </div>
+
+              {/* 테이블 헤더 */}
+              <div className="grid grid-cols-[48px_1fr_40px_1fr] gap-2 mb-3 px-2">
+                <div></div>
+                <div className="text-center">
+                  <span className="inline-block bg-blue-500 text-white text-xs font-bold px-3 py-1.5 rounded-full">
+                    월초배당지급
+                  </span>
+                </div>
+                <div></div>
+                <div className="text-center">
+                  <span className="inline-block bg-emerald-500 text-white text-xs font-bold px-3 py-1.5 rounded-full">
+                    월중순배당지급
+                  </span>
+                </div>
+              </div>
+
+              {/* 전략 목록 */}
+              <div className="space-y-2">
+                {MAIN_STRATEGIES.map((pair, idx) => {
+                  const alt = strategyAlternatives.find(a => a.strategyId === pair.id);
+                  const isKr = pair.country === 'kr';
+
+                  return (
+                    <div key={pair.id}>
+                      {/* 한국/미국 구분선 */}
+                      {idx === 0 && (
+                        <div className="flex items-center gap-2 mb-2 px-2">
+                          <span className="text-xs text-gray-500 font-medium">한국 ETF</span>
+                          <div className="flex-1 h-px bg-gray-700"></div>
+                        </div>
+                      )}
+                      {idx === 2 && (
+                        <div className="flex items-center gap-2 mb-2 mt-4 px-2">
+                          <span className="text-xs text-gray-500 font-medium">미국 ETF</span>
+                          <div className="flex-1 h-px bg-gray-700"></div>
+                        </div>
+                      )}
+
+                      {/* 메인 전략 행 */}
+                      <div className="grid grid-cols-[48px_1fr_40px_1fr] gap-2 items-center bg-gray-800/50 rounded-xl px-2 py-3 hover:bg-gray-800/80 transition-colors">
+                        {/* 국기 */}
+                        <div className="flex justify-center">
+                          <span className="text-2xl">{isKr ? '🇰🇷' : '🇺🇸'}</span>
+                        </div>
+
+                        {/* 월초 ETF */}
+                        <div className="bg-blue-500/20 border border-blue-500/30 rounded-lg px-3 py-2.5 text-center min-h-[68px] flex flex-col items-center justify-center">
+                          <p className="text-white font-semibold text-sm leading-snug">{pair.early.name}</p>
+                          <span className="inline-block mt-1 text-xs font-bold text-blue-300 bg-blue-500/30 px-2 py-0.5 rounded-full">
+                            연 {pair.early.yieldRate}%
+                          </span>
+                        </div>
+
+                        {/* 화살표 */}
+                        <div className="flex justify-center">
+                          <span className="text-yellow-400 text-2xl font-bold">⇄</span>
+                        </div>
+
+                        {/* 월중순 ETF */}
+                        <div className="bg-emerald-500/20 border border-emerald-500/30 rounded-lg px-3 py-2.5 text-center min-h-[68px] flex flex-col items-center justify-center">
+                          <p className="text-white font-semibold text-sm leading-snug">{pair.mid.name}</p>
+                          <span className="inline-block mt-1 text-xs font-bold text-emerald-300 bg-emerald-500/30 px-2 py-0.5 rounded-full">
+                            연 {pair.mid.yieldRate}%
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* AI 대안 ETF */}
+                      {showAlternatives && alt && (
+                        <div className="grid grid-cols-[48px_1fr_40px_1fr] gap-2 items-center mt-1 px-2 animate-in fade-in slide-in-from-top-2 duration-300">
+                          <div className="flex justify-center">
+                            <Sparkles className="w-4 h-4 text-purple-400" />
+                          </div>
+
+                          <div className="bg-purple-500/20 border border-purple-500/40 rounded-lg px-3 py-2 text-center">
+                            <p className="text-purple-300 text-[10px] font-medium mb-0.5">AI 추천 대안</p>
+                            <p className="text-white font-medium text-xs leading-snug">{alt.earlyAlt.name}</p>
+                            <p className="text-purple-300 text-[10px] mt-0.5">{alt.earlyAlt.yield}</p>
+                          </div>
+
+                          <div className="flex justify-center">
+                            <span className="text-purple-400 text-lg">⇄</span>
+                          </div>
+
+                          <div className="bg-purple-500/20 border border-purple-500/40 rounded-lg px-3 py-2 text-center">
+                            <p className="text-purple-300 text-[10px] font-medium mb-0.5">AI 추천 대안</p>
+                            <p className="text-white font-medium text-xs leading-snug">{alt.midAlt.name}</p>
+                            <p className="text-purple-300 text-[10px] mt-0.5">{alt.midAlt.yield}</p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* AI 대안 버튼 */}
+              <div className="mt-6 pt-4 border-t border-gray-700 text-center">
+                <div className="flex items-center justify-center gap-2 flex-wrap">
+                  <button
+                    onClick={() => {
+                      if (showAlternatives) {
+                        setShowAlternatives(false);
+                      } else {
+                        fetchAlternatives();
+                      }
+                    }}
+                    disabled={altLoading}
+                    className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 text-white text-sm font-bold rounded-full hover:from-purple-500 hover:to-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-purple-500/25"
+                  >
+                    {altLoading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        AI 분석 중...
+                      </>
+                    ) : showAlternatives ? (
+                      <>
+                        <RefreshCw className="w-4 h-4" />
+                        대안 숨기기
+                      </>
+                    ) : strategyAlternatives.length > 0 && altCachedAt ? (
+                      <>
+                        <Sparkles className="w-4 h-4" />
+                        AI 대안 보기
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-4 h-4" />
+                        각 종목별 AI 대안 보기
+                      </>
+                    )}
+                  </button>
+
+                  {/* 새로고침 버튼 (캐시가 있을 때만 표시) */}
+                  {showAlternatives && altCachedAt && (
+                    <button
+                      onClick={() => fetchAlternatives(true)}
+                      disabled={altLoading}
+                      className="inline-flex items-center gap-1.5 px-3 py-2.5 bg-gray-700 text-gray-300 text-xs font-medium rounded-full hover:bg-gray-600 disabled:opacity-50 transition-colors"
+                      title="새로 분석하기"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      새로고침
+                    </button>
+                  )}
+                </div>
+
+                {/* 캐시 상태 표시 */}
+                {altCachedAt && showAlternatives && (
+                  <p className="text-purple-400 text-xs mt-2 flex items-center justify-center gap-1">
+                    <Clock className="w-3 h-3" />
+                    {formatCachedTime(altCachedAt)} 분석됨
+                  </p>
+                )}
+
+                {altError && (
+                  <p className="text-red-400 text-xs mt-2">{altError}</p>
+                )}
+                <p className="text-gray-500 text-xs mt-3">
+                  * 예시이며, 시장상황에 따라 달라질 수 있습니다
+                </p>
+              </div>
+            </div>
+
+            {/* 월배당 계산기 */}
+            <div className="bg-white rounded-2xl border border-gray-200 p-6">
+              <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
+                <Calculator className="w-5 h-5 text-blue-600" />
+                월배당 계산기
+              </h2>
+
+              <div className="mb-5">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-sm font-semibold text-gray-600">총 투자금액</label>
+                  <span className="text-lg font-bold text-gray-900">{calcAmount.toLocaleString()}만원</span>
+                </div>
+                <input
+                  type="range"
+                  min={100}
+                  max={50000}
+                  step={100}
+                  value={calcAmount}
+                  onChange={(e) => setCalcAmount(Number(e.target.value))}
+                  className="w-full h-2 bg-gray-200 rounded-full appearance-none cursor-pointer accent-blue-600"
+                />
+                <div className="flex justify-between text-xs text-gray-400 mt-1">
+                  <span>100만원</span>
+                  <span>5억원</span>
+                </div>
+              </div>
+
+              {/* 요약 카드 */}
+              <div className="grid grid-cols-2 gap-3 mb-5">
+                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-center">
+                  <p className="text-xs text-blue-600 font-medium mb-1">예상 월배당 합계</p>
+                  <p className="text-2xl font-extrabold text-blue-700">{fmt만(totalMonthlyDiv)}</p>
+                </div>
+                <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-center">
+                  <p className="text-xs text-emerald-600 font-medium mb-1">예상 연배당 합계</p>
+                  <p className="text-2xl font-extrabold text-emerald-700">{fmt만(totalMonthlyDiv * 12)}</p>
+                </div>
+              </div>
+
+              {/* 조합별 상세 */}
+              <div className="space-y-2">
+                <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">조합별 예상 월배당</p>
+                {monthlyDividends.map((d) => (
+                  <div key={d.id} className="flex items-center gap-3 bg-gray-50 rounded-lg px-3 py-2.5">
+                    <span className="text-lg shrink-0">{d.country === 'kr' ? '🇰🇷' : '🇺🇸'}</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs text-gray-600 truncate">
+                        {d.early.name} + {d.mid.name}
+                      </p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className="text-sm font-bold text-gray-900">{fmt만(d.totalMonthly)}</p>
+                      <p className="text-xs text-gray-400">투자금 {fmt만(d.investAmount)}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <p className="text-xs text-gray-400 mt-4 text-center">
+                * 예상 분배율 기준 계산이며, 실제 배당금은 다를 수 있습니다
+              </p>
+            </div>
+
+            {/* AI 추천 */}
+            <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-2xl border border-purple-200 p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                    <Sparkles className="w-5 h-5 text-purple-600" />
+                    AI 대체 전략 추천
+                  </h2>
+                  {aiCachedAt && aiRecommendations.length > 0 && (
+                    <p className="text-xs text-purple-500 mt-1 flex items-center gap-1">
+                      <Clock className="w-3 h-3" />
+                      {formatCachedTime(aiCachedAt)} 분석됨
+                    </p>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  {aiRecommendations.length > 0 && aiCachedAt && (
+                    <button
+                      onClick={() => fetchAiRecommend(true)}
+                      disabled={aiLoading}
+                      className="inline-flex items-center gap-1.5 px-3 py-2 bg-purple-100 text-purple-700 text-xs font-medium rounded-lg hover:bg-purple-200 disabled:opacity-50 transition-colors"
+                      title="새로 분석하기"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                  <button
+                    onClick={() => fetchAiRecommend()}
+                    disabled={aiLoading}
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-purple-600 text-white text-sm font-semibold rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {aiLoading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        분석 중...
+                      </>
+                    ) : aiRecommendations.length > 0 ? (
+                      <>
+                        <Sparkles className="w-4 h-4" />
+                        추천 보기
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-4 h-4" />
+                        AI 추천 받기
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {aiError && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700 mb-4">
+                  {aiError}
+                </div>
+              )}
+
+              {aiRecommendations.length === 0 && !aiLoading && !aiError && (
+                <div className="text-center py-8">
+                  <Sparkles className="w-12 h-12 text-purple-300 mx-auto mb-3" />
+                  <p className="text-gray-500 text-sm">
+                    메인 전략 외에 다른 ETF 조합이 궁금하시면<br />
+                    <strong>AI 추천 받기</strong> 버튼을 클릭하세요
+                  </p>
+                </div>
+              )}
+
+              {aiRecommendations.length > 0 && (
+                <div className="space-y-4">
+                  {aiRecommendations.map((rec) => (
+                    <div key={rec.id} className="bg-white rounded-xl border border-purple-100 p-4">
+                      <div className="flex items-center gap-2 mb-3">
+                        <span className="text-lg">{rec.country === 'kr' ? '🇰🇷' : '🇺🇸'}</span>
+                        <span className="text-xs font-bold text-purple-600 bg-purple-100 px-2 py-0.5 rounded-full">
+                          대체 전략 #{rec.id}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3 mb-3">
+                        <div className="bg-blue-50 rounded-lg p-3">
+                          <p className="text-xs text-blue-600 font-semibold mb-1">월초 배당</p>
+                          <p className="text-sm font-bold text-gray-900">{rec.early.name}</p>
+                          <p className="text-xs text-gray-500">{rec.early.code} · {rec.early.yield}</p>
+                        </div>
+                        <div className="bg-emerald-50 rounded-lg p-3">
+                          <p className="text-xs text-emerald-600 font-semibold mb-1">월중순 배당</p>
+                          <p className="text-sm font-bold text-gray-900">{rec.mid.name}</p>
+                          <p className="text-xs text-gray-500">{rec.mid.code} · {rec.mid.yield}</p>
+                        </div>
+                      </div>
+
+                      <div className="text-sm space-y-1">
+                        <p className="text-gray-700">
+                          <span className="font-semibold text-green-600">✓ 추천 이유:</span> {rec.reason}
+                        </p>
+                        <p className="text-gray-600">
+                          <span className="font-semibold text-amber-600">⚠ 주의점:</span> {rec.risk}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+
+                  {aiSummary && (
+                    <div className="bg-purple-100 rounded-lg p-4">
+                      <p className="text-sm text-purple-900">
+                        <span className="font-bold">💡 종합 의견:</span> {aiSummary}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
 
             {/* 핵심 원리 카드 */}
             <div className="bg-white rounded-2xl border border-gray-200 p-6">
@@ -324,96 +863,225 @@ export default function TwoWeeksPage() {
           </div>
         )}
 
-        {/* ── 복리 시뮬레이터 ── */}
-        {tab === 'sim' && (
+        {/* ── 백테스팅 ── */}
+        {tab === 'backtest' && (
           <div className="space-y-6">
 
             {/* 입력 패널 */}
             <div className="bg-white rounded-2xl border border-gray-200 p-6">
-              <h2 className="text-base font-bold text-gray-900 mb-5 flex items-center gap-2">
-                <RefreshCw className="w-4 h-4 text-emerald-600" />
-                시뮬레이션 설정
-              </h2>
-
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-5">
-                <SimInput label="총 투자금액" unit="만원" value={principal} min={100} max={100000} step={100}
-                  onChange={setPrincipal} />
-                <SimInput label="월(초) 그룹 비율" unit="%" value={earlyRatio} min={10} max={90} step={5}
-                  onChange={setEarlyRatio} hint={`월(중순): ${100 - earlyRatio}%`} />
-                <SimInput label="월(초) 연 분배율" unit="%" value={earlyYield} min={1} max={30} step={0.5}
-                  onChange={setEarlyYield} />
-                <SimInput label="월(중순) 연 분배율" unit="%" value={midYield} min={1} max={30} step={0.5}
-                  onChange={setMidYield} />
-                <SimInput label="재투자율" unit="%" value={reinvest} min={0} max={100} step={10}
-                  onChange={setReinvest} hint="0%=전액현금, 100%=전액재투자" />
-                <SimInput label="시뮬레이션 기간" unit="개월" value={simMonths} min={12} max={120} step={12}
-                  onChange={setSimMonths} />
+              <div className="flex items-center justify-between mb-5">
+                <h2 className="text-base font-bold text-gray-900 flex items-center gap-2">
+                  <BarChart3 className="w-5 h-5 text-emerald-600" />
+                  백테스팅 설정
+                </h2>
+                <button
+                  onClick={runBacktest}
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white text-sm font-semibold rounded-lg hover:bg-emerald-700 transition-colors"
+                >
+                  <Play className="w-4 h-4" />
+                  시뮬레이션 실행
+                </button>
               </div>
-            </div>
 
-            {/* 요약 카드 */}
-            {last && (
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                {[
-                  { label: '최종 총자산', value: fmt만(last.총자산), color: 'text-emerald-700', bg: 'bg-emerald-50 border-emerald-200' },
-                  { label: '누적 분배금', value: fmt만(last.누적분배금), color: 'text-blue-700', bg: 'bg-blue-50 border-blue-200' },
-                  { label: '월 분배금 (마지막달)', value: fmt만(last.월분배금합계), color: 'text-purple-700', bg: 'bg-purple-50 border-purple-200' },
-                  { label: '총 수익률', value: `+${(((last.총자산 + last.누적분배금 * (1 - reinvest / 100)) / principal - 1) * 100).toFixed(1)}%`, color: 'text-orange-700', bg: 'bg-orange-50 border-orange-200' },
-                ].map(c => (
-                  <div key={c.label} className={`rounded-xl border p-4 ${c.bg}`}>
-                    <p className="text-xs text-gray-500 mb-1">{c.label}</p>
-                    <p className={`text-xl font-extrabold ${c.color}`}>{c.value}</p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+                <SimInput label="초기 투자금" unit="만원" value={btPrincipal} min={0} max={100000} step={100}
+                  onChange={setBtPrincipal} />
+                <SimInput label="월 납입금" unit="만원" value={btMonthlyDeposit} min={0} max={1000} step={10}
+                  onChange={setBtMonthlyDeposit} hint="매월 추가 납입" />
+                <SimInput label="월초 ETF 비율" unit="%" value={btEarlyRatio} min={10} max={90} step={5}
+                  onChange={setBtEarlyRatio} hint={`월중순: ${100 - btEarlyRatio}%`} />
+                <SimInput label="투자 기간" unit="개월" value={btMonths} min={12} max={240} step={12}
+                  onChange={setBtMonths} />
+                <SimInput label="월초 연 분배율" unit="%" value={btEarlyYield} min={1} max={30} step={1}
+                  onChange={setBtEarlyYield} />
+                <SimInput label="월중순 연 분배율" unit="%" value={btMidYield} min={1} max={30} step={1}
+                  onChange={setBtMidYield} />
+                <SimInput label="재투자율" unit="%" value={btReinvest} min={0} max={100} step={10}
+                  onChange={setBtReinvest} hint="0%=전액현금" />
+                <SimInput label="월초 ETF 연성장률" unit="%" value={btEarlyGrowth} min={-10} max={20} step={1}
+                  onChange={setBtEarlyGrowth} hint="주가 상승률" />
+                <SimInput label="월중순 ETF 연성장률" unit="%" value={btMidGrowth} min={-10} max={20} step={1}
+                  onChange={setBtMidGrowth} hint="주가 상승률" />
+              </div>
+
+              {/* 세금 옵션 */}
+              <div className="mt-4 pt-4 border-t border-gray-100">
+                <div className="flex items-center gap-4">
+                  <span className="text-sm font-medium text-gray-600">배당소득세:</span>
+                  <div className="flex gap-2">
+                    {[
+                      { label: '비과세 (국내ETF)', value: 0 },
+                      { label: '15.4% (미국ETF)', value: 15.4 },
+                    ].map(opt => (
+                      <button
+                        key={opt.value}
+                        onClick={() => setBtTaxRate(opt.value)}
+                        className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                          btTaxRate === opt.value
+                            ? 'bg-emerald-100 text-emerald-700 border border-emerald-300'
+                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
                   </div>
-                ))}
+                </div>
               </div>
+            </div>
+
+            {/* 결과 요약 카드 */}
+            {btResult && (
+              <>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                  <div className="rounded-xl border p-4 bg-emerald-50 border-emerald-200">
+                    <p className="text-xs text-gray-500 mb-1">최종 평가금액</p>
+                    <p className="text-xl font-extrabold text-emerald-700">{fmt원(btResult.finalValue)}</p>
+                    <p className="text-xs text-emerald-600 mt-1">+{btResult.totalReturn}%</p>
+                  </div>
+                  <div className="rounded-xl border p-4 bg-blue-50 border-blue-200">
+                    <p className="text-xs text-gray-500 mb-1">누적 배당금</p>
+                    <p className="text-xl font-extrabold text-blue-700">{fmt원(btResult.totalDividend)}</p>
+                  </div>
+                  <div className="rounded-xl border p-4 bg-purple-50 border-purple-200">
+                    <p className="text-xs text-gray-500 mb-1">마지막달 월배당</p>
+                    <p className="text-xl font-extrabold text-purple-700">{fmt원(btResult.lastMonthDividend)}</p>
+                    <p className="text-xs text-purple-600 mt-1">연 {btResult.dividendYieldOnCost}% (원금대비)</p>
+                  </div>
+                  <div className="rounded-xl border p-4 bg-orange-50 border-orange-200">
+                    <p className="text-xs text-gray-500 mb-1">연평균 수익률 (CAGR)</p>
+                    <p className="text-xl font-extrabold text-orange-700">+{btResult.cagr}%</p>
+                    <p className="text-xs text-orange-600 mt-1">MDD: -{btResult.maxDrawdown}%</p>
+                  </div>
+                </div>
+
+                {/* 지수 비교 카드 */}
+                <div className="bg-gradient-to-r from-gray-50 to-slate-50 rounded-2xl border border-gray-200 p-5">
+                  <h3 className="text-sm font-bold text-gray-700 mb-4 flex items-center gap-2">
+                    <TrendingUp className="w-4 h-4 text-gray-600" />
+                    지수 비교 (동일 금액 투자 시)
+                  </h3>
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="bg-white rounded-xl border border-emerald-200 p-4 text-center">
+                      <p className="text-xs text-gray-500 mb-1">2WEEKS 전략</p>
+                      <p className="text-lg font-extrabold text-emerald-700">{fmt원(btResult.finalValue)}</p>
+                      <p className={`text-sm font-bold mt-1 ${btResult.totalReturn >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                        {btResult.totalReturn >= 0 ? '+' : ''}{btResult.totalReturn}%
+                      </p>
+                    </div>
+                    <div className="bg-white rounded-xl border border-blue-200 p-4 text-center">
+                      <p className="text-xs text-gray-500 mb-1">S&P 500</p>
+                      <p className="text-lg font-extrabold text-blue-700">{fmt원(btResult.sp500FinalValue)}</p>
+                      <p className={`text-sm font-bold mt-1 ${btResult.sp500Return >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
+                        {btResult.sp500Return >= 0 ? '+' : ''}{btResult.sp500Return}%
+                      </p>
+                    </div>
+                    <div className="bg-white rounded-xl border border-purple-200 p-4 text-center">
+                      <p className="text-xs text-gray-500 mb-1">나스닥 100</p>
+                      <p className="text-lg font-extrabold text-purple-700">{fmt원(btResult.nasdaq100FinalValue)}</p>
+                      <p className={`text-sm font-bold mt-1 ${btResult.nasdaq100Return >= 0 ? 'text-purple-600' : 'text-red-600'}`}>
+                        {btResult.nasdaq100Return >= 0 ? '+' : ''}{btResult.nasdaq100Return}%
+                      </p>
+                    </div>
+                  </div>
+                  <p className="text-xs text-gray-400 mt-3 text-center">
+                    * 지수 수익률: S&P 500 연 10.5%, 나스닥 100 연 14% (역사적 평균 기준)
+                  </p>
+                </div>
+
+                {/* 자산 성장 차트 */}
+                <div className="bg-white rounded-2xl border border-gray-200 p-5">
+                  <h3 className="text-sm font-bold text-gray-700 mb-4">자산 성장 추이 (지수 비교)</h3>
+                  <ResponsiveContainer width="100%" height={320}>
+                    <ComposedChart data={btResult.snapshots} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="gTotal" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#059669" stopOpacity={0.3} />
+                          <stop offset="95%" stopColor="#059669" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                      <XAxis
+                        dataKey="month"
+                        tickFormatter={v => v % 12 === 0 ? `${v/12}년` : ''}
+                        tick={{ fontSize: 11 }}
+                      />
+                      <YAxis tickFormatter={v => fmt원(v)} tick={{ fontSize: 10 }} width={80} />
+                      <Tooltip
+                        formatter={(value: number, name: string) => [fmt원(value), name]}
+                        labelFormatter={(label) => `${label}개월차`}
+                      />
+                      <Legend wrapperStyle={{ fontSize: 12 }} />
+                      <Area type="monotone" dataKey="totalValue" stroke="#059669" strokeWidth={2.5} fill="url(#gTotal)" name="2WEEKS 전략" />
+                      <Line type="monotone" dataKey="cumDeposit" stroke="#f97316" strokeWidth={2} dot={false} name="누적 납입금" />
+                      <Line type="monotone" dataKey="sp500Value" stroke="#3b82f6" strokeWidth={2} dot={false} strokeDasharray="5 5" name="S&P 500" />
+                      <Line type="monotone" dataKey="nasdaq100Value" stroke="#8b5cf6" strokeWidth={2} dot={false} strokeDasharray="5 5" name="나스닥 100" />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </div>
+
+                {/* 월별 배당금 차트 */}
+                <div className="bg-white rounded-2xl border border-gray-200 p-5">
+                  <h3 className="text-sm font-bold text-gray-700 mb-4">월별 배당금 추이</h3>
+                  <ResponsiveContainer width="100%" height={250}>
+                    <BarChart
+                      data={btResult.snapshots.filter((_, i) => i % Math.max(1, Math.floor(btMonths / 30)) === 0)}
+                      margin={{ top: 5, right: 10, left: 0, bottom: 0 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                      <XAxis
+                        dataKey="month"
+                        tickFormatter={v => v % 12 === 0 ? `${v/12}Y` : `${v}M`}
+                        tick={{ fontSize: 11 }}
+                      />
+                      <YAxis tickFormatter={v => fmt원(v)} tick={{ fontSize: 10 }} width={70} />
+                      <Tooltip
+                        formatter={(value: number, name: string) => [fmt원(value), name]}
+                        labelFormatter={(label) => `${label}개월차`}
+                      />
+                      <Legend wrapperStyle={{ fontSize: 12 }} />
+                      <Bar dataKey="earlyDividend" stackId="a" fill="#3b82f6" name="월초 배당" radius={[0, 0, 0, 0]} />
+                      <Bar dataKey="midDividend" stackId="a" fill="#059669" name="월중순 배당" radius={[3, 3, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+
+                {/* 상세 통계 */}
+                <div className="bg-white rounded-2xl border border-gray-200 p-5">
+                  <h3 className="text-sm font-bold text-gray-700 mb-4">상세 통계</h3>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
+                    <div>
+                      <p className="text-gray-500">초기 투자금</p>
+                      <p className="font-bold text-gray-900">{fmt원(btPrincipal * 10000)}</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-500">월 납입금</p>
+                      <p className="font-bold text-gray-900">{fmt원(btMonthlyDeposit * 10000)}</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-500">총 납입금</p>
+                      <p className="font-bold text-blue-700">{fmt원(btResult.totalDeposit)}</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-500">투자 기간</p>
+                      <p className="font-bold text-gray-900">{btMonths}개월 ({(btMonths/12).toFixed(1)}년)</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-500">평균 월배당</p>
+                      <p className="font-bold text-gray-900">{fmt원(btResult.avgMonthlyDividend)}</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-500">순수익 (평가금 - 납입금)</p>
+                      <p className="font-bold text-emerald-600">+{fmt원(btResult.finalValue - btResult.totalDeposit)}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <p className="text-xs text-gray-400 text-center">
+                  * 시뮬레이션 결과이며, 실제 투자 성과와 다를 수 있습니다. 투자 전 충분한 검토가 필요합니다.
+                </p>
+              </>
             )}
-
-            {/* 자산 성장 차트 */}
-            <div className="bg-white rounded-2xl border border-gray-200 p-5">
-              <h3 className="text-sm font-bold text-gray-700 mb-4">자산 성장 추이</h3>
-              <ResponsiveContainer width="100%" height={280}>
-                <AreaChart data={simData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="gAsset" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#059669" stopOpacity={0.2} />
-                      <stop offset="95%" stopColor="#059669" stopOpacity={0} />
-                    </linearGradient>
-                    <linearGradient id="gDiv" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.2} />
-                      <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                  <XAxis dataKey="month" tickFormatter={v => `${v}M`} tick={{ fontSize: 11 }} />
-                  <YAxis tickFormatter={v => fmt만(v)} tick={{ fontSize: 11 }} width={70} />
-                  <Tooltip content={<SimTooltip />} />
-                  <Legend wrapperStyle={{ fontSize: 12 }} />
-                  <Area type="monotone" dataKey="총자산" stroke="#059669" strokeWidth={2} fill="url(#gAsset)" name="총자산" />
-                  <Area type="monotone" dataKey="누적분배금" stroke="#3b82f6" strokeWidth={2} fill="url(#gDiv)" name="누적분배금" />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-
-            {/* 월별 분배금 막대차트 */}
-            <div className="bg-white rounded-2xl border border-gray-200 p-5">
-              <h3 className="text-sm font-bold text-gray-700 mb-4">월별 분배금 (월초 + 월중순)</h3>
-              <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={simData.filter((_, i) => i % Math.max(1, Math.floor(simMonths / 24)) === 0)}
-                  margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                  <XAxis dataKey="month" tickFormatter={v => `${v}M`} tick={{ fontSize: 11 }} />
-                  <YAxis tickFormatter={v => fmt만(v)} tick={{ fontSize: 11 }} width={70} />
-                  <Tooltip content={<SimTooltip />} />
-                  <Legend wrapperStyle={{ fontSize: 12 }} />
-                  <Bar dataKey="월초분배금" stackId="a" fill="#3b82f6" name="월초 분배금" radius={[0, 0, 0, 0]} />
-                  <Bar dataKey="월중순분배금" stackId="a" fill="#059669" name="월중순 분배금" radius={[3, 3, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-
-            <p className="text-xs text-gray-400 text-center">
-              * 세금, 거래비용 미반영. 분배율은 과거 실적 기준이며 실제 수익과 다를 수 있습니다.
-            </p>
           </div>
         )}
       </div>
