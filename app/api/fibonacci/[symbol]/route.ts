@@ -143,12 +143,13 @@ export async function GET(
   const range = yearHigh - yearLow;
   const fibLevels = {
     '0': yearLow,
+    '0.14': yearLow + range * 0.14,
     '0.236': yearLow + range * 0.236,
     '0.382': yearLow + range * 0.382,
     '0.5': yearLow + range * 0.5,
     '0.618': yearLow + range * 0.618,
-    '0.786': yearLow + range * 0.786,
-    '0.886': yearLow + range * 0.886,
+    '0.764': yearLow + range * 0.764,
+    '0.854': yearLow + range * 0.854,
     '1': yearHigh,
   };
 

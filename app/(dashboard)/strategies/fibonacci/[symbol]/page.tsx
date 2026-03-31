@@ -17,12 +17,13 @@ interface PriceData {
 
 interface FibLevels {
   '0': number;
+  '0.14': number;
   '0.236': number;
   '0.382': number;
   '0.5': number;
   '0.618': number;
-  '0.786': number;
-  '0.886': number;
+  '0.764': number;
+  '0.854': number;
   '1': number;
 }
 
@@ -196,7 +197,7 @@ export default function FibonacciDetailPage({
             <div className="bg-white rounded-2xl border border-gray-200 p-6 mt-6">
               <h2 className="font-bold text-gray-900 mb-4">피보나치 되돌림 레벨</h2>
               <div className="space-y-3">
-                {(['0', '0.236', '0.382', '0.5', '0.618', '0.786', '0.886', '1'] as const).map((level) => {
+                {(['0', '0.14', '0.236', '0.382', '0.5', '0.618', '0.764', '0.854', '1'] as const).map((level) => {
                   const price = data.fibLevels[level];
                   const isNear = nearestLevel && level === String(nearestLevel);
                   const isCurrent = Math.abs(data.currentPrice - price) / price < 0.01;

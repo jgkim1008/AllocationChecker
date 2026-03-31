@@ -1,6 +1,6 @@
 import type { FibonacciLevel } from '@/types/fibonacci';
 
-export const FIBONACCI_LEVELS: FibonacciLevel[] = [0.236, 0.382, 0.5, 0.618, 0.786, 0.886];
+export const FIBONACCI_LEVELS: FibonacciLevel[] = [0, 0.14, 0.236, 0.382, 0.5, 0.618, 0.764, 0.854, 1];
 
 /**
  * 현재가가 52주 고저가 범위에서 어디에 위치하는지 0~1 사이 값으로 계산
@@ -59,6 +59,10 @@ export function calculatePriceAtLevel(
  */
 export function getFibonacciInterpretation(level: FibonacciLevel): string {
   switch (level) {
+    case 0:
+      return '52주 저가 (바닥)';
+    case 0.14:
+      return '극초기 반등 구간';
     case 0.236:
       return '얕은 되돌림 (강한 추세)';
     case 0.382:
@@ -67,9 +71,11 @@ export function getFibonacciInterpretation(level: FibonacciLevel): string {
       return '50% 되돌림 (중요 지지/저항)';
     case 0.618:
       return '황금 비율 (강한 지지)';
-    case 0.786:
+    case 0.764:
       return '깊은 되돌림 (고점 근처)';
-    case 0.886:
+    case 0.854:
       return '고점 근처 (주의)';
+    case 1:
+      return '52주 고가 (천장)';
   }
 }

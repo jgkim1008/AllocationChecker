@@ -744,11 +744,13 @@ export async function GET(
     const range = yearHigh - yearLow;
     const fibLevels = [
       { level: '0', pct: 0 },
+      { level: '14', pct: 0.14 },
       { level: '23.6', pct: 0.236 },
       { level: '38.2', pct: 0.382 },
       { level: '50', pct: 0.5 },
       { level: '61.8', pct: 0.618 },
-      { level: '78.6', pct: 0.786 },
+      { level: '76.4', pct: 0.764 },
+      { level: '85.4', pct: 0.854 },
       { level: '100', pct: 1 },
     ];
 

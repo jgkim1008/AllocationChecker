@@ -22,11 +22,15 @@ function formatPrice(price: number, market: 'US' | 'KR'): string {
 }
 
 const LEVEL_COLOR: Record<number, { line: string; badge: string; label: string }> = {
+  0:     { line: '#ef4444', badge: 'bg-red-100 text-red-700',     label: '0%' },
+  0.14:  { line: '#f97316', badge: 'bg-orange-100 text-orange-700', label: '14%' },
   0.236: { line: '#06b6d4', badge: 'bg-cyan-100 text-cyan-700',   label: '23.6%' },
   0.382: { line: '#3b82f6', badge: 'bg-blue-100 text-blue-700',   label: '38.2%' },
   0.5:   { line: '#8b5cf6', badge: 'bg-purple-100 text-purple-700', label: '50%' },
   0.618: { line: '#16a34a', badge: 'bg-green-100 text-green-700', label: '61.8%' },
-  0.886: { line: '#f97316', badge: 'bg-orange-100 text-orange-700', label: '88.6%' },
+  0.764: { line: '#14b8a6', badge: 'bg-teal-100 text-teal-700',   label: '76.4%' },
+  0.854: { line: '#eab308', badge: 'bg-yellow-100 text-yellow-700', label: '85.4%' },
+  1:     { line: '#dc2626', badge: 'bg-rose-100 text-rose-700',   label: '100%' },
 };
 
 

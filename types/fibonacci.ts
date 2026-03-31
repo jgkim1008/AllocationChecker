@@ -1,4 +1,4 @@
-export type FibonacciLevel = 0.236 | 0.382 | 0.5 | 0.618 | 0.786 | 0.886;
+export type FibonacciLevel = 0 | 0.14 | 0.236 | 0.382 | 0.5 | 0.618 | 0.764 | 0.854 | 1;
 
 export interface FibonacciStock {
   symbol: string;

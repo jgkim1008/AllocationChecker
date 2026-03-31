@@ -117,7 +117,7 @@ export const STRATEGY_REGISTRY: StrategyEntry[] = [
       if (yearHigh === yearLow) return '[피보나치] 계산 불가 (가격 변동 없음)';
 
       const position = (currentPrice - yearLow) / (yearHigh - yearLow);
-      const FIB_LEVELS = [0.236, 0.382, 0.5, 0.618, 0.786];
+      const FIB_LEVELS = [0, 0.14, 0.236, 0.382, 0.5, 0.618, 0.764, 0.854, 1];
       let nearest = FIB_LEVELS[0], minDist = Infinity;
       for (const lvl of FIB_LEVELS) {
         const d = Math.abs(position - lvl);

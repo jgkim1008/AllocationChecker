@@ -126,8 +126,8 @@ export default function FibonacciPage() {
               <p className="text-xs text-gray-700 mt-2 font-medium">황금 비율</p>
               <p className="text-[10px] text-gray-500 mt-0.5">강한 지지</p>
             </div>
-            <div className="bg-orange-50 rounded-lg p-3 border border-orange-100">
-              <FibonacciLevelBadge level={0.886} />
+            <div className="bg-yellow-50 rounded-lg p-3 border border-yellow-100">
+              <FibonacciLevelBadge level={0.854} />
               <p className="text-xs text-gray-700 mt-2 font-medium">고점 근처</p>
               <p className="text-[10px] text-gray-500 mt-0.5">주의 필요</p>
             </div>
@@ -165,11 +165,15 @@ export default function FibonacciPage() {
               className="text-xs border border-gray-200 rounded-lg px-3 py-1.5 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
             >
               <option value="all">모든 레벨</option>
+              <option value="0">0%</option>
+              <option value="0.14">14%</option>
               <option value="0.236">23.6%</option>
               <option value="0.382">38.2%</option>
               <option value="0.5">50%</option>
               <option value="0.618">61.8%</option>
-              <option value="0.886">88.6%</option>
+              <option value="0.764">76.4%</option>
+              <option value="0.854">85.4%</option>
+              <option value="1">100%</option>
             </select>
           </div>
 

@@ -13,12 +13,13 @@ interface PriceData {
 
 interface FibLevels {
   '0': number;
+  '0.14': number;
   '0.236': number;
   '0.382': number;
   '0.5': number;
   '0.618': number;
-  '0.786': number;
-  '0.886': number;
+  '0.764': number;
+  '0.854': number;
   '1': number;
 }
 
@@ -32,23 +33,25 @@ interface FibonacciChartProps {
 
 const FIB_COLORS: Record<string, string> = {
   '0': '#ef4444',
-  '0.236': '#f97316',
+  '0.14': '#f97316',
+  '0.236': '#06b6d4',
   '0.382': '#3b82f6',
   '0.5': '#8b5cf6',
   '0.618': '#16a34a',
-  '0.786': '#14b8a6',
-  '0.886': '#f59e0b',
-  '1': '#22c55e',
+  '0.764': '#14b8a6',
+  '0.854': '#eab308',
+  '1': '#dc2626',
 };
 
 const FIB_LABELS: Record<string, string> = {
   '0': '0%',
+  '0.14': '14%',
   '0.236': '23.6%',
   '0.382': '38.2%',
   '0.5': '50%',
   '0.618': '61.8%',
-  '0.786': '78.6%',
-  '0.886': '88.6%',
+  '0.764': '76.4%',
+  '0.854': '85.4%',
   '1': '100%',
 };
 
@@ -164,7 +167,7 @@ export function FibonacciChart({
 
       {/* 피보나치 레벨 범례 */}
       <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2">
-        {(['0', '0.236', '0.382', '0.5', '0.618', '0.786', '0.886', '1'] as const).map((level) => (
+        {(['0', '0.14', '0.236', '0.382', '0.5', '0.618', '0.764', '0.854', '1'] as const).map((level) => (
           <div
             key={level}
             className={`flex items-center gap-2 px-3 py-2 rounded-lg ${
