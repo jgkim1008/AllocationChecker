@@ -13,27 +13,34 @@ import { issueTokenFromCode } from '@/lib/notifications/kakao';
  *    https://kauth.kakao.com/oauth/authorize?client_id={REST_API_KEY}&redirect_uri={REDIRECT_URI}&response_type=code&scope=talk_message
  * 5. 인증 완료되면 자동으로 이 endpoint로 리다이렉트 → Supabase에 토큰 저장
  */
+const REDIRECT_URI = 'https://allocation-checker-mu.vercel.app/api/auth/kakao/callback';
+
 export async function GET(request: NextRequest) {
-  const { searchParams, origin } = new URL(request.url);
+  const { searchParams } = new URL(request.url);
   const code  = searchParams.get('code');
   const error = searchParams.get('error');
 
+  // 디버그: env var 확인
+  const hasApiKey = !!process.env.KAKAO_REST_API_KEY;
+
   if (error) {
-    return NextResponse.json({ error: `카카오 인증 실패: ${error}` }, { status: 400 });
+    return NextResponse.json({ step: 'kakao_error', error }, { status: 400 });
   }
   if (!code) {
-    return NextResponse.json({ error: 'code 파라미터가 없습니다.' }, { status: 400 });
+    return NextResponse.json({ step: 'no_code', hasApiKey }, { status: 400 });
+  }
+  if (!hasApiKey) {
+    return NextResponse.json({ step: 'no_api_key', message: 'KAKAO_REST_API_KEY 환경변수가 없습니다.' }, { status: 500 });
   }
 
-  const redirectUri = `${origin}/api/auth/kakao/callback`;
-  const ok = await issueTokenFromCode(code, redirectUri);
+  const ok = await issueTokenFromCode(code, REDIRECT_URI);
 
   if (!ok) {
-    return NextResponse.json({ error: '토큰 발급 실패. 서버 로그를 확인해주세요.' }, { status: 500 });
+    return NextResponse.json({ step: 'token_issue_failed', message: '카카오 토큰 발급 실패' }, { status: 500 });
   }
 
   return NextResponse.json({
     success: true,
-    message: '카카오톡 알림이 활성화되었습니다. 피보나치 레벨 근접 시 자동으로 알림을 받게 됩니다.',
+    message: '카카오톡 알림 활성화 완료!',
   });
 }
