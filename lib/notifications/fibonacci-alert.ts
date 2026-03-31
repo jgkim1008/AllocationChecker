@@ -7,10 +7,6 @@ import { sendKakaoListTemplate } from './kakao';
 
 const ALERT_SYMBOLS = ['^GSPC', '^IXIC', '^KS11', '^KQ11', 'SOXL'];
 
-// 시장별 표시 순서 (앞 3개가 기본 노출)
-const US_CLOSE_ORDER  = ['^GSPC', '^IXIC', 'SOXL',  '^KS11', '^KQ11'];
-const KR_CLOSE_ORDER  = ['^KS11', '^KQ11', 'SOXL',  '^GSPC', '^IXIC'];
-
 const DISPLAY_NAME: Record<string, string> = {
   '^GSPC': 'S&P500',
   '^IXIC': 'NASDAQ',
@@ -96,31 +92,60 @@ async function fetchTargetStatuses(): Promise<SymbolStatus[]> {
   );
 }
 
+// 카테고리별 심볼 그룹
+const CATEGORY_GROUPS = {
+  US: ['^GSPC', '^IXIC'],     // 미국 나스닥/S&P
+  SOXL: ['SOXL'],             // SOXL
+  KR: ['^KS11', '^KQ11'],     // 한국 코스피/코스닥
+};
+
+const CATEGORY_LABELS = {
+  US: '🇺🇸 미국 지수',
+  SOXL: '🔥 SOXL',
+  KR: '🇰🇷 한국 지수',
+};
+
 /**
  * 마감 알림 발송 (US 또는 KR 마감)
- * 6개 심볼 전체 피보나치 현황을 카카오톡으로 전송
+ * 카테고리별로 3개 메시지로 나눠서 전송 (1000자 제한 대응)
  */
 export async function sendMarketCloseAlert(market: 'US' | 'KR'): Promise<void> {
-  const label = market === 'US' ? '🇺🇸 미국장 마감' : '🇰🇷 한국장 마감';
+  const marketLabel = market === 'US' ? '미국장 마감' : '한국장 마감';
   const today = new Date().toLocaleDateString('ko-KR', {
     month: '2-digit', day: '2-digit', timeZone: 'Asia/Seoul',
   }).replace('. ', '/').replace('.', '');
 
   const statuses = await fetchTargetStatuses();
   if (statuses.length === 0) {
-    console.log(`[FibonacciAlert] ${label} - 데이터 없음`);
+    console.log(`[FibonacciAlert] ${marketLabel} - 데이터 없음`);
     return;
   }
 
-  const nearCount = statuses.filter(s => s.distanceFromLevel < 5).length;
-  const alertSuffix = nearCount > 0
-    ? `  ⚠️ ${nearCount}개 레벨 근접`
-    : '  ✅ 여유 있음';
+  // 마감 시장에 따라 전송 순서 결정
+  const categoryOrder = market === 'US'
+    ? ['US', 'SOXL', 'KR'] as const
+    : ['KR', 'SOXL', 'US'] as const;
 
-  const headerTitle = `📊 피보나치 현황 [${label}] ${today}${alertSuffix}`;
-  const order = market === 'US' ? US_CLOSE_ORDER : KR_CLOSE_ORDER;
-  const items = buildListItems(statuses, order);
+  // 카테고리별로 메시지 전송
+  for (const category of categoryOrder) {
+    const symbols = CATEGORY_GROUPS[category];
+    const items = buildListItems(statuses, symbols);
 
-  await sendKakaoListTemplate(headerTitle, items);
+    if (items.length === 0) continue;
+
+    const nearCount = statuses
+      .filter(s => symbols.includes(s.symbol) && s.distanceFromLevel < 5)
+      .length;
+    const alertSuffix = nearCount > 0 ? ` ⚠️${nearCount}개 근접` : '';
+
+    const headerTitle = `📊 ${CATEGORY_LABELS[category]} [${today}]${alertSuffix}`;
+
+    await sendKakaoListTemplate(headerTitle, items);
+
+    // API rate limit 방지를 위한 짧은 딜레이
+    await new Promise(resolve => setTimeout(resolve, 500));
+  }
+
+  console.log(`[FibonacciAlert] ${marketLabel} 알림 발송 완료 (3개 메시지)`);
 }
 
