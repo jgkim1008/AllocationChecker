@@ -92,15 +92,13 @@ export async function sendKakaoNotification(title: string, description: string):
   }
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://allocation-checker-mu.vercel.app';
+  const link = { web_url: `${appUrl}/strategies/fibonacci`, mobile_web_url: `${appUrl}/strategies/fibonacci` };
   const template = JSON.stringify({
     object_type: 'feed',
     content: {
       title:       title.slice(0, 200),
       description: description.slice(0, 400),
-      link: {
-        web_url:        `${appUrl}/strategies/fibonacci`,
-        mobile_web_url: `${appUrl}/strategies/fibonacci`,
-      },
+      link,
     },
   });
 
@@ -125,6 +123,58 @@ export async function sendKakaoNotification(title: string, description: string):
   }
 
   console.log('[Kakao] 메시지 발송 성공');
+  return true;
+}
+
+/**
+ * 카카오톡 나에게 보내기 (list 템플릿 - 항목별 카드)
+ * items: 2~5개, 각 { title, description }
+ */
+export async function sendKakaoListTemplate(
+  headerTitle: string,
+  items: { title: string; description: string }[],
+): Promise<boolean> {
+  const token = await getValidAccessToken();
+  if (!token) {
+    console.warn('[Kakao] 유효한 액세스 토큰이 없습니다.');
+    return false;
+  }
+
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://allocation-checker-mu.vercel.app';
+  const link = { web_url: `${appUrl}/strategies/fibonacci`, mobile_web_url: `${appUrl}/strategies/fibonacci` };
+
+  const template = JSON.stringify({
+    object_type: 'list',
+    header_title: headerTitle.slice(0, 200),
+    header_link: link,
+    contents: items.slice(0, 5).map(item => ({
+      title:       item.title.slice(0, 200),
+      description: item.description.slice(0, 400),
+      link,
+    })),
+  });
+
+  const res = await fetch(KAKAO_SEND_URL, {
+    method: 'POST',
+    headers: {
+      Authorization:  `Bearer ${token}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: new URLSearchParams({ template_object: template }).toString(),
+  });
+
+  if (!res.ok) {
+    console.error('[Kakao] 리스트 메시지 발송 실패:', await res.text());
+    return false;
+  }
+
+  const json = await res.json();
+  if (json.result_code !== 0) {
+    console.error('[Kakao] 리스트 메시지 발송 오류:', json);
+    return false;
+  }
+
+  console.log('[Kakao] 리스트 메시지 발송 성공');
   return true;
 }
 

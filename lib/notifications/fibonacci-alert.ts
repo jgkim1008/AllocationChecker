@@ -3,17 +3,17 @@ import {
   findNearestFibonacciLevel,
 } from '@/lib/utils/fibonacci-calculator';
 import { createServiceClient } from '@/lib/supabase/server';
-import { sendKakaoNotification } from './kakao';
+import { sendKakaoListTemplate } from './kakao';
 
 const ALERT_SYMBOLS = ['^GSPC', '^IXIC', '^KS11', '^KQ11', '^N225', 'SOXL'];
 
 const DISPLAY_NAME: Record<string, string> = {
-  '^GSPC': 'S&P500  ',
-  '^IXIC': 'NASDAQ  ',
-  '^KS11': 'KOSPI   ',
-  '^KQ11': 'KOSDAQ  ',
-  '^N225': 'Nikkei  ',
-  'SOXL':  'SOXL    ',
+  '^GSPC': 'S&P500',
+  '^IXIC': 'NASDAQ',
+  '^KS11': 'KOSPI',
+  '^KQ11': 'KOSDAQ',
+  '^N225': 'Nikkei',
+  'SOXL':  'SOXL',
 };
 
 interface SymbolStatus {
@@ -38,16 +38,54 @@ function fmtPrice(price: number, market: string): string {
   return '$' + price.toFixed(2);
 }
 
-function buildDescription(statuses: SymbolStatus[]): string {
-  return statuses.map(s => {
-    const pos   = (s.fibonacciValue * 100).toFixed(1).padStart(5);
+function buildListItems(statuses: SymbolStatus[]): { title: string; description: string }[] {
+  const items: { title: string; description: string }[] = [];
+
+  // KOSPI + KOSDAQ를 한 아이템으로 합쳐서 5개 이내 맞춤
+  const ks11 = statuses.find(s => s.symbol === '^KS11');
+  const kq11 = statuses.find(s => s.symbol === '^KQ11');
+  const others = statuses.filter(s => s.symbol !== '^KS11' && s.symbol !== '^KQ11');
+
+  for (const s of others) {
+    const pos   = (s.fibonacciValue * 100).toFixed(1);
     const lvl   = (s.nearestLevel   * 100).toFixed(1);
     const dist  = s.distanceFromLevel.toFixed(1);
     const emoji = alertEmoji(s.distanceFromLevel);
     const price = fmtPrice(s.currentPrice, s.market);
     const name  = DISPLAY_NAME[s.symbol] ?? s.symbol;
-    return `${name}│pos${pos}% →${lvl}% ${emoji}${dist}%  ${price}`;
-  }).join('\n');
+    items.push({
+      title:       `${emoji} ${name}`,
+      description: `현재 ${pos}% → Fib ${lvl}%  (거리 ${dist}%)  ${price}`,
+    });
+  }
+
+  // KOSPI / KOSDAQ 합산 아이템
+  if (ks11 && kq11) {
+    const fmt = (s: SymbolStatus) => {
+      const pos  = (s.fibonacciValue * 100).toFixed(1);
+      const lvl  = (s.nearestLevel   * 100).toFixed(1);
+      const dist = s.distanceFromLevel.toFixed(1);
+      return `${alertEmoji(s.distanceFromLevel)} ${pos}%→${lvl}%(${dist}%)  ${fmtPrice(s.currentPrice, s.market)}`;
+    };
+    items.push({
+      title:       `KOSPI / KOSDAQ`,
+      description: `${fmt(ks11)}\n${fmt(kq11)}`,
+    });
+  } else {
+    // 둘 중 하나만 있으면 개별 추가
+    for (const s of [ks11, kq11].filter(Boolean) as SymbolStatus[]) {
+      const pos  = (s.fibonacciValue * 100).toFixed(1);
+      const lvl  = (s.nearestLevel   * 100).toFixed(1);
+      const dist = s.distanceFromLevel.toFixed(1);
+      items.push({
+        title:       `${alertEmoji(s.distanceFromLevel)} ${DISPLAY_NAME[s.symbol] ?? s.symbol}`,
+        description: `현재 ${pos}% → Fib ${lvl}%  (거리 ${dist}%)  ${fmtPrice(s.currentPrice, s.market)}`,
+      });
+    }
+  }
+
+  // ALERT_SYMBOLS 순서 기준 정렬 (others는 KOSPI/KOSDAQ 제외 순서대로 들어왔으므로 KOSPI/KOSDAQ 아이템은 마지막)
+  return items;
 }
 
 async function fetchTargetStatuses(): Promise<SymbolStatus[]> {
@@ -102,20 +140,13 @@ export async function sendMarketCloseAlert(market: 'US' | 'KR'): Promise<void> {
   }
 
   const nearCount = statuses.filter(s => s.distanceFromLevel < 5).length;
-  const alertLine = nearCount > 0
-    ? `\n⚠️ ${nearCount}개 심볼 피보나치 레벨 5% 이내 근접!`
-    : '\n✅ 모든 심볼 피보나치 레벨 여유 있음';
+  const alertSuffix = nearCount > 0
+    ? `  ⚠️ ${nearCount}개 레벨 근접`
+    : '  ✅ 여유 있음';
 
-  const title       = `📊 피보나치 현황 [${label}] ${today}`;
-  const description = buildDescription(statuses) + alertLine;
+  const headerTitle = `📊 피보나치 현황 [${label}] ${today}${alertSuffix}`;
+  const items = buildListItems(statuses);
 
-  await sendKakaoNotification(title, description);
+  await sendKakaoListTemplate(headerTitle, items);
 }
 
-/**
- * (기존 호환) indices 스캔 결과 기반 알림 — INDEX 스캔 시 호출용
- * 이제는 sendMarketCloseAlert 를 우선 사용
- */
-export async function checkAndSendFibonacciAlerts(): Promise<void> {
-  await sendMarketCloseAlert('US');
-}
