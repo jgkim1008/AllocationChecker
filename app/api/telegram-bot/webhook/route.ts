@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
+import { addSubscriber, removeSubscriber, isSubscribed } from '@/lib/notifications/telegram';
 
 /**
  * Telegram Bot Webhook
@@ -11,6 +12,8 @@ import { createServiceClient } from '@/lib/supabase/server';
  * /fib - 피보나치 현황
  * /us - 미국장 현황
  * /kr - 한국장 현황
+ * /subscribe - 마감 알림 구독
+ * /unsubscribe - 마감 알림 해제
  * $종목명 - 종목 분석 (예: $AAPL, $삼성전자)
  */
 
@@ -76,6 +79,7 @@ function getStartMessage(): string {
 /fib - 지수 피보나치 현황
 /us - 미국 근접 종목
 /kr - 한국 근접 종목
+/subscribe - 🔔 마감 알림 구독
 /help - 도움말
 
 <b>종목 분석:</b>
@@ -91,6 +95,10 @@ function getHelpMessage(): string {
 /fib - 주요 지수 피보나치 현황
 /us - 미국 레벨 근접 종목
 /kr - 한국 레벨 근접 종목
+
+<b>🔔 자동 알림</b>
+/subscribe - 마감 알림 구독 (미국/한국장 마감 시 자동 알림)
+/unsubscribe - 마감 알림 해제
 
 <b>🔍 종목 분석</b>
 <code>$AAPL</code> - 미국 종목
@@ -257,7 +265,7 @@ async function analyzeStock(symbol: string): Promise<string> {
 }
 
 // 메시지 처리
-async function handleMessage(chatId: number, text: string) {
+async function handleMessage(chatId: number, text: string, username?: string) {
   const trimmed = text.trim();
   const lower = trimmed.toLowerCase();
 
@@ -290,6 +298,48 @@ async function handleMessage(chatId: number, text: string) {
     return;
   }
 
+  // 마감 알림 구독
+  if (lower === '/subscribe' || lower === '구독') {
+    const alreadySubscribed = await isSubscribed(chatId);
+    if (alreadySubscribed) {
+      await sendMessage(chatId, '✅ 이미 마감 알림을 구독 중입니다.\n\n해제하려면 /unsubscribe 를 입력하세요.');
+      return;
+    }
+
+    const success = await addSubscriber(chatId, username);
+    if (success) {
+      await sendMessage(chatId, `🔔 <b>마감 알림 구독 완료!</b>
+
+미국장/한국장 마감 시 자동으로 피보나치 현황을 알려드립니다.
+
+<b>알림 시간 (한국 시간)</b>
+🇺🇸 미국장: 오전 7시 (서머타임 시 6시)
+🇰🇷 한국장: 오후 4시
+
+해제하려면 /unsubscribe`);
+    } else {
+      await sendMessage(chatId, '❌ 구독 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.');
+    }
+    return;
+  }
+
+  // 마감 알림 해제
+  if (lower === '/unsubscribe' || lower === '구독해제') {
+    const subscribed = await isSubscribed(chatId);
+    if (!subscribed) {
+      await sendMessage(chatId, '⚠️ 현재 구독 중이 아닙니다.\n\n구독하려면 /subscribe 를 입력하세요.');
+      return;
+    }
+
+    const success = await removeSubscriber(chatId);
+    if (success) {
+      await sendMessage(chatId, '🔕 마감 알림 구독이 해제되었습니다.\n\n다시 구독하려면 /subscribe');
+    } else {
+      await sendMessage(chatId, '❌ 구독 해제 중 오류가 발생했습니다.');
+    }
+    return;
+  }
+
   // $종목 분석
   if (trimmed.startsWith('$')) {
     const symbol = trimmed.slice(1).trim();
@@ -319,9 +369,10 @@ export async function POST(request: NextRequest) {
     if (update.message?.text) {
       const chatId = update.message.chat.id;
       const text = update.message.text;
+      const username = update.message.from?.username;
 
       // 메시지 처리 완료까지 대기
-      await handleMessage(chatId, text);
+      await handleMessage(chatId, text, username);
     }
 
     return NextResponse.json({ ok: true });

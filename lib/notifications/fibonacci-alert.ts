@@ -4,6 +4,7 @@ import {
 } from '@/lib/utils/fibonacci-calculator';
 import { createServiceClient } from '@/lib/supabase/server';
 import { sendKakaoListTemplate } from './kakao';
+import { broadcastToSubscribers } from './telegram';
 
 const ALERT_SYMBOLS = ['^GSPC', '^IXIC', '^KS11', '^KQ11', 'SOXL'];
 
@@ -106,6 +107,46 @@ const CATEGORY_LABELS = {
 };
 
 /**
+ * Telegram용 메시지 포맷 빌드
+ */
+function buildTelegramMessage(statuses: SymbolStatus[], market: 'US' | 'KR'): string {
+  const marketLabel = market === 'US' ? '🇺🇸 미국장 마감' : '🇰🇷 한국장 마감';
+  const today = new Date().toLocaleDateString('ko-KR', {
+    month: '2-digit', day: '2-digit', timeZone: 'Asia/Seoul',
+  }).replace('. ', '/').replace('.', '');
+
+  let text = `📊 <b>${marketLabel}</b> [${today}]\n`;
+  text += `━━━━━━━━━━━━━━━\n`;
+
+  // 마감 시장에 따라 표시 순서 결정
+  const categoryOrder = market === 'US'
+    ? ['US', 'SOXL', 'KR'] as const
+    : ['KR', 'SOXL', 'US'] as const;
+
+  for (const category of categoryOrder) {
+    const symbols = CATEGORY_GROUPS[category];
+    const categoryStatuses = statuses.filter(s => symbols.includes(s.symbol));
+
+    if (categoryStatuses.length === 0) continue;
+
+    text += `\n<b>${CATEGORY_LABELS[category]}</b>\n`;
+
+    for (const s of categoryStatuses) {
+      const emoji = alertEmoji(s.distanceFromLevel);
+      const name = DISPLAY_NAME[s.symbol] ?? s.symbol;
+      const pos = (s.fibonacciValue * 100).toFixed(1);
+      const lvl = (s.nearestLevel * 100).toFixed(1);
+      const dist = s.distanceFromLevel.toFixed(1);
+      const price = fmtPrice(s.currentPrice, s.market);
+
+      text += `${emoji} <b>${name}</b>: ${pos}% → Fib ${lvl}% (${dist}%) ${price}\n`;
+    }
+  }
+
+  return text;
+}
+
+/**
  * 마감 알림 발송 (US 또는 KR 마감)
  * 카테고리별로 3개 메시지로 나눠서 전송 (1000자 제한 대응)
  */
@@ -146,6 +187,15 @@ export async function sendMarketCloseAlert(market: 'US' | 'KR'): Promise<void> {
     await new Promise(resolve => setTimeout(resolve, 500));
   }
 
-  console.log(`[FibonacciAlert] ${marketLabel} 알림 발송 완료 (3개 메시지)`);
+  console.log(`[FibonacciAlert] ${marketLabel} 카카오 알림 발송 완료 (3개 메시지)`);
+
+  // Telegram 구독자에게 알림 전송
+  try {
+    const telegramMessage = buildTelegramMessage(statuses, market);
+    const delivered = await broadcastToSubscribers(telegramMessage);
+    console.log(`[FibonacciAlert] ${marketLabel} Telegram 알림 발송 완료 (${delivered}명)`);
+  } catch (error) {
+    console.error('[FibonacciAlert] Telegram 알림 발송 실패:', error);
+  }
 }
 
