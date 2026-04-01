@@ -87,7 +87,8 @@ export async function proxy(request: NextRequest) {
   const isPublicApi = pathname.startsWith('/api/auth/kakao') ||
                       pathname.startsWith('/api/telegram-bot') ||
                       pathname.startsWith('/api/kakao-bot') ||
-                      pathname.startsWith('/api/test/kakao');
+                      pathname.startsWith('/api/test/kakao') ||
+                      pathname.startsWith('/api/fibonacci/scan');
 
   if (!user && !isAuthPage && !isPublicApi) {
     return NextResponse.redirect(new URL('/login', request.url));
