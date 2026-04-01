@@ -84,7 +84,10 @@ export async function proxy(request: NextRequest) {
 
   // ── 페이지 라우트 인증 체크 ──
   const isAuthPage = pathname === '/login' || pathname === '/signup';
-  const isPublicApi = pathname.startsWith('/api/auth/kakao');
+  const isPublicApi = pathname.startsWith('/api/auth/kakao') ||
+                      pathname.startsWith('/api/telegram-bot') ||
+                      pathname.startsWith('/api/kakao-bot') ||
+                      pathname.startsWith('/api/test/kakao');
 
   if (!user && !isAuthPage && !isPublicApi) {
     return NextResponse.redirect(new URL('/login', request.url));
