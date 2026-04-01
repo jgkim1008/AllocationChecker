@@ -320,8 +320,8 @@ export async function POST(request: NextRequest) {
       const chatId = update.message.chat.id;
       const text = update.message.text;
 
-      // 비동기로 처리 (빠른 응답)
-      handleMessage(chatId, text).catch(console.error);
+      // 메시지 처리 완료까지 대기
+      await handleMessage(chatId, text);
     }
 
     return NextResponse.json({ ok: true });
