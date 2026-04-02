@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { Pencil, Trash2, ChevronDown, ExternalLink } from 'lucide-react';
+import { Pencil, Trash2, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react';
 import type { PortfolioHoldingWithStock } from '@/types/portfolio';
 import type { QuoteData } from '@/hooks/useCurrentPrices';
 import { formatCurrency } from '@/lib/utils/dividend-calculator';
@@ -155,6 +155,8 @@ function HoldingCard({
   onEdit: (h: PortfolioHoldingWithStock) => void;
   onDelete: (id: string) => void;
 }) {
+  const [expanded, setExpanded] = useState(false);
+
   const symbol = holding.stock.symbol;
   const displayName =
     holding.stock.name && holding.stock.name !== symbol ? holding.stock.name : symbol;
@@ -166,6 +168,9 @@ function HoldingCard({
 
   const currentPrice = quote?.price ?? null;
   const changePercent = quote?.changePercent ?? null;
+
+  // 통합된 holding인지 확인
+  const isConsolidated = !!holding.accountBreakdown && holding.accountBreakdown.length > 1;
 
   // 자산가치: current price × shares (fall back to avgCost × shares)
   const assetValue =
@@ -201,7 +206,7 @@ function HoldingCard({
         <StockAvatar symbol={symbol} market={holding.stock.market} />
         <div className="flex-1 min-w-0">
           <div className="flex items-baseline gap-2">
-            <Link 
+            <Link
               href={`/strategies/stock-scan/${symbol}`}
               className="text-base font-bold text-gray-900 truncate leading-tight hover:text-green-600 transition-colors flex items-center gap-1 group/link"
             >
@@ -211,7 +216,7 @@ function HoldingCard({
             <span className="text-xs text-gray-500 shrink-0">{marketLabel}</span>
           </div>
           {displayName !== symbol && (
-            <Link 
+            <Link
               href={`/strategies/stock-scan/${symbol}`}
               className="text-xs text-gray-400 mt-0.5 hover:text-green-600 transition-colors"
             >
@@ -221,9 +226,63 @@ function HoldingCard({
         </div>
         <div className="shrink-0 text-right">
           <p className="text-[10px] text-gray-500">수량</p>
-          <p className="text-sm font-semibold text-gray-900">{shares.toLocaleString()}</p>
+          <div className="flex items-center gap-1">
+            <p className="text-sm font-semibold text-gray-900">{shares.toLocaleString()}</p>
+            {isConsolidated && (
+              <button
+                onClick={() => setExpanded(!expanded)}
+                className="p-0.5 rounded text-gray-400 hover:text-gray-600 transition-colors"
+                title="계좌별 상세"
+              >
+                {expanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+              </button>
+            )}
+          </div>
         </div>
       </div>
+
+      {/* 계좌별 breakdown (통합된 경우) */}
+      {isConsolidated && expanded && holding.accountBreakdown && (
+        <div className="mb-3 ml-[56px] space-y-1">
+          {holding.accountBreakdown.map((acc) => (
+            <div
+              key={acc.holdingId}
+              className="flex items-center justify-between text-xs bg-gray-50 rounded-lg px-3 py-1.5"
+            >
+              <span className="text-gray-600">{acc.accountName}</span>
+              <div className="flex items-center gap-3">
+                <span className="text-gray-900 font-medium">{acc.shares.toLocaleString()}주</span>
+                {acc.averageCost !== null && (
+                  <span className="text-gray-500">
+                    @ {formatCurrency(acc.averageCost, currency)}
+                  </span>
+                )}
+                {holding.originalHoldings && (
+                  <div className="flex gap-0.5">
+                    <button
+                      onClick={() => {
+                        const original = holding.originalHoldings?.find(h => h.id === acc.holdingId);
+                        if (original) onEdit(original);
+                      }}
+                      className="p-1 rounded text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                      title="수정"
+                    >
+                      <Pencil className="h-3 w-3" />
+                    </button>
+                    <button
+                      onClick={() => onDelete(acc.holdingId)}
+                      className="p-1 rounded text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                      title="삭제"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Detail grid: 2 columns */}
       <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-xs pl-[56px]">
@@ -277,6 +336,9 @@ function HoldingCard({
             <span className="text-gray-900 font-medium">
               {avgCost !== null ? formatCurrency(avgCost, currency) : '-'}
             </span>
+            {isConsolidated && (
+              <span className="text-gray-400 ml-1 text-[10px]">(가중평균)</span>
+            )}
           </div>
 
           {/* 현재가 */}
@@ -313,23 +375,25 @@ function HoldingCard({
         </div>
       </div>
 
-      {/* Action buttons */}
-      <div className="flex justify-end gap-1 mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
-        <button
-          onClick={() => onEdit(holding)}
-          className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
-          aria-label="수정"
-        >
-          <Pencil className="h-3.5 w-3.5" />
-        </button>
-        <button
-          onClick={() => onDelete(holding.id)}
-          className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
-          aria-label="삭제"
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-        </button>
-      </div>
+      {/* Action buttons - 통합 아닌 경우만 표시 */}
+      {!isConsolidated && (
+        <div className="flex justify-end gap-1 mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button
+            onClick={() => onEdit(holding)}
+            className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+            aria-label="수정"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+          </button>
+          <button
+            onClick={() => onDelete(holding.id)}
+            className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+            aria-label="삭제"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
     </div>
   );
 }

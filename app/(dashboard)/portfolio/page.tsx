@@ -14,9 +14,84 @@ import { DividendCalendarView } from '@/components/portfolio/DividendCalendarVie
 import { DividendYearView } from '@/components/portfolio/DividendYearView';
 import { useCurrentPrices } from '@/hooks/useCurrentPrices';
 import { useExchangeRate } from '@/hooks/useExchangeRate';
-import type { PortfolioHoldingWithStock } from '@/types/portfolio';
+import type { PortfolioHoldingWithStock, AccountHoldingBreakdown } from '@/types/portfolio';
 
 type PageTab = 'asset' | 'dividend';
+
+/**
+ * 동일 종목을 그룹핑하여 통합 표시
+ * - 여러 계좌에 분산된 동일 종목을 하나로 합침
+ * - accountBreakdown에 계좌별 상세 정보 저장
+ */
+function consolidateHoldings(
+  holdings: PortfolioHoldingWithStock[],
+  accounts: { id: string; name: string }[]
+): PortfolioHoldingWithStock[] {
+  const accountMap = new Map(accounts.map(a => [a.id, a.name]));
+  const grouped = new Map<string, PortfolioHoldingWithStock[]>();
+
+  // stock_id 기준으로 그룹핑
+  for (const h of holdings) {
+    const key = h.stock_id;
+    if (!grouped.has(key)) {
+      grouped.set(key, []);
+    }
+    grouped.get(key)!.push(h);
+  }
+
+  const result: PortfolioHoldingWithStock[] = [];
+
+  for (const [, group] of grouped) {
+    if (group.length === 1) {
+      // 단일 계좌에만 있으면 그대로 반환
+      result.push(group[0]);
+    } else {
+      // 여러 계좌에 분산된 경우 통합
+      const totalShares = group.reduce((sum, h) => sum + Number(h.shares), 0);
+
+      // 가중평균 매입가 계산
+      let weightedCostSum = 0;
+      let totalSharesWithCost = 0;
+      for (const h of group) {
+        if (h.average_cost !== null) {
+          weightedCostSum += Number(h.average_cost) * Number(h.shares);
+          totalSharesWithCost += Number(h.shares);
+        }
+      }
+      const avgCost = totalSharesWithCost > 0 ? weightedCostSum / totalSharesWithCost : null;
+
+      // 총 배당금
+      const totalAnnualDividend = group.reduce((sum, h) => sum + (h.estimatedAnnualDividend ?? 0), 0);
+      const totalYtdDividend = group.reduce((sum, h) => sum + (h.ytdDividend ?? 0), 0);
+
+      // 계좌별 breakdown
+      const breakdown: AccountHoldingBreakdown[] = group.map(h => ({
+        accountId: h.account_id,
+        accountName: h.account_id ? (accountMap.get(h.account_id) ?? '알 수 없음') : '미분류',
+        shares: Number(h.shares),
+        averageCost: h.average_cost !== null ? Number(h.average_cost) : null,
+        holdingId: h.id,
+      }));
+
+      // 첫 번째 항목을 기반으로 통합 holding 생성
+      const base = group[0];
+      const consolidated: PortfolioHoldingWithStock = {
+        ...base,
+        id: `consolidated-${base.stock_id}`, // 통합용 가상 ID
+        shares: totalShares,
+        average_cost: avgCost,
+        estimatedAnnualDividend: totalAnnualDividend,
+        ytdDividend: totalYtdDividend,
+        accountBreakdown: breakdown,
+        originalHoldings: group,
+      };
+
+      result.push(consolidated);
+    }
+  }
+
+  return result;
+}
 
 export default function PortfolioPage() {
   const { holdings, loading, addHolding, updateHolding, deleteHolding } = usePortfolio();
@@ -32,10 +107,13 @@ export default function PortfolioPage() {
   const ACCOUNTS_PER_PAGE = 4;
 
   const filteredHoldings = useMemo(() => {
-    if (selectedAccountId === 'all') return holdings;
+    if (selectedAccountId === 'all') {
+      // 전체 탭: 동일 종목 그룹핑
+      return consolidateHoldings(holdings, accounts);
+    }
     if (selectedAccountId === 'unassigned') return holdings.filter((h) => h.account_id === null);
     return holdings.filter((h) => h.account_id === selectedAccountId);
-  }, [holdings, selectedAccountId]);
+  }, [holdings, selectedAccountId, accounts]);
 
   const hasUnassigned = holdings.some((h) => h.account_id === null);
   const hasDividendData = filteredHoldings.some((h) => (h.estimatedAnnualDividend ?? 0) > 0);

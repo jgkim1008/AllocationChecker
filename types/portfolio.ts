@@ -29,6 +29,17 @@ export interface PortfolioHoldingWithStock extends PortfolioHolding {
   annualDividendPerShare?: number;
   estimatedAnnualDividend?: number;
   ytdDividend?: number;
+  // 통합 표시용 (전체 탭에서 동일 종목 그룹핑 시)
+  accountBreakdown?: AccountHoldingBreakdown[];
+  originalHoldings?: PortfolioHoldingWithStock[];
+}
+
+export interface AccountHoldingBreakdown {
+  accountId: string | null;
+  accountName: string;
+  shares: number;
+  averageCost: number | null;
+  holdingId: string;
 }
 
 export interface MonthlyDividendBreakdown {
