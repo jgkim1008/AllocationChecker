@@ -94,12 +94,9 @@ export function AddHoldingDialog({ open, onClose, onAdd, onUpdate, accounts = []
       const res = await fetch(`/api/stocks/prices?symbols=${encodeURIComponent(symbol)}`);
       if (!res.ok) return;
       const data = await res.json() as { prices: Record<string, { price: number; changePercent: number }> };
-      // Korean stocks come back with .KS/.KQ suffix, try both
-      const price =
-        data.prices[symbol]?.price ??
-        data.prices[`${symbol}.KS`]?.price ??
-        data.prices[`${symbol}.KQ`]?.price ??
-        null;
+      // 심볼에서 .KS/.KQ 접미사 제거 (API는 접미사 없는 형식 반환)
+      const cleanSymbol = symbol.replace(/\.(KS|KQ)$/i, '');
+      const price = data.prices[cleanSymbol]?.price ?? null;
       if (price && price > 0) setCurrentPrice(price);
     } catch {
       /* ignore */
@@ -190,7 +187,7 @@ export function AddHoldingDialog({ open, onClose, onAdd, onUpdate, accounts = []
               <div className="relative">
                 <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
                 <Input
-                  placeholder="종목 검색 (예: AAPL, 005930.KS)"
+                  placeholder="종목 검색 (예: AAPL, 삼성전자, 005930)"
                   value={query}
                   onChange={(e) => handleQueryChange(e.target.value)}
                   className="pl-9 bg-white border-gray-200 text-gray-900 placeholder:text-gray-400 focus-visible:ring-green-600"

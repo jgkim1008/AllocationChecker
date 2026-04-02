@@ -48,9 +48,9 @@ export async function GET(request: NextRequest) {
 
   if (krResult.status === 'fulfilled') {
     for (const q of krResult.value) {
+      // 접미사 제거하여 DB 형식(005930)과 일치시킴
       const baseKey = (q.symbol as string).replace(/\.(KS|KQ)$/i, '');
       prices[baseKey] = { price: q.price, changePercent: q.changePercent };
-      prices[q.symbol] = { price: q.price, changePercent: q.changePercent }; // also keep original key
     }
   }
 
