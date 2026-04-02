@@ -17,8 +17,7 @@ function formatPrice(price: number, market: 'US' | 'KR'): string {
   if (market === 'US') {
     return `$${price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   }
-  if (price >= 1000) return `₩${(price / 1000).toFixed(0)}k`;
-  return `₩${price.toLocaleString('ko-KR')}`;
+  return `₩${Math.round(price).toLocaleString('ko-KR')}`;
 }
 
 const LEVEL_COLOR: Record<number, { line: string; badge: string; label: string }> = {
