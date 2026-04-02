@@ -10,7 +10,7 @@ type SortOrder = 'asc' | 'desc';
 
 interface FibonacciTableProps {
   stocks: FibonacciStock[];
-  market: 'US' | 'KR';
+  market?: 'US' | 'KR'; // fallback용, 개별 stock.market 우선
 }
 
 function formatPrice(price: number, market: 'US' | 'KR'): string {
@@ -104,7 +104,7 @@ function SortIcon({ active, order }: { active: boolean; order: SortOrder }) {
     : <ChevronDown className="h-3 w-3 text-purple-600" />;
 }
 
-export function FibonacciTable({ stocks, market }: FibonacciTableProps) {
+export function FibonacciTable({ stocks, market: defaultMarket = 'US' }: FibonacciTableProps) {
   const [sortKey, setSortKey] = useState<SortKey>('distanceFromLevel');
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
 
@@ -219,6 +219,7 @@ export function FibonacciTable({ stocks, market }: FibonacciTableProps) {
         <tbody className="divide-y divide-gray-50">
           {sortedStocks.map((stock) => {
             const meta = stock.fibonacciLevel != null ? LEVEL_COLOR[stock.fibonacciLevel] : null;
+            const stockMarket = stock.market || defaultMarket;
             return (
               <tr
                 key={stock.symbol}
@@ -227,13 +228,13 @@ export function FibonacciTable({ stocks, market }: FibonacciTableProps) {
                 {/* 종목 */}
                 <td className="px-5 py-4">
                   <Link
-                    href={`/strategies/fibonacci/${encodeURIComponent(stock.symbol)}?market=${market}&name=${encodeURIComponent(stock.name)}`}
+                    href={`/strategies/fibonacci/${encodeURIComponent(stock.symbol)}?market=${stockMarket}&name=${encodeURIComponent(stock.name)}`}
                     className="flex items-center gap-3"
                   >
                     <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-[10px] font-black shrink-0 ${
-                      market === 'US' ? 'bg-blue-50 text-blue-600' : 'bg-green-50 text-green-700'
+                      stockMarket === 'US' ? 'bg-blue-50 text-blue-600' : 'bg-green-50 text-green-700'
                     }`}>
-                      {market}
+                      {stockMarket}
                     </div>
                     <div>
                       <p className="font-black text-gray-900 text-sm leading-tight">{stock.symbol}</p>
@@ -244,7 +245,7 @@ export function FibonacciTable({ stocks, market }: FibonacciTableProps) {
 
                 {/* 현재가 */}
                 <td className="px-5 py-4 text-right">
-                  <span className="font-black text-gray-900">{formatPrice(stock.currentPrice, market)}</span>
+                  <span className="font-black text-gray-900">{formatPrice(stock.currentPrice, stockMarket)}</span>
                 </td>
 
                 {/* 등락률 */}
@@ -259,7 +260,7 @@ export function FibonacciTable({ stocks, market }: FibonacciTableProps) {
                     fibLevel={stock.fibonacciLevel}
                     yearLow={stock.yearLow}
                     yearHigh={stock.yearHigh}
-                    market={market}
+                    market={stockMarket}
                   />
                 </td>
 
@@ -281,7 +282,7 @@ export function FibonacciTable({ stocks, market }: FibonacciTableProps) {
 
                 {/* 화살표 */}
                 <td className="px-4 py-4">
-                  <Link href={`/strategies/fibonacci/${encodeURIComponent(stock.symbol)}?market=${market}&name=${encodeURIComponent(stock.name)}`}>
+                  <Link href={`/strategies/fibonacci/${encodeURIComponent(stock.symbol)}?market=${stockMarket}&name=${encodeURIComponent(stock.name)}`}>
                     <div className="w-7 h-7 rounded-xl bg-gray-50 group-hover:bg-purple-600 flex items-center justify-center transition-colors">
                       <ChevronRight className="h-3.5 w-3.5 text-gray-400 group-hover:text-white transition-colors" />
                     </div>
