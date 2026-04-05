@@ -143,11 +143,24 @@ async function updateStockData(symbol: string, name: string, market: 'US' | 'KR'
         if (highs.length > 0) yearHigh = Math.max(...highs);
         if (lows.length > 0) yearLow = Math.min(...lows);
 
-        // 이름이 기호와 같으면 야후에서 제공하는 이름 사용 시도
-        if (fetchedName === cleanSymbol && meta.symbol) {
-            // 야후는 이름을 메타데이터에 안 주는 경우가 많아 기존 이름 유지
-        }
+        // Yahoo에서 이름 업데이트 시도
+        if (meta.longName) fetchedName = meta.longName;
+        else if (meta.shortName) fetchedName = meta.shortName;
       }
+    }
+
+    // KR 종목 이름이 숫자(ticker)와 동일하면 네이버에서 실제 종목명 보정
+    if (market === 'KR' && /^\d+$/.test(fetchedName)) {
+      try {
+        const naverRes = await fetch(
+          `https://m.stock.naver.com/api/stock/${cleanSymbol}/basic`,
+          { headers: { 'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X)' } }
+        );
+        if (naverRes.ok) {
+          const naverData = await naverRes.json();
+          if (naverData?.stockName) fetchedName = naverData.stockName;
+        }
+      } catch { /* 실패 시 기존 이름 유지 */ }
     }
 
     // 2. 백업: Polygon (미국 주식 전용)
