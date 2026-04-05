@@ -149,8 +149,9 @@ async function updateStockData(symbol: string, name: string, market: 'US' | 'KR'
       }
     }
 
-    // KR 종목 이름이 숫자(ticker)와 동일하면 네이버에서 실제 종목명 보정
-    if (market === 'KR' && /^\d+$/.test(fetchedName)) {
+    // KR 종목 이름이 ticker와 동일(미등록)하면 네이버/야후에서 실제 종목명 보정
+    if (market === 'KR' && fetchedName === cleanSymbol) {
+      // 1. 네이버 시도
       try {
         const naverRes = await fetch(
           `https://m.stock.naver.com/api/stock/${cleanSymbol}/basic`,
@@ -158,9 +159,32 @@ async function updateStockData(symbol: string, name: string, market: 'US' | 'KR'
         );
         if (naverRes.ok) {
           const naverData = await naverRes.json();
-          if (naverData?.stockName) fetchedName = naverData.stockName;
+          if (naverData?.stockName && naverData.code !== 'StockConflict') {
+            fetchedName = naverData.stockName;
+          }
         }
-      } catch { /* 실패 시 기존 이름 유지 */ }
+      } catch { /* ignore */ }
+
+      // 2. 네이버 실패 시 Yahoo 검색 fallback
+      if (fetchedName === cleanSymbol) {
+        try {
+          for (const suffix of ['KS', 'KQ']) {
+            const yahooSearchRes = await fetch(
+              `https://query1.finance.yahoo.com/v1/finance/search?q=${cleanSymbol}.${suffix}&lang=en-US&region=KR&quotesCount=3&newsCount=0`,
+              { headers: { 'User-Agent': 'Mozilla/5.0' } }
+            );
+            if (!yahooSearchRes.ok) continue;
+            const searchData = await yahooSearchRes.json();
+            const match = (searchData?.quotes ?? []).find(
+              (q: { symbol: string }) => q.symbol === `${cleanSymbol}.${suffix}`
+            );
+            if (match?.longname || match?.shortname) {
+              fetchedName = match.longname ?? match.shortname;
+              break;
+            }
+          }
+        } catch { /* ignore */ }
+      }
     }
 
     // 2. 백업: Polygon (미국 주식 전용)
