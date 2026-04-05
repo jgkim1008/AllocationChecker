@@ -149,6 +149,32 @@ async function updateStockData(symbol: string, name: string, market: 'US' | 'KR'
       }
     }
 
+    // KR 종목: 네이버 integration API에서 배당락 조정 52주 고/저가 가져오기
+    if (market === 'KR' && !cleanSymbol.startsWith('^')) {
+      try {
+        const naverIntRes = await fetch(
+          `https://m.stock.naver.com/api/stock/${cleanSymbol}/integration`,
+          { headers: { 'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X)' } }
+        );
+        if (naverIntRes.ok) {
+          const naverInt = await naverIntRes.json();
+          const infos: { code: string; value: string }[] = naverInt?.totalInfos ?? [];
+          const get = (code: string) => {
+            const v = infos.find(i => i.code === code)?.value;
+            return v ? parseFloat(v.replace(/,/g, '')) : null;
+          };
+          const naverHigh = get('highPriceOf52Weeks');
+          const naverLow  = get('lowPriceOf52Weeks');
+          if (naverHigh) yearHigh = naverHigh;
+          if (naverLow)  yearLow  = naverLow;
+          // 이름도 보정
+          if (naverInt?.stockName && naverInt.code !== 'StockConflict') {
+            fetchedName = naverInt.stockName;
+          }
+        }
+      } catch { /* ignore */ }
+    }
+
     // KR 종목 이름이 ticker와 동일(미등록)하면 네이버/야후에서 실제 종목명 보정
     if (market === 'KR' && fetchedName === cleanSymbol) {
       // 1. 네이버 시도
