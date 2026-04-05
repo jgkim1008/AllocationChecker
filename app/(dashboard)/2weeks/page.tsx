@@ -19,13 +19,13 @@ interface StrategyPair {
 
 const MAIN_STRATEGIES: StrategyPair[] = [
   // 한국 ETF
-  { id: 1, country: 'kr', early: { code: '475720', name: 'RISE 200 위클리커버드콜', yieldRate: 15 }, mid: { code: '498400', name: 'KODEX 200타겟 위클리커버드콜', yieldRate: 15 } },
-  { id: 2, country: 'kr', early: { code: '161510', name: 'PLUS 고배당주', yieldRate: 4 }, mid: { code: '466940', name: 'TIGER 코리아배당다우존스', yieldRate: 5 } },
+  { id: 1, country: 'kr', early: { code: '475720', name: 'RISE 200 위클리커버드콜', yieldRate: 16 }, mid: { code: '498400', name: 'KODEX 200타겟 위클리커버드콜', yieldRate: 13 } },
+  { id: 2, country: 'kr', early: { code: '161510', name: 'PLUS 고배당주', yieldRate: 4 }, mid: { code: '466940', name: 'TIGER 코리아배당다우존스', yieldRate: 4 } },
   // 미국 ETF
-  { id: 3, country: 'us', early: { code: '483290', name: 'KODEX 미국성장 커버드콜액티브', yieldRate: 12 }, mid: { code: '483280', name: 'KODEX 미국배당 커버드콜액티브', yieldRate: 10 } },
+  { id: 3, country: 'us', early: { code: '483290', name: 'KODEX 미국성장 커버드콜액티브', yieldRate: 11 }, mid: { code: '483280', name: 'KODEX 미국배당 커버드콜액티브', yieldRate: 15 } },
   { id: 4, country: 'us', early: { code: '473540', name: 'TIGER 미국나스닥100 타겟데일리커버드콜', yieldRate: 15 }, mid: { code: '474220', name: 'TIGER 미국테크TOP10 타겟커버드콜', yieldRate: 10 } },
-  { id: 5, country: 'us', early: { code: '458730', name: 'TIGER 미국배당다우존스', yieldRate: 4 }, mid: { code: '489250', name: 'KODEX 미국배당다우존스', yieldRate: 4 } },
-  { id: 6, country: 'us', early: { code: '495090', name: 'KIWOOM 미국고배당&AI테크', yieldRate: 10 }, mid: { code: '494330', name: 'RISE 미국고배당 다우존스TOP10', yieldRate: 8 } },
+  { id: 5, country: 'us', early: { code: '458730', name: 'TIGER 미국배당다우존스', yieldRate: 3 }, mid: { code: '489250', name: 'KODEX 미국배당다우존스', yieldRate: 3 } },
+  { id: 6, country: 'us', early: { code: '495090', name: 'KIWOOM 미국고배당&AI테크', yieldRate: 2 }, mid: { code: '494330', name: 'RISE 미국고배당 다우존스TOP10', yieldRate: 2 } },
 ];
 
 // AI 추천 타입
