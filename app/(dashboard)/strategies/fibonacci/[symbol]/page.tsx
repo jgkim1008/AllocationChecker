@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, use } from 'react';
+import { useState, useEffect, use, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, RefreshCw, TrendingUp, TrendingDown } from 'lucide-react';
 import { FibonacciChart } from '@/components/fibonacci/FibonacciChart';
@@ -58,6 +58,7 @@ export default function FibonacciDetailPage({
   const [data, setData] = useState<StockData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showFibonacci, setShowFibonacci] = useState(true);
 
   useEffect(() => {
     async function fetchData() {
@@ -85,6 +86,34 @@ export default function FibonacciDetailPage({
     ? calculateFibonacciPosition(data.currentPrice, data.yearLow, data.yearHigh)
     : 0;
   const { level: nearestLevel, distance } = findNearestFibonacciLevel(fibPosition);
+
+  // 지지선/저항선 계산
+  const fibLevelList = useMemo(() => {
+    if (!data) return null;
+    const RAW = [
+      { level: '0',    pct: 0 },
+      { level: '14',   pct: 0.14 },
+      { level: '23.6', pct: 0.236 },
+      { level: '38.2', pct: 0.382 },
+      { level: '50',   pct: 0.5 },
+      { level: '61.8', pct: 0.618 },
+      { level: '76.4', pct: 0.764 },
+      { level: '85.4', pct: 0.854 },
+      { level: '100',  pct: 1 },
+    ];
+    const levels = RAW.map(f => ({
+      level: f.level,
+      pct: f.pct,
+      price: Math.round((data.yearLow + (data.yearHigh - data.yearLow) * f.pct) * 100) / 100,
+    }));
+    const currentPct = Math.round(fibPosition * 1000) / 10;
+    const support    = [...levels].filter(l => l.price < data.currentPrice).pop() ?? null;
+    const resistance = levels.find(l => l.price > data.currentPrice) ?? null;
+    const closestLabel = levels.reduce((best, l) =>
+      Math.abs(l.pct - fibPosition) < Math.abs(best.pct - fibPosition) ? l : best
+    ).level;
+    return { levels, currentPct, support, resistance, closestLabel };
+  }, [data, fibPosition]);
 
   const priceChange = data && data.history.length > 1
     ? data.currentPrice - data.history[0].price
@@ -193,41 +222,104 @@ export default function FibonacciDetailPage({
               />
             </div>
 
-            {/* 레벨별 가격 */}
-            <div className="bg-white rounded-2xl border border-gray-200 p-6 mt-6">
-              <h2 className="font-bold text-gray-900 mb-4">피보나치 되돌림 레벨</h2>
-              <div className="space-y-3">
-                {(['0', '0.14', '0.236', '0.382', '0.5', '0.618', '0.764', '0.854', '1'] as const).map((level) => {
-                  const price = data.fibLevels[level];
-                  const isNear = nearestLevel && level === String(nearestLevel);
-                  const isCurrent = Math.abs(data.currentPrice - price) / price < 0.01;
+            {/* 피보나치 되돌림 섹션 */}
+            {fibLevelList && (
+              <div className="bg-white rounded-2xl border border-gray-200 p-6 mt-6">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <TrendingUp className="h-4 w-4 text-indigo-500" />
+                    <h2 className="font-black text-gray-900">피보나치 되돌림</h2>
+                    <span className="text-[10px] text-gray-400 font-medium">52주 고/저 기준</span>
+                  </div>
+                  <button
+                    onClick={() => setShowFibonacci(!showFibonacci)}
+                    className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-colors ${
+                      showFibonacci
+                        ? 'bg-indigo-100 text-indigo-700'
+                        : 'bg-gray-100 text-gray-500'
+                    }`}
+                  >
+                    차트 {showFibonacci ? 'ON' : 'OFF'}
+                  </button>
+                </div>
 
-                  return (
+                {/* 현재 위치 바 */}
+                <div className="mb-4">
+                  <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
+                    <span>52주 저가</span>
+                    <span>52주 고가</span>
+                  </div>
+                  <div className="relative h-8 bg-gradient-to-r from-green-100 via-yellow-100 to-red-100 rounded-lg">
+                    {fibLevelList.levels.map(({ level, pct }) => (
+                      <div
+                        key={level}
+                        className="absolute top-0 h-full w-px bg-gray-400 opacity-50"
+                        style={{ left: `${pct * 100}%` }}
+                        title={`${level}%`}
+                      />
+                    ))}
                     <div
-                      key={level}
-                      className={`flex items-center justify-between p-3 rounded-lg ${
-                        isNear ? 'bg-purple-50 border border-purple-200' : 'bg-gray-50'
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <span className={`text-sm font-medium ${isNear ? 'text-purple-700' : 'text-gray-700'}`}>
-                          {(parseFloat(level) * 100).toFixed(1)}%
-                        </span>
-                        {level === '0.618' && (
-                          <span className="text-xs text-green-600 bg-green-50 px-2 py-0.5 rounded">황금비율</span>
-                        )}
-                        {isCurrent && (
-                          <span className="text-xs text-purple-600 bg-purple-100 px-2 py-0.5 rounded">현재가 근처</span>
-                        )}
-                      </div>
-                      <span className={`font-bold ${isNear ? 'text-purple-700' : 'text-gray-900'}`}>
-                        {formatPrice(price, market)}
-                      </span>
-                    </div>
-                  );
-                })}
+                      className="absolute w-4 h-4 bg-indigo-600 rounded-full border-2 border-white shadow-lg"
+                      style={{ left: `${Math.min(100, Math.max(0, fibLevelList.currentPct))}%`, top: '50%', transform: 'translate(-50%, -50%)' }}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between text-xs mt-1">
+                    <span className="text-green-600 font-bold">{formatPrice(data.yearLow, market)}</span>
+                    <span className="text-indigo-600 font-black">현재 {fibLevelList.currentPct}%</span>
+                    <span className="text-red-600 font-bold">{formatPrice(data.yearHigh, market)}</span>
+                  </div>
+                </div>
+
+                {/* 지지선 / 저항선 */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-green-50 rounded-xl p-3">
+                    <p className="text-[10px] font-black text-green-700 uppercase tracking-wider mb-1">지지선</p>
+                    {fibLevelList.support ? (
+                      <>
+                        <p className="text-lg font-black text-green-700">{formatPrice(fibLevelList.support.price, market)}</p>
+                        <p className="text-xs text-green-600">{fibLevelList.support.level}% 레벨</p>
+                      </>
+                    ) : (
+                      <p className="text-sm text-green-600">52주 저가 근처</p>
+                    )}
+                  </div>
+                  <div className="bg-red-50 rounded-xl p-3">
+                    <p className="text-[10px] font-black text-red-700 uppercase tracking-wider mb-1">저항선</p>
+                    {fibLevelList.resistance ? (
+                      <>
+                        <p className="text-lg font-black text-red-700">{formatPrice(fibLevelList.resistance.price, market)}</p>
+                        <p className="text-xs text-red-600">{fibLevelList.resistance.level}% 레벨</p>
+                      </>
+                    ) : (
+                      <p className="text-sm text-red-600">52주 고가 근처</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* 모든 레벨 */}
+                <details className="mt-4">
+                  <summary className="text-xs text-gray-500 font-bold cursor-pointer hover:text-gray-700">
+                    모든 레벨 보기
+                  </summary>
+                  <div className="mt-2 grid grid-cols-4 sm:grid-cols-9 gap-2">
+                    {fibLevelList.levels.map(({ level, price }) => {
+                      const isNear = level === fibLevelList.closestLabel;
+                      return (
+                        <div
+                          key={level}
+                          className={`text-center p-2 rounded-lg ${isNear ? 'bg-indigo-100 ring-2 ring-indigo-400' : 'bg-gray-50'}`}
+                        >
+                          <p className={`text-[10px] font-black ${isNear ? 'text-indigo-700' : 'text-gray-500'}`}>{level}%</p>
+                          <p className={`text-xs font-bold ${isNear ? 'text-indigo-900' : 'text-gray-700'}`}>
+                            {formatPrice(price, market)}
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </details>
               </div>
-            </div>
+            )}
           </>
         )}
       </div>
