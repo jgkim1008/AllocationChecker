@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { TrendingUp, Infinity, ChevronRight, Activity, Zap, BookOpen, CalendarDays } from 'lucide-react';
+import { TrendingUp, Infinity, ChevronRight, Activity, Zap, BookOpen, CalendarDays, BarChart2 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { PremiumGate } from '@/components/PremiumGate';
 
@@ -85,6 +85,16 @@ const STRATEGIES = [
     color: 'bg-orange-50 text-orange-600',
     tag: '신규',
     tagColor: 'bg-orange-100 text-orange-700',
+  },
+  {
+    id: 'monthly-ma',
+    title: '월봉 10이평 전략',
+    description: '월봉 종가가 10개월 이동평균선 위에 있으면 보유, 아래로 이탈하면 전량 매도하는 추세 추종 전략입니다. 저승사자 캔들(이탈+장대음봉) 출현 시 즉시 매도 신호를 제공합니다.',
+    icon: BarChart2,
+    href: '/strategies/monthly-ma',
+    color: 'bg-indigo-50 text-indigo-600',
+    tag: '신규',
+    tagColor: 'bg-indigo-100 text-indigo-700',
   },
   {
     id: '2weeks',
