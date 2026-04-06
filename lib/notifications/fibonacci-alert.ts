@@ -106,10 +106,42 @@ const CATEGORY_LABELS = {
   KR: '🇰🇷 한국 지수',
 };
 
+interface MonthlyMAChanged {
+  symbol: string;
+  name: string;
+  market: string;
+  signal: 'HOLD' | 'SELL';
+  maDeviation: number;
+  deathCandle: boolean;
+}
+
+async function fetchMonthlyMAChanges(): Promise<MonthlyMAChanged[]> {
+  try {
+    const supabase = await createServiceClient();
+    const { data: cached } = await supabase
+      .from('monthly_ma_cache')
+      .select('data')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+
+    if (!cached?.data) return [];
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (cached.data as any[]).filter((s: any) => s.signalChanged) as MonthlyMAChanged[];
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Telegram용 메시지 포맷 빌드
  */
-function buildTelegramMessage(statuses: SymbolStatus[], market: 'US' | 'KR'): string {
+function buildTelegramMessage(
+  statuses: SymbolStatus[],
+  market: 'US' | 'KR',
+  maChanges: MonthlyMAChanged[]
+): string {
   const marketLabel = market === 'US' ? '🇺🇸 미국장 마감' : '🇰🇷 한국장 마감';
   const today = new Date().toLocaleDateString('ko-KR', {
     month: '2-digit', day: '2-digit', timeZone: 'Asia/Seoul',
@@ -140,6 +172,30 @@ function buildTelegramMessage(statuses: SymbolStatus[], market: 'US' | 'KR'): st
       const price = fmtPrice(s.currentPrice, s.market);
 
       text += `${emoji} <b>${name}</b>: ${pos}% → Fib ${lvl}% (${dist}%) ${price}\n`;
+    }
+  }
+
+  // 월봉 10이평 신호 전환 섹션
+  if (maChanges.length > 0) {
+    text += `\n━━━━━━━━━━━━━━━\n`;
+    text += `📈 <b>월봉 10이평 신호 전환</b>\n`;
+
+    const sellChanges = maChanges.filter(s => s.signal === 'SELL');
+    const buyChanges  = maChanges.filter(s => s.signal === 'HOLD');
+
+    if (sellChanges.length > 0) {
+      text += `🔴 매도 전환\n`;
+      for (const s of sellChanges) {
+        const death = s.deathCandle ? ' ☠️' : '';
+        text += `  • <b>${s.symbol}</b> ${s.name}${death} (${s.maDeviation.toFixed(1)}%)\n`;
+      }
+    }
+    if (buyChanges.length > 0) {
+      text += `🟢 매수 전환\n`;
+      for (const s of buyChanges) {
+        const dev = s.maDeviation >= 0 ? `+${s.maDeviation.toFixed(1)}` : s.maDeviation.toFixed(1);
+        text += `  • <b>${s.symbol}</b> ${s.name} (${dev}%)\n`;
+      }
     }
   }
 
@@ -191,9 +247,10 @@ export async function sendMarketCloseAlert(market: 'US' | 'KR'): Promise<void> {
 
   // Telegram 구독자에게 알림 전송
   try {
-    const telegramMessage = buildTelegramMessage(statuses, market);
+    const maChanges = await fetchMonthlyMAChanges();
+    const telegramMessage = buildTelegramMessage(statuses, market, maChanges);
     const delivered = await broadcastToSubscribers(telegramMessage);
-    console.log(`[FibonacciAlert] ${marketLabel} Telegram 알림 발송 완료 (${delivered}명)`);
+    console.log(`[FibonacciAlert] ${marketLabel} Telegram 알림 발송 완료 (${delivered}명, MA전환 ${maChanges.length}개)`);
   } catch (error) {
     console.error('[FibonacciAlert] Telegram 알림 발송 실패:', error);
   }
