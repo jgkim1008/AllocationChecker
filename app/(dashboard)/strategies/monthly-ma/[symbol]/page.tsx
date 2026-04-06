@@ -42,41 +42,11 @@ function calcMA(values: number[], period: number, endIdx: number): number | null
 
 async function fetchMonthlyCandles(symbol: string, market: string): Promise<MonthlyCandle[] | null> {
   try {
-    let yahooSymbol = symbol;
-    if (symbol.startsWith('^')) {
-      yahooSymbol = encodeURIComponent(symbol);
-    } else if (market === 'KR' && /^\d{6}$/.test(symbol)) {
-      yahooSymbol = `${symbol}.KS`;
-    }
-
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSymbol}?interval=1mo&range=5y`;
-    const res = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0' },
-    });
+    const res = await fetch(`/api/strategies/monthly-ma/${encodeURIComponent(symbol)}?market=${market}`);
     if (!res.ok) return null;
 
     const data = await res.json();
-    const result = data?.chart?.result?.[0];
-    if (!result) return null;
-
-    const timestamps: number[] = result.timestamps ?? result.timestamp ?? [];
-    const quote = result.indicators?.quote?.[0];
-    if (!quote || timestamps.length === 0) return null;
-
-    const candles: MonthlyCandle[] = [];
-    for (let i = 0; i < timestamps.length; i++) {
-      const o = quote.open?.[i];
-      const h = quote.high?.[i];
-      const l = quote.low?.[i];
-      const c = quote.close?.[i];
-      if (o == null || h == null || l == null || c == null) continue;
-
-      const d = new Date(timestamps[i] * 1000);
-      const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-      candles.push({ date: dateStr, open: o, high: h, low: l, close: c });
-    }
-
-    return candles;
+    return data.candles || null;
   } catch {
     return null;
   }
