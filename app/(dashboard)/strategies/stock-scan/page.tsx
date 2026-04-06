@@ -423,17 +423,8 @@ export default function AnalystAlphaPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  const filtered = useMemo(() => {
-    const list = stocks
-      .filter(s => tab === 'ALL' || s.market === tab)
-      .filter(s => {
-        if (!query) return true;
-        const q = query.toLowerCase();
-        return s.symbol.toLowerCase().includes(q) || s.name.toLowerCase().includes(q);
-      });
-
-    // 정렬
-    list.sort((a, b) => {
+  const sortList = (list: Stock[]) => {
+    return [...list].sort((a, b) => {
       let aVal: number | string | null;
       let bVal: number | string | null;
 
@@ -473,8 +464,22 @@ export default function AnalystAlphaPage() {
 
       return sortDirection === 'asc' ? cmp : -cmp;
     });
+  };
 
-    return list;
+  const { indices, stockList } = useMemo(() => {
+    const filtered = stocks
+      .filter(s => tab === 'ALL' || s.market === tab)
+      .filter(s => {
+        if (!query) return true;
+        const q = query.toLowerCase();
+        return s.symbol.toLowerCase().includes(q) || s.name.toLowerCase().includes(q);
+      });
+
+    const indices = sortList(filtered.filter(s => s.symbol.startsWith('^')));
+    const stockList = sortList(filtered.filter(s => !s.symbol.startsWith('^')));
+
+    return { indices, stockList };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stocks, tab, query, sortKey, sortDirection]);
 
   const handleSort = (key: SortKey) => {
@@ -571,104 +576,164 @@ export default function AnalystAlphaPage() {
               <div key={i} className="h-16 bg-white rounded-2xl border border-gray-100 animate-pulse" />
             ))}
           </div>
-        ) : filtered.length === 0 ? (
+        ) : indices.length === 0 && stockList.length === 0 ? (
           <div className="text-center py-20 bg-white rounded-[24px] border border-gray-200">
             <p className="text-gray-400 font-bold">검색 결과가 없습니다.</p>
           </div>
         ) : (
-          <div className="bg-white rounded-[24px] border border-gray-200 overflow-hidden shadow-sm">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50/80 border-b border-gray-100">
-                <tr>
-                  <th
-                    onClick={() => handleSort('symbol')}
-                    className="text-left px-5 py-3.5 text-[10px] font-black text-gray-400 uppercase tracking-widest cursor-pointer hover:text-gray-600 transition-colors"
-                  >
-                    <span className="flex items-center gap-1">
-                      종목 <SortIcon columnKey="symbol" />
-                    </span>
-                  </th>
-                  <th
-                    onClick={() => handleSort('current_price')}
-                    className="text-right px-5 py-3.5 text-[10px] font-black text-gray-400 uppercase tracking-widest hidden sm:table-cell cursor-pointer hover:text-gray-600 transition-colors"
-                  >
-                    <span className="flex items-center justify-end gap-1">
-                      현재가 <SortIcon columnKey="current_price" />
-                    </span>
-                  </th>
-                  <th
-                    onClick={() => handleSort('buffett_score')}
-                    className="text-left px-5 py-3.5 text-[10px] font-black text-gray-400 uppercase tracking-widest hidden sm:table-cell cursor-pointer hover:text-gray-600 transition-colors"
-                  >
-                    <span className="flex items-center gap-1">
-                      버핏 기준 <SortIcon columnKey="buffett_score" />
-                    </span>
-                  </th>
-                  <th
-                    onClick={() => handleSort('dividend_yield')}
-                    className="text-left px-5 py-3.5 text-[10px] font-black text-gray-400 uppercase tracking-widest hidden md:table-cell cursor-pointer hover:text-gray-600 transition-colors"
-                  >
-                    <span className="flex items-center gap-1">
-                      배당 <SortIcon columnKey="dividend_yield" />
-                    </span>
-                  </th>
-                  <th className="px-4 py-3.5" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {filtered.map(s => (
-                  <tr
-                    key={s.symbol}
-                    onClick={() => router.push(`/strategies/stock-scan/${s.symbol}?market=${s.market}`)}
-                    className="hover:bg-indigo-50/30 cursor-pointer transition-colors group active:bg-indigo-100/40"
-                  >
-                    {/* 종목 정보 */}
-                    <td className="px-5 py-4">
-                      <div className="flex items-center gap-3">
-                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-[10px] font-black shrink-0 ${
-                          s.market === 'US' ? 'bg-blue-50 text-blue-600' : 'bg-green-50 text-green-700'
-                        }`}>
-                          {s.market}
-                        </div>
-                        <div>
-                          <p className="font-black text-gray-900 text-sm leading-tight">{s.symbol}</p>
-                          <p className="text-[11px] text-gray-400 leading-tight truncate max-w-[140px] sm:max-w-[200px]">{s.name}</p>
-                        </div>
-                      </div>
-                    </td>
+          <div className="space-y-5">
+            {/* 지수 테이블 */}
+            {indices.length > 0 && (
+              <div className="bg-white rounded-[24px] border border-gray-200 overflow-hidden shadow-sm">
+                <div className="bg-indigo-50 px-5 py-3 border-b border-indigo-100">
+                  <h3 className="font-black text-indigo-900 text-sm">📊 주요 지수 ({indices.length})</h3>
+                </div>
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50/80 border-b border-gray-100">
+                    <tr>
+                      <th
+                        onClick={() => handleSort('symbol')}
+                        className="text-left px-5 py-3.5 text-[10px] font-black text-gray-400 uppercase tracking-widest cursor-pointer hover:text-gray-600 transition-colors"
+                      >
+                        <span className="flex items-center gap-1">
+                          지수 <SortIcon columnKey="symbol" />
+                        </span>
+                      </th>
+                      <th
+                        onClick={() => handleSort('current_price')}
+                        className="text-right px-5 py-3.5 text-[10px] font-black text-gray-400 uppercase tracking-widest hidden sm:table-cell cursor-pointer hover:text-gray-600 transition-colors"
+                      >
+                        <span className="flex items-center justify-end gap-1">
+                          현재가 <SortIcon columnKey="current_price" />
+                        </span>
+                      </th>
+                      <th className="px-4 py-3.5" />
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {indices.map(s => (
+                      <tr
+                        key={s.symbol}
+                        onClick={() => router.push(`/strategies/stock-scan/${s.symbol}?market=${s.market}`)}
+                        className="hover:bg-indigo-50/30 cursor-pointer transition-colors group active:bg-indigo-100/40"
+                      >
+                        <td className="px-5 py-4">
+                          <div className="flex items-center gap-3">
+                            <div className="w-9 h-9 rounded-xl flex items-center justify-center text-[10px] font-black shrink-0 bg-indigo-50 text-indigo-600">
+                              IDX
+                            </div>
+                            <div>
+                              <p className="font-black text-gray-900 text-sm leading-tight">{s.symbol}</p>
+                              <p className="text-[11px] text-gray-400 leading-tight truncate max-w-[140px] sm:max-w-[200px]">{s.name}</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-5 py-4 text-right hidden sm:table-cell">
+                          <p className="font-black text-gray-900">{fmtPrice(s)}</p>
+                        </td>
+                        <td className="px-4 py-4">
+                          <div className="w-7 h-7 rounded-xl bg-gray-50 group-hover:bg-indigo-600 flex items-center justify-center transition-colors">
+                            <ChevronRight className="h-3.5 w-3.5 text-gray-400 group-hover:text-white transition-colors" />
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
 
-                    {/* 현재가 */}
-                    <td className="px-5 py-4 text-right hidden sm:table-cell">
-                      <p className="font-black text-gray-900">{fmtPrice(s)}</p>
-                    </td>
-
-                    {/* 버핏 기준 */}
-                    <td className="px-5 py-4 hidden sm:table-cell">
-                      {s.buffett_score != null ? (
-                        <BuffettBadge score={s.buffett_score} data={s.buffett_data} />
-                      ) : (
-                        <span className="text-[11px] text-gray-300 font-medium">미분석</span>
-                      )}
-                    </td>
-
-                    {/* 배당 */}
-                    <td className="px-5 py-4 hidden md:table-cell">
-                      <DividendBadge yield={s.dividend_yield} frequency={s.dividend_frequency} />
-                    </td>
-
-                    {/* 화살표 */}
-                    <td className="px-4 py-4">
-                      <div className="w-7 h-7 rounded-xl bg-gray-50 group-hover:bg-indigo-600 flex items-center justify-center transition-colors">
-                        <ChevronRight className="h-3.5 w-3.5 text-gray-400 group-hover:text-white transition-colors" />
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            <div className="px-5 py-3 border-t border-gray-50 bg-gray-50/50">
-              <p className="text-[11px] text-gray-400">{filtered.length}개 종목</p>
-            </div>
+            {/* 종목 테이블 */}
+            {stockList.length > 0 && (
+              <div className="bg-white rounded-[24px] border border-gray-200 overflow-hidden shadow-sm">
+                <div className="bg-gray-50 px-5 py-3 border-b border-gray-100">
+                  <h3 className="font-black text-gray-700 text-sm">📈 종목 ({stockList.length})</h3>
+                </div>
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50/80 border-b border-gray-100">
+                    <tr>
+                      <th
+                        onClick={() => handleSort('symbol')}
+                        className="text-left px-5 py-3.5 text-[10px] font-black text-gray-400 uppercase tracking-widest cursor-pointer hover:text-gray-600 transition-colors"
+                      >
+                        <span className="flex items-center gap-1">
+                          종목 <SortIcon columnKey="symbol" />
+                        </span>
+                      </th>
+                      <th
+                        onClick={() => handleSort('current_price')}
+                        className="text-right px-5 py-3.5 text-[10px] font-black text-gray-400 uppercase tracking-widest hidden sm:table-cell cursor-pointer hover:text-gray-600 transition-colors"
+                      >
+                        <span className="flex items-center justify-end gap-1">
+                          현재가 <SortIcon columnKey="current_price" />
+                        </span>
+                      </th>
+                      <th
+                        onClick={() => handleSort('buffett_score')}
+                        className="text-left px-5 py-3.5 text-[10px] font-black text-gray-400 uppercase tracking-widest hidden sm:table-cell cursor-pointer hover:text-gray-600 transition-colors"
+                      >
+                        <span className="flex items-center gap-1">
+                          버핏 기준 <SortIcon columnKey="buffett_score" />
+                        </span>
+                      </th>
+                      <th
+                        onClick={() => handleSort('dividend_yield')}
+                        className="text-left px-5 py-3.5 text-[10px] font-black text-gray-400 uppercase tracking-widest hidden md:table-cell cursor-pointer hover:text-gray-600 transition-colors"
+                      >
+                        <span className="flex items-center gap-1">
+                          배당 <SortIcon columnKey="dividend_yield" />
+                        </span>
+                      </th>
+                      <th className="px-4 py-3.5" />
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {stockList.map(s => (
+                      <tr
+                        key={s.symbol}
+                        onClick={() => router.push(`/strategies/stock-scan/${s.symbol}?market=${s.market}`)}
+                        className="hover:bg-indigo-50/30 cursor-pointer transition-colors group active:bg-indigo-100/40"
+                      >
+                        <td className="px-5 py-4">
+                          <div className="flex items-center gap-3">
+                            <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-[10px] font-black shrink-0 ${
+                              s.market === 'US' ? 'bg-blue-50 text-blue-600' : 'bg-green-50 text-green-700'
+                            }`}>
+                              {s.market}
+                            </div>
+                            <div>
+                              <p className="font-black text-gray-900 text-sm leading-tight">{s.symbol}</p>
+                              <p className="text-[11px] text-gray-400 leading-tight truncate max-w-[140px] sm:max-w-[200px]">{s.name}</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-5 py-4 text-right hidden sm:table-cell">
+                          <p className="font-black text-gray-900">{fmtPrice(s)}</p>
+                        </td>
+                        <td className="px-5 py-4 hidden sm:table-cell">
+                          {s.buffett_score != null ? (
+                            <BuffettBadge score={s.buffett_score} data={s.buffett_data} />
+                          ) : (
+                            <span className="text-[11px] text-gray-300 font-medium">미분석</span>
+                          )}
+                        </td>
+                        <td className="px-5 py-4 hidden md:table-cell">
+                          <DividendBadge yield={s.dividend_yield} frequency={s.dividend_frequency} />
+                        </td>
+                        <td className="px-4 py-4">
+                          <div className="w-7 h-7 rounded-xl bg-gray-50 group-hover:bg-indigo-600 flex items-center justify-center transition-colors">
+                            <ChevronRight className="h-3.5 w-3.5 text-gray-400 group-hover:text-white transition-colors" />
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <div className="px-5 py-3 border-t border-gray-50 bg-gray-50/50">
+                  <p className="text-[11px] text-gray-400">{stockList.length}개 종목</p>
+                </div>
+              </div>
+            )}
           </div>
         )}
         </PremiumGate>
