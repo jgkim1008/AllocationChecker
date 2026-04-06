@@ -38,11 +38,11 @@ function calcMA(values: number[], period: number, endIdx: number): number | null
 
 // TradingView 심볼 변환
 function toTradingViewSymbol(symbol: string, market: string): string {
-  // 지수 변환
-  if (symbol === '^GSPC') return 'SP:SPX';
-  if (symbol === '^IXIC') return 'NASDAQ:IXIC';
-  if (symbol === '^KS11') return 'KRX:KOSPI';
-  if (symbol === '^KQ11') return 'KRX:KOSDAQ';
+  // 지수 변환 (임베드에서 지원되는 형식 사용)
+  if (symbol === '^GSPC') return 'FOREXCOM:SPXUSD';
+  if (symbol === '^IXIC') return 'NASDAQ:NDX';
+  if (symbol === '^KS11') return 'TVC:KOSPI';
+  if (symbol === '^KQ11') return 'TVC:KOSDAQ';
 
   // 한국 주식
   if (market === 'KR') {
