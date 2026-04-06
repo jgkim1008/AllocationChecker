@@ -106,11 +106,11 @@ function TradingViewChart({ symbol, market }: { symbol: string; market: string }
       hotlist: false,
       support_host: 'https://www.tradingview.com',
       studies: [
-        'MASimple@tv-basicstudies',
-        'IchimokuCloud@tv-basicstudies',
+        'STD;SMA',
+        'STD;Ichimoku%1Cloud',
       ],
       studies_overrides: {
-        'moving average.length': 10,
+        'sma.length': 10,
         'ichimoku cloud.conversion line.visible': false,
         'ichimoku cloud.base line.visible': false,
         'ichimoku cloud.lagging span.visible': false,
