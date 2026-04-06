@@ -1255,6 +1255,70 @@ export default function AnalystAlphaDetailPage({ params }: { params: Promise<{ s
       ? calculateRSIDivergence(historyForCalc, f.currentPrice, historyForCalc[0]?.volume ?? 0)
       : null;
 
+    // 월봉 10이평 전략 (일봉 데이터로 월봉 시뮬레이션)
+    // 10개월 ≈ 210 거래일
+    const monthlyMA10Result = (() => {
+      if (historyForCalc.length < 220) return null;
+
+      // 월별 종가 추출 (최근 12개월)
+      const monthlyCloses: number[] = [];
+      let lastMonth = '';
+      for (let i = historyForCalc.length - 1; i >= 0 && monthlyCloses.length < 12; i--) {
+        const date = historyForCalc[i].date;
+        const month = date.substring(0, 7); // yyyy-mm
+        if (month !== lastMonth) {
+          monthlyCloses.unshift(historyForCalc[i].price);
+          lastMonth = month;
+        }
+      }
+
+      if (monthlyCloses.length < 10) return null;
+
+      // 10개월 이동평균 계산
+      const ma10 = monthlyCloses.slice(-10).reduce((a, b) => a + b, 0) / 10;
+      const currentPrice = f.currentPrice;
+      const deviation = ((currentPrice - ma10) / ma10) * 100;
+
+      // 이전 달 MA 계산 (신호 전환 확인용)
+      const prevMonthlyCloses = monthlyCloses.slice(0, -1);
+      const prevMA10 = prevMonthlyCloses.length >= 10
+        ? prevMonthlyCloses.slice(-10).reduce((a, b) => a + b, 0) / 10
+        : null;
+      const prevClose = monthlyCloses[monthlyCloses.length - 2];
+
+      const isAboveMA = currentPrice >= ma10;
+      const wasAboveMA = prevMA10 ? prevClose >= prevMA10 : null;
+      const signalChanged = wasAboveMA !== null && isAboveMA !== wasAboveMA;
+
+      // 저승사자 캔들 체크 (이탈 + 음봉 몸통 ≥3%)
+      const latestOpen = historyForCalc[0]?.price ?? currentPrice;
+      const bodyPercent = ((latestOpen - currentPrice) / latestOpen) * 100;
+      const isDeathCandle = !isAboveMA && bodyPercent >= 3;
+
+      // 싱크율 계산
+      let syncRate = 0;
+      const criteria = {
+        isAboveMA,
+        isStrongAboveMA: deviation >= 5,
+        noDeathCandle: !isDeathCandle,
+        signalHold: isAboveMA && !signalChanged,
+      };
+      if (criteria.isAboveMA) syncRate += 40;
+      if (criteria.isStrongAboveMA) syncRate += 20;
+      if (criteria.noDeathCandle) syncRate += 20;
+      if (criteria.signalHold) syncRate += 20;
+
+      return {
+        syncRate,
+        ma10,
+        deviation,
+        signal: isAboveMA ? 'HOLD' : 'SELL',
+        signalChanged,
+        isDeathCandle,
+        criteria,
+      };
+    })();
+
     return {
       maAlignment: maResult ? {
         syncRate: maResult.syncRate,
@@ -1293,6 +1357,16 @@ export default function AnalystAlphaDetailPage({ params }: { params: Promise<{ s
           { label: `RSI14 과매도 (${rsiDivResult.rsi14})`, pass: rsiDivResult.criteria.isOversold },
           { label: '신규 발생 (5일 이내)', pass: rsiDivResult.criteria.isFreshDivergence },
           { label: '거래량 증가', pass: rsiDivResult.criteria.isVolumeUp },
+        ],
+      } : null,
+      monthlyMA10: monthlyMA10Result ? {
+        syncRate: monthlyMA10Result.syncRate,
+        signal: monthlyMA10Result.signal,
+        criteria: [
+          { label: `종가 ≥ 10개월MA (${monthlyMA10Result.signal === 'HOLD' ? '보유' : '매도'})`, pass: monthlyMA10Result.criteria.isAboveMA },
+          { label: `MA 이격 +5% 이상 (${monthlyMA10Result.deviation.toFixed(1)}%)`, pass: monthlyMA10Result.criteria.isStrongAboveMA },
+          { label: '저승사자 캔들 없음', pass: monthlyMA10Result.criteria.noDeathCandle },
+          { label: '신호 유지 중', pass: monthlyMA10Result.criteria.signalHold },
         ],
       } : null,
     };
@@ -1680,6 +1754,13 @@ export default function AnalystAlphaDetailPage({ params }: { params: Promise<{ s
                       href: `/strategies/rsi-divergence/${symbol}?market=${market}&name=${encodeURIComponent(f?.name ?? symbol)}`,
                       color: { bar: 'bg-orange-500', badge: 'bg-orange-50 text-orange-700', icon: 'text-orange-500' },
                       data: chartStrategySyncs.rsiDivergence,
+                    },
+                    {
+                      label: '월봉 10이평 전략',
+                      sublabel: '월봉 종가 ≥ 10MA → 보유, < 10MA → 매도',
+                      href: `/strategies/monthly-ma/${symbol}?market=${market}&name=${encodeURIComponent(f?.name ?? symbol)}`,
+                      color: { bar: 'bg-indigo-500', badge: 'bg-indigo-50 text-indigo-700', icon: 'text-indigo-500' },
+                      data: chartStrategySyncs.monthlyMA10,
                     },
                   ].map(({ label, sublabel, href, color, data: syncData }) => {
                     if (!syncData) return null;
