@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 120; // 종목 수 증가로 시간 연장
+export const maxDuration = 300; // 종목 수 증가로 시간 연장 (약 150종목)
 
 export interface MonthlyMAStock {
   symbol: string;
@@ -20,14 +20,46 @@ export interface MonthlyMAStock {
   monthlyCandles: { date: string; open: number; high: number; low: number; close: number }[];
 }
 
-// 기존 종목 + 지수
+// 지수
+const INDICES: { symbol: string; name: string; market: 'US' | 'KR'; yahooSymbol: string }[] = [
+  { symbol: '^GSPC',  name: 'S&P 500',              market: 'US', yahooSymbol: '%5EGSPC' },
+  { symbol: '^IXIC',  name: 'NASDAQ Composite',     market: 'US', yahooSymbol: '%5EIXIC' },
+  { symbol: '^KS11', name: 'KOSPI',                market: 'KR', yahooSymbol: '%5EKS11' },
+  { symbol: '^KQ11', name: 'KOSDAQ',               market: 'KR', yahooSymbol: '%5EKQ11' },
+];
+
+// 미국 ETF
+const US_ETFS: { symbol: string; name: string }[] = [
+  { symbol: 'SPY',  name: 'SPDR S&P 500 ETF' },
+  { symbol: 'QQQ',  name: 'Invesco QQQ Trust' },
+  { symbol: 'SOXL', name: 'Direxion 반도체 3x ETF' },
+];
+
+// S&P 500 시총 상위 100개 (종목스캔)
+const TOP_US_SYMBOLS = [
+  'AAPL','MSFT','NVDA','AMZN','GOOGL','META','TSLA','BRK.B','AVGO','JPM',
+  'LLY','V','UNH','XOM','MA','COST','HD','PG','WMT','NFLX',
+  'ORCL','BAC','CRM','CVX','KO','ABBV','MRK','AMD','PEP','ACN',
+  'TMO','LIN','ADBE','MCD','CSCO','WFC','DHR','TXN','ABT','MS',
+  'AMGN','IBM','GE','PM','ISRG','CAT','RTX','INTU','NOW','SPGI',
+  'GS','BLK','HON','QCOM','NEE','LOW','AMAT','PFE','UBER','UNP',
+  'ELV','T','DE','BKNG','SBUX','C','AXP','TJX','VRTX','PANW',
+  'GILD','BSX','REGN','SYK','ADI','MDLZ','MU','MMC','BX','CI',
+  'PLD','ZTS','EOG','DUK','SO','APH','KLAC','CME','INTC','ETN',
+  'SHW','CB','MCO','LRCX','AON','WELL','ICE','MAR','HCA','GD',
+];
+
+// 한국 개별종목
+const KR_STOCKS: { symbol: string; name: string }[] = [
+  { symbol: '005930', name: '삼성전자' },
+];
+
+// BASE_STOCKS 생성
 const BASE_STOCKS: { symbol: string; name: string; market: 'US' | 'KR'; yahooSymbol: string }[] = [
-  { symbol: '^GSPC',   name: 'S&P 500',              market: 'US', yahooSymbol: '%5EGSPC' },
-  { symbol: 'SPY',     name: 'SPDR S&P 500 ETF',     market: 'US', yahooSymbol: 'SPY' },
-  { symbol: 'QQQ',     name: 'Invesco QQQ Trust',    market: 'US', yahooSymbol: 'QQQ' },
-  { symbol: 'SOXL',    name: 'Direxion 반도체 3x ETF', market: 'US', yahooSymbol: 'SOXL' },
-  { symbol: '^KS11',   name: 'KOSPI',                market: 'KR', yahooSymbol: '%5EKS11' },
-  { symbol: '005930',  name: '삼성전자',              market: 'KR', yahooSymbol: '005930.KS' },
+  ...INDICES,
+  ...US_ETFS.map(s => ({ ...s, market: 'US' as const, yahooSymbol: s.symbol })),
+  ...TOP_US_SYMBOLS.map(symbol => ({ symbol, name: symbol, market: 'US' as const, yahooSymbol: symbol })),
+  ...KR_STOCKS.map(s => ({ ...s, market: 'KR' as const, yahooSymbol: `${s.symbol}.KS` })),
 ];
 
 // 배당의만장 2WEEKS ETF 목록
