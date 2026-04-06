@@ -81,7 +81,7 @@ function MonthlyChart({ candles, market }: { candles: MonthlyCandle[]; market: s
     });
 
     const candleData = sortedData.map(h => ({
-      time: h.date as string,
+      time: `${h.date}-01` as string, // yyyy-mm -> yyyy-mm-dd 형식으로 변환
       open: h.open,
       high: h.high,
       low: h.low,
@@ -97,7 +97,7 @@ function MonthlyChart({ candles, market }: { candles: MonthlyCandle[]; market: s
         for (let j = 0; j < period; j++) {
           sum += data[i - j].close;
         }
-        result.push({ time: data[i].date, value: sum / period });
+        result.push({ time: `${data[i].date}-01`, value: sum / period });
       }
       return result;
     };
