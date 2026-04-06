@@ -102,24 +102,15 @@ function TradingViewChart({ symbol, market }: { symbol: string; market: string }
       hide_volume: true,
       support_host: 'https://www.tradingview.com',
       studies: [
-        { id: 'MASimple@tv-basicstudies', inputs: { length: 10 } },
-        {
-          id: 'Ichimoku Cloud@tv-basicstudies',
-          inputs: {
-            conversionLinePeriods: 9,
-            baseLinePeriods: 26,
-            laggingSpan2Periods: 52,
-            displacement: 26,
-          },
-          styles: {
-            'Conversion Line': { visible: false },
-            'Base Line': { visible: false },
-            'Lagging Span': { visible: false },
-            'Lead 1': { visible: true },
-            'Lead 2': { visible: true },
-          },
-        },
+        'MASimple@tv-basicstudies',
+        'IchimokuCloud@tv-basicstudies',
       ],
+      studies_overrides: {
+        'moving average.length': 10,
+        'ichimoku cloud.conversion line.visible': false,
+        'ichimoku cloud.base line.visible': false,
+        'ichimoku cloud.lagging span.visible': false,
+      },
     });
 
     scriptRef.current = script;
