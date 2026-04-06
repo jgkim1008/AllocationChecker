@@ -4,51 +4,15 @@ import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import {
   ArrowLeft, RefreshCw, TrendingUp, TrendingDown,
-  AlertTriangle, CheckCircle, XCircle, Activity,
+  AlertTriangle, CheckCircle, XCircle, Activity, ChevronRight,
 } from 'lucide-react';
 import { PremiumGate } from '@/components/PremiumGate';
-import {
-  ComposedChart, Bar, XAxis, YAxis,
-  ResponsiveContainer, Cell, ReferenceLine,
-} from 'recharts';
 import type { MonthlyMAStock } from '@/app/api/strategies/monthly-ma/scan/route';
 
 function formatPrice(price: number, market: 'US' | 'KR'): string {
-  if (market === 'KR') return `₩${price.toLocaleString('ko-KR')}`;
+  if (market === 'KR') return `₩${Math.round(price).toLocaleString('ko-KR')}`;
   if (price >= 1000) return `$${price.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
   return `$${price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
-
-function MiniChart({ candles, ma10, signal }: { candles: MonthlyMAStock['monthlyCandles']; ma10: number; signal: 'HOLD' | 'SELL' }) {
-  if (candles.length < 2) return null;
-
-  // 최근 12개월만 표시 (더 보기 좋게)
-  const recentCandles = candles.slice(-12);
-  const data = recentCandles.map(c => ({
-    date: c.date,
-    close: c.close,
-    open: c.open,
-    high: c.high,
-    low: c.low,
-    isUp: c.close >= c.open,
-  }));
-
-  const prices = recentCandles.flatMap(c => [c.high, c.low]);
-  const minP = Math.min(...prices, ma10) * 0.99;
-  const maxP = Math.max(...prices, ma10) * 1.01;
-
-  return (
-    <ResponsiveContainer width="100%" height={56}>
-      <ComposedChart data={data} margin={{ top: 4, right: 4, left: 4, bottom: 4 }}>
-        <XAxis dataKey="date" hide />
-        <YAxis domain={[minP, maxP]} hide />
-        <ReferenceLine y={ma10} stroke={signal === 'HOLD' ? '#16a34a' : '#dc2626'} strokeDasharray="3 2" strokeWidth={2} />
-        <Bar dataKey="close" maxBarSize={12} isAnimationActive={false}>
-          {data.map((e, i) => <Cell key={i} fill={e.isUp ? '#22c55e' : '#ef4444'} />)}
-        </Bar>
-      </ComposedChart>
-    </ResponsiveContainer>
-  );
 }
 
 function StockRow({ stock }: { stock: MonthlyMAStock }) {
@@ -62,7 +26,7 @@ function StockRow({ stock }: { stock: MonthlyMAStock }) {
   return (
     <tr
       onClick={handleClick}
-      className={`border-b transition-colors cursor-pointer ${
+      className={`border-b transition-colors cursor-pointer group ${
       stock.deathCandle
         ? 'bg-red-50 border-red-200 hover:bg-red-100'
         : isHold
@@ -70,66 +34,86 @@ function StockRow({ stock }: { stock: MonthlyMAStock }) {
           : 'bg-red-50/40 hover:bg-red-100/60'
     }`}>
       {/* 신호 */}
-      <td className="px-4 py-3 w-24">
-        <div className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg font-black text-sm ${
+      <td className="px-3 py-3">
+        <div className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg font-black text-xs ${
           isHold ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
         }`}>
-          {isHold ? <CheckCircle className="h-3.5 w-3.5" /> : <XCircle className="h-3.5 w-3.5" />}
+          {isHold ? <CheckCircle className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
           {isHold ? '보유' : '매도'}
         </div>
       </td>
 
       {/* 심볼 + 이름 */}
-      <td className="px-4 py-3">
-        <div className="flex items-center gap-2">
-          <div>
-            <div className="flex items-center gap-1.5">
-              <span className="font-black text-gray-900">{stock.symbol}</span>
-              <span className={`text-[10px] font-bold px-1 py-0.5 rounded ${
-                stock.market === 'US' ? 'bg-blue-50 text-blue-500' : 'bg-emerald-50 text-emerald-600'
-              }`}>{stock.market}</span>
-              {stock.deathCandle && (
-                <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-red-600 text-white flex items-center gap-0.5">
-                  <AlertTriangle className="h-2.5 w-2.5" />
-                  저승사자
-                </span>
-              )}
-              {stock.signalChanged && !stock.deathCandle && (
-                <span className={`text-[10px] font-black px-1.5 py-0.5 rounded animate-pulse ${
-                  isHold ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'
-                }`}>신호전환</span>
-              )}
-            </div>
-            <p className="text-xs text-gray-400 mt-0.5">{stock.name}</p>
-          </div>
+      <td className="px-3 py-3">
+        <div className="flex items-center gap-1.5">
+          <span className="font-black text-gray-900 text-sm">{stock.symbol}</span>
+          <span className={`text-[9px] font-bold px-1 py-0.5 rounded ${
+            stock.market === 'US' ? 'bg-blue-50 text-blue-500' : 'bg-emerald-50 text-emerald-600'
+          }`}>{stock.market}</span>
+          {stock.deathCandle && (
+            <span className="text-[9px] font-black px-1 py-0.5 rounded bg-red-600 text-white flex items-center gap-0.5">
+              <AlertTriangle className="h-2.5 w-2.5" />
+            </span>
+          )}
+          {stock.signalChanged && !stock.deathCandle && (
+            <span className={`text-[9px] font-black px-1 py-0.5 rounded animate-pulse ${
+              isHold ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'
+            }`}>전환</span>
+          )}
         </div>
+        <p className="text-[10px] text-gray-400 mt-0.5 truncate max-w-[120px]">{stock.name}</p>
       </td>
 
       {/* 현재가 */}
-      <td className="px-4 py-3 text-right">
-        <span className="font-bold text-gray-900 text-sm">{formatPrice(stock.currentPrice, stock.market)}</span>
-      </td>
-
-      {/* 10MA */}
-      <td className="px-4 py-3 text-right">
-        <span className={`font-bold text-sm ${isHold ? 'text-green-700' : 'text-red-600'}`}>
-          {formatPrice(stock.ma10, stock.market)}
-        </span>
+      <td className="px-3 py-3 text-right">
+        <span className="font-bold text-gray-900 text-xs">{formatPrice(stock.currentPrice, stock.market)}</span>
       </td>
 
       {/* MA 대비 */}
-      <td className="px-4 py-3 text-right w-24">
-        <div className={`inline-flex items-center gap-0.5 font-black text-sm ${
+      <td className="px-3 py-3 text-right">
+        <div className={`inline-flex items-center gap-0.5 font-black text-xs ${
           aboveMA ? 'text-green-600' : 'text-red-600'
         }`}>
-          {aboveMA ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}
+          {aboveMA ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
           {aboveMA ? '+' : ''}{stock.maDeviation.toFixed(1)}%
         </div>
       </td>
 
-      {/* 미니 차트 */}
-      <td className="px-4 py-3 w-48">
-        <MiniChart candles={stock.monthlyCandles} ma10={stock.ma10} signal={stock.signal} />
+      {/* 연속 신호 기간 */}
+      <td className="px-3 py-3 text-center">
+        <span className={`font-bold text-xs ${isHold ? 'text-green-600' : 'text-red-600'}`}>
+          {stock.consecutiveMonths}개월
+        </span>
+      </td>
+
+      {/* 마지막 전환일 */}
+      <td className="px-3 py-3 text-center">
+        <span className="text-xs text-gray-500">
+          {stock.lastSignalDate || '-'}
+        </span>
+      </td>
+
+      {/* 전환 이후 수익률 */}
+      <td className="px-3 py-3 text-right">
+        {stock.returnSinceSignal !== null ? (
+          <span className={`font-bold text-xs ${stock.returnSinceSignal >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+            {stock.returnSinceSignal >= 0 ? '+' : ''}{stock.returnSinceSignal.toFixed(1)}%
+          </span>
+        ) : (
+          <span className="text-xs text-gray-300">-</span>
+        )}
+      </td>
+
+      {/* 52주 고점 대비 */}
+      <td className="px-3 py-3 text-right">
+        <span className={`font-bold text-xs ${stock.fromYearHigh >= -5 ? 'text-green-600' : stock.fromYearHigh >= -15 ? 'text-yellow-600' : 'text-red-600'}`}>
+          {stock.fromYearHigh.toFixed(1)}%
+        </span>
+      </td>
+
+      {/* 화살표 */}
+      <td className="px-2 py-3">
+        <ChevronRight className="h-4 w-4 text-gray-300 group-hover:text-gray-500 transition-colors" />
       </td>
     </tr>
   );
@@ -270,12 +254,15 @@ export default function MonthlyMAPage() {
                 <table className="w-full">
                   <thead>
                     <tr className="bg-gray-50 border-b border-gray-100">
-                      <th className="px-4 py-2.5 text-left text-[11px] font-black text-gray-400 uppercase tracking-wider">신호</th>
-                      <th className="px-4 py-2.5 text-left text-[11px] font-black text-gray-400 uppercase tracking-wider">종목</th>
-                      <th className="px-4 py-2.5 text-right text-[11px] font-black text-gray-400 uppercase tracking-wider">현재가</th>
-                      <th className="px-4 py-2.5 text-right text-[11px] font-black text-gray-400 uppercase tracking-wider">10개월 MA</th>
-                      <th className="px-4 py-2.5 text-right text-[11px] font-black text-gray-400 uppercase tracking-wider">MA 대비</th>
-                      <th className="px-4 py-2.5 text-left text-[11px] font-black text-gray-400 uppercase tracking-wider pl-6">월봉 (14개월)</th>
+                      <th className="px-3 py-2.5 text-left text-[10px] font-black text-gray-400 uppercase tracking-wider">신호</th>
+                      <th className="px-3 py-2.5 text-left text-[10px] font-black text-gray-400 uppercase tracking-wider">종목</th>
+                      <th className="px-3 py-2.5 text-right text-[10px] font-black text-gray-400 uppercase tracking-wider">현재가</th>
+                      <th className="px-3 py-2.5 text-right text-[10px] font-black text-gray-400 uppercase tracking-wider">MA대비</th>
+                      <th className="px-3 py-2.5 text-center text-[10px] font-black text-gray-400 uppercase tracking-wider">연속</th>
+                      <th className="px-3 py-2.5 text-center text-[10px] font-black text-gray-400 uppercase tracking-wider">전환일</th>
+                      <th className="px-3 py-2.5 text-right text-[10px] font-black text-gray-400 uppercase tracking-wider">수익률</th>
+                      <th className="px-3 py-2.5 text-right text-[10px] font-black text-gray-400 uppercase tracking-wider">고점대비</th>
+                      <th className="px-2 py-2.5 w-8"></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -287,10 +274,11 @@ export default function MonthlyMAPage() {
               </div>
 
               {/* 범례 */}
-              <div className="border-t border-gray-100 px-5 py-3 flex flex-wrap items-center gap-4 text-[11px] text-gray-400">
-                <span className="flex items-center gap-1"><span className="w-3 h-1 bg-green-500 rounded inline-block" /> 음봉/양봉 색상</span>
-                <span className="flex items-center gap-1"><span className="w-6 border-t-2 border-dashed border-green-500 inline-block" /> 10MA (보유)</span>
-                <span className="flex items-center gap-1"><span className="w-6 border-t-2 border-dashed border-red-500 inline-block" /> 10MA (매도)</span>
+              <div className="border-t border-gray-100 px-5 py-3 flex flex-wrap items-center gap-4 text-[10px] text-gray-400">
+                <span><strong>연속</strong>: 현재 신호 유지 기간</span>
+                <span><strong>전환일</strong>: 마지막 신호 전환 월</span>
+                <span><strong>수익률</strong>: 전환 이후 가격 변동</span>
+                <span><strong>고점대비</strong>: 12개월 고점 대비 현재가</span>
                 {lastUpdated && (
                   <span className="ml-auto">업데이트: {new Date(lastUpdated).toLocaleString('ko-KR')}</span>
                 )}

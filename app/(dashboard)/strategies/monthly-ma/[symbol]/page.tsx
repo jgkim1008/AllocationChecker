@@ -1,16 +1,12 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowLeft, RefreshCw, TrendingUp, TrendingDown,
-  AlertTriangle, CheckCircle, XCircle, Calendar,
+  AlertTriangle, CheckCircle, XCircle,
 } from 'lucide-react';
-import {
-  ComposedChart, Bar, Line, XAxis, YAxis, Tooltip,
-  ResponsiveContainer, Cell, ReferenceLine, Legend,
-} from 'recharts';
 
 interface MonthlyCandle {
   date: string;
@@ -38,6 +34,83 @@ function calcMA(values: number[], period: number, endIdx: number): number | null
   const slice = values.slice(endIdx - period + 1, endIdx + 1);
   if (slice.some(v => v == null)) return null;
   return slice.reduce((a, b) => a + b, 0) / period;
+}
+
+// TradingView 심볼 변환
+function toTradingViewSymbol(symbol: string, market: string): string {
+  // 지수 변환
+  if (symbol === '^GSPC') return 'SP:SPX';
+  if (symbol === '^IXIC') return 'NASDAQ:IXIC';
+  if (symbol === '^KS11') return 'KRX:KOSPI';
+  if (symbol === '^KQ11') return 'KRX:KOSDAQ';
+
+  // 한국 주식
+  if (market === 'KR') {
+    return `KRX:${symbol}`;
+  }
+
+  // 미국 주식/ETF
+  return symbol;
+}
+
+// TradingView 차트 컴포넌트
+function TradingViewChart({ symbol, market }: { symbol: string; market: string }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+
+    const tvSymbol = toTradingViewSymbol(symbol, market);
+
+    // 기존 내용 제거
+    containerRef.current.innerHTML = '';
+
+    const script = document.createElement('script');
+    script.src = 'https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js';
+    script.type = 'text/javascript';
+    script.async = true;
+    script.innerHTML = JSON.stringify({
+      autosize: true,
+      symbol: tvSymbol,
+      interval: 'M',
+      timezone: 'Asia/Seoul',
+      theme: 'light',
+      style: '1',
+      locale: 'kr',
+      enable_publishing: false,
+      hide_top_toolbar: false,
+      hide_legend: false,
+      save_image: false,
+      calendar: false,
+      hide_volume: true,
+      support_host: 'https://www.tradingview.com',
+      studies: [
+        { id: 'MASimple@tv-basicstudies', inputs: { length: 10 } },
+      ],
+    });
+
+    const container = document.createElement('div');
+    container.className = 'tradingview-widget-container__widget';
+    container.style.height = '100%';
+    container.style.width = '100%';
+
+    containerRef.current.appendChild(container);
+    container.appendChild(script);
+
+    return () => {
+      if (containerRef.current) {
+        containerRef.current.innerHTML = '';
+      }
+    };
+  }, [symbol, market]);
+
+  return (
+    <div
+      ref={containerRef}
+      className="tradingview-widget-container"
+      style={{ height: '500px', width: '100%' }}
+    />
+  );
 }
 
 async function fetchMonthlyCandles(symbol: string, market: string): Promise<MonthlyCandle[] | null> {
@@ -93,7 +166,6 @@ export default function MonthlyMADetailPage() {
       const ma10 = calcMA(closes, 10, i);
       const signal = ma10 ? (c.close >= ma10 ? 'HOLD' : 'SELL') : null;
 
-      // 저승사자 캔들 체크
       const body = Math.abs(c.close - c.open);
       const bodyPct = (body / c.open) * 100;
       const isBearish = c.close < c.open;
@@ -127,14 +199,10 @@ export default function MonthlyMADetailPage() {
       }
     }
 
-    return history.reverse(); // 최신순
+    return history.reverse();
   }, [chartData]);
 
-  // 현재 상태
   const currentData = chartData.length > 0 ? chartData[chartData.length - 1] : null;
-
-  // 최근 24개월 차트
-  const recentChartData = chartData.slice(-24);
 
   return (
     <div className="min-h-screen bg-gray-50/50">
@@ -234,133 +302,63 @@ export default function MonthlyMADetailPage() {
           </div>
         )}
 
-        {/* 월봉 차트 */}
-        {!loading && recentChartData.length > 0 && (
-          <div className="bg-white rounded-2xl border border-gray-200 p-6 mb-6">
-            <h3 className="font-black text-gray-900 mb-4 flex items-center gap-2">
-              <Calendar className="h-4 w-4" />
-              월봉 차트 (최근 24개월)
-            </h3>
-            <div className="h-80">
-              <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={recentChartData} margin={{ top: 10, right: 20, left: 20, bottom: 10 }}>
-                  <XAxis
-                    dataKey="date"
-                    tick={{ fontSize: 10, fill: '#9ca3af' }}
-                    tickLine={false}
-                    axisLine={{ stroke: '#e5e7eb' }}
-                  />
-                  <YAxis
-                    domain={['auto', 'auto']}
-                    tick={{ fontSize: 10, fill: '#9ca3af' }}
-                    tickLine={false}
-                    axisLine={false}
-                    tickFormatter={(v) => market === 'KR' ? `${(v / 1000).toFixed(0)}k` : `$${v}`}
-                  />
-                  <Tooltip
-                    content={({ active, payload }) => {
-                      if (!active || !payload?.[0]) return null;
-                      const d = payload[0].payload as ChartData;
-                      return (
-                        <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-3 text-xs">
-                          <p className="font-bold text-gray-900 mb-2">{d.date}</p>
-                          <div className="space-y-1">
-                            <p>시가: {formatPrice(d.open, market)}</p>
-                            <p>고가: {formatPrice(d.high, market)}</p>
-                            <p>저가: {formatPrice(d.low, market)}</p>
-                            <p className="font-bold">종가: {formatPrice(d.close, market)}</p>
-                            {d.ma10 && <p className="text-indigo-600">10MA: {formatPrice(d.ma10, market)}</p>}
-                            {d.signal && (
-                              <p className={`font-black ${d.signal === 'HOLD' ? 'text-green-600' : 'text-red-600'}`}>
-                                신호: {d.signal === 'HOLD' ? '보유' : '매도'}
-                                {d.deathCandle && ' (저승사자!)'}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    }}
-                  />
-                  <Legend
-                    verticalAlign="top"
-                    height={36}
-                    formatter={(value) => <span className="text-xs text-gray-500">{value}</span>}
-                  />
-                  <Bar
-                    name="월봉"
-                    dataKey="close"
-                    maxBarSize={20}
-                    isAnimationActive={false}
-                  >
-                    {recentChartData.map((d, i) => (
-                      <Cell
-                        key={i}
-                        fill={d.deathCandle ? '#7f1d1d' : d.isUp ? '#22c55e' : '#ef4444'}
-                        stroke={d.deathCandle ? '#450a0a' : undefined}
-                        strokeWidth={d.deathCandle ? 2 : 0}
-                      />
-                    ))}
-                  </Bar>
-                  <Line
-                    name="10개월 MA"
-                    type="monotone"
-                    dataKey="ma10"
-                    stroke="#6366f1"
-                    strokeWidth={2}
-                    dot={false}
-                    connectNulls
-                  />
-                </ComposedChart>
-              </ResponsiveContainer>
+        {/* TradingView 차트 */}
+        {!loading && !error && (
+          <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden mb-6">
+            <div className="px-5 py-4 border-b border-gray-100">
+              <h3 className="font-black text-gray-900">월봉 차트 (10MA 포함)</h3>
+              <p className="text-xs text-gray-400 mt-1">TradingView 차트 - 월봉 + 10개월 이동평균선</p>
             </div>
+            <TradingViewChart symbol={symbol} market={market} />
           </div>
         )}
 
         {/* 신호 변경 이력 */}
-        {!loading && signalHistory.length > 0 && (
+        {!loading && chartData.length > 0 && (
           <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
             <div className="px-5 py-4 border-b border-gray-100">
               <h3 className="font-black text-gray-900">신호 변경 이력 (최근 36개월)</h3>
               <p className="text-xs text-gray-400 mt-1">전략 실행 시점을 확인하세요</p>
             </div>
-            <div className="divide-y divide-gray-100">
-              {signalHistory.map((h, i) => (
-                <div key={i} className={`px-5 py-3 flex items-center justify-between ${
-                  h.deathCandle ? 'bg-red-50' : h.signal === 'SELL' ? 'bg-red-50/50' : 'bg-green-50/50'
-                }`}>
-                  <div className="flex items-center gap-3">
-                    <div className={`p-2 rounded-lg ${
-                      h.signal === 'HOLD' ? 'bg-green-100' : 'bg-red-100'
-                    }`}>
-                      {h.signal === 'HOLD'
-                        ? <TrendingUp className="h-4 w-4 text-green-600" />
-                        : <TrendingDown className="h-4 w-4 text-red-600" />}
+            {signalHistory.length > 0 ? (
+              <div className="divide-y divide-gray-100">
+                {signalHistory.map((h, i) => (
+                  <div key={i} className={`px-5 py-3 flex items-center justify-between ${
+                    h.deathCandle ? 'bg-red-50' : h.signal === 'SELL' ? 'bg-red-50/50' : 'bg-green-50/50'
+                  }`}>
+                    <div className="flex items-center gap-3">
+                      <div className={`p-2 rounded-lg ${
+                        h.signal === 'HOLD' ? 'bg-green-100' : 'bg-red-100'
+                      }`}>
+                        {h.signal === 'HOLD'
+                          ? <TrendingUp className="h-4 w-4 text-green-600" />
+                          : <TrendingDown className="h-4 w-4 text-red-600" />}
+                      </div>
+                      <div>
+                        <p className="font-bold text-gray-900 text-sm flex items-center gap-2">
+                          {h.date}
+                          {h.deathCandle && (
+                            <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-red-600 text-white flex items-center gap-0.5">
+                              <AlertTriangle className="h-2.5 w-2.5" />
+                              저승사자
+                            </span>
+                          )}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          {h.signal === 'HOLD' ? '매수 / 보유 신호' : '전량 매도 신호'}
+                        </p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="font-bold text-gray-900 text-sm flex items-center gap-2">
-                        {h.date}
-                        {h.deathCandle && (
-                          <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-red-600 text-white flex items-center gap-0.5">
-                            <AlertTriangle className="h-2.5 w-2.5" />
-                            저승사자
-                          </span>
-                        )}
+                    <div className="text-right">
+                      <p className={`font-black text-sm ${h.signal === 'HOLD' ? 'text-green-600' : 'text-red-600'}`}>
+                        {h.signal === 'HOLD' ? '보유' : '매도'}
                       </p>
-                      <p className="text-xs text-gray-500">
-                        {h.signal === 'HOLD' ? '매수 / 보유 신호' : '전량 매도 신호'}
-                      </p>
+                      <p className="text-xs text-gray-400">{formatPrice(h.price, market)}</p>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <p className={`font-black text-sm ${h.signal === 'HOLD' ? 'text-green-600' : 'text-red-600'}`}>
-                      {h.signal === 'HOLD' ? '보유' : '매도'}
-                    </p>
-                    <p className="text-xs text-gray-400">{formatPrice(h.price, market)}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-            {signalHistory.length === 0 && (
+                ))}
+              </div>
+            ) : (
               <div className="px-5 py-8 text-center text-gray-400 text-sm">
                 최근 36개월간 신호 변경이 없습니다.
               </div>

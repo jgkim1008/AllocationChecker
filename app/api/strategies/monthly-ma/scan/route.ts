@@ -9,10 +9,14 @@ export interface MonthlyMAStock {
   market: 'US' | 'KR';
   currentPrice: number;
   ma10: number;
-  maDeviation: number;       // % 차이 (+: 위, -: 아래)
+  maDeviation: number;           // % 차이 (+: 위, -: 아래)
   signal: 'HOLD' | 'SELL';
-  signalChanged: boolean;    // 이번 달에 신호 전환 여부
-  deathCandle: boolean;      // 저승사자 캔들 여부
+  signalChanged: boolean;        // 이번 달에 신호 전환 여부
+  deathCandle: boolean;          // 저승사자 캔들 여부
+  consecutiveMonths: number;     // 연속 신호 유지 기간 (개월)
+  lastSignalDate: string | null; // 마지막 신호 전환일
+  returnSinceSignal: number | null; // 전환 이후 수익률 (%)
+  fromYearHigh: number;          // 52주(12개월) 고점 대비 (%)
   monthlyCandles: { date: string; open: number; high: number; low: number; close: number }[];
 }
 
@@ -72,11 +76,10 @@ function analyzeStock(
   stock: (typeof TARGET_STOCKS)[number],
   candles: { date: string; open: number; high: number; low: number; close: number }[]
 ): MonthlyMAStock | null {
-  // 완성된 월봉만 사용 (현재 진행 중인 달 제외 → 마지막 캔들은 현재월 진행중일 수 있음)
-  // 전략 특성상 월말 종가 기준이므로, 현재 데이터를 그대로 사용 (실시간 반영)
   if (candles.length < 12) return null;
 
   const closes = candles.map(c => c.close);
+  const highs = candles.map(c => c.high);
   const lastIdx = candles.length - 1;
 
   const ma10 = calcMA(closes, 10, lastIdx);
@@ -90,7 +93,7 @@ function analyzeStock(
   const prevSignal: 'HOLD' | 'SELL' = prevClose >= ma10Prev ? 'HOLD' : 'SELL';
   const signalChanged = signal !== prevSignal;
 
-  // 저승사자 캔들: SELL 신호이고 이번 달 캔들 몸통이 크고 음봉
+  // 저승사자 캔들
   const lastCandle = candles[lastIdx];
   const body = Math.abs(lastCandle.close - lastCandle.open);
   const bodyPct = (body / lastCandle.open) * 100;
@@ -99,7 +102,36 @@ function analyzeStock(
 
   const maDeviation = ((currentClose - ma10) / ma10) * 100;
 
-  // 최근 14개 캔들만 차트용으로 전달
+  // 연속 신호 유지 기간 & 마지막 전환일 & 전환 이후 수익률
+  let consecutiveMonths = 1;
+  let lastSignalDate: string | null = null;
+  let signalChangePrice: number | null = null;
+
+  for (let i = lastIdx - 1; i >= 10; i--) {
+    const maAtI = calcMA(closes, 10, i);
+    if (!maAtI) break;
+    const signalAtI: 'HOLD' | 'SELL' = closes[i] >= maAtI ? 'HOLD' : 'SELL';
+
+    if (signalAtI === signal) {
+      consecutiveMonths++;
+    } else {
+      // 신호 전환 지점 발견
+      lastSignalDate = candles[i + 1].date;
+      signalChangePrice = closes[i + 1];
+      break;
+    }
+  }
+
+  const returnSinceSignal = signalChangePrice
+    ? Math.round(((currentClose - signalChangePrice) / signalChangePrice) * 10000) / 100
+    : null;
+
+  // 52주(12개월) 고점 대비
+  const recent12Highs = highs.slice(Math.max(0, lastIdx - 11), lastIdx + 1);
+  const yearHigh = Math.max(...recent12Highs);
+  const fromYearHigh = Math.round(((currentClose - yearHigh) / yearHigh) * 10000) / 100;
+
+  // 최근 14개 캔들
   const recentCandles = candles.slice(Math.max(0, candles.length - 14));
 
   return {
@@ -112,6 +144,10 @@ function analyzeStock(
     signal,
     signalChanged,
     deathCandle,
+    consecutiveMonths,
+    lastSignalDate,
+    returnSinceSignal,
+    fromYearHigh,
     monthlyCandles: recentCandles,
   };
 }
