@@ -79,6 +79,7 @@ function getStartMessage(): string {
 /fib - 지수 피보나치 현황
 /us - 미국 근접 종목
 /kr - 한국 근접 종목
+/ma - 월봉 10이평 신호 전환
 /subscribe - 🔔 마감 알림 구독
 /help - 도움말
 
@@ -95,6 +96,7 @@ function getHelpMessage(): string {
 /fib - 주요 지수 피보나치 현황
 /us - 미국 레벨 근접 종목
 /kr - 한국 레벨 근접 종목
+/ma - 월봉 10이평 신호 전환 종목
 
 <b>🔔 자동 알림</b>
 /subscribe - 마감 알림 구독 (미국/한국장 마감 시 자동 알림)
@@ -206,6 +208,74 @@ async function getKRStocks(): Promise<string> {
   return text;
 }
 
+// 월봉 10이평 신호 전환 종목
+async function getMonthlyMASignals(): Promise<string> {
+  const supabase = await createServiceClient();
+
+  const { data: cached } = await supabase
+    .from('monthly_ma_cache')
+    .select('data, created_at')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .single();
+
+  if (!cached) {
+    return '❌ 월봉 10이평 데이터가 없습니다.\n스캔을 먼저 실행해주세요.';
+  }
+
+  const stocks: {
+    symbol: string;
+    name: string;
+    market: string;
+    signal: string;
+    signalChanged: boolean;
+    maDeviation: number;
+    consecutiveMonths: number;
+    lastSignalDate: string | null;
+    deathCandle: boolean;
+  }[] = cached.data || [];
+
+  const changed = stocks.filter(s => s.signalChanged);
+
+  const scanDate = new Date(cached.created_at).toLocaleDateString('ko-KR', {
+    month: 'long', day: 'numeric'
+  });
+
+  if (changed.length === 0) {
+    return `📊 <b>월봉 10이평 신호 전환</b>\n━━━━━━━━━━━━━━━\n✅ 최근 스캔(${scanDate}) 기준 신호 전환 종목 없음`;
+  }
+
+  const buySignals  = changed.filter(s => s.signal === 'HOLD');
+  const sellSignals = changed.filter(s => s.signal === 'SELL');
+
+  let text = `📊 <b>월봉 10이평 신호 전환</b> (${scanDate})\n`;
+  text += `━━━━━━━━━━━━━━━\n`;
+
+  if (sellSignals.length > 0) {
+    text += `\n🔴 <b>매도 전환 (${sellSignals.length})</b>\n`;
+    for (const s of sellSignals) {
+      const death = s.deathCandle ? ' ☠️' : '';
+      const dev = s.maDeviation.toFixed(1);
+      text += `  • <b>${s.symbol}</b> ${s.name}${death}\n`;
+      text += `    MA 대비 ${dev}%\n`;
+    }
+  }
+
+  if (buySignals.length > 0) {
+    text += `\n🟢 <b>매수 전환 (${buySignals.length})</b>\n`;
+    for (const s of buySignals) {
+      const dev = s.maDeviation >= 0 ? `+${s.maDeviation.toFixed(1)}` : s.maDeviation.toFixed(1);
+      text += `  • <b>${s.symbol}</b> ${s.name}\n`;
+      text += `    MA 대비 ${dev}%\n`;
+    }
+  }
+
+  text += `\n━━━━━━━━━━━━━━━\n`;
+  text += `전체 모니터링: ${stocks.length}개 종목`;
+
+  return text;
+}
+
 // 종목 분석
 async function analyzeStock(symbol: string): Promise<string> {
   const supabase = await createServiceClient();
@@ -294,6 +364,12 @@ async function handleMessage(chatId: number, text: string, username?: string) {
 
   if (lower === '/kr' || lower === '한국' || lower === '한국장') {
     const response = await getKRStocks();
+    await sendMessage(chatId, response);
+    return;
+  }
+
+  if (lower === '/ma' || lower === '/ma10' || lower === '월봉' || lower === '이평') {
+    const response = await getMonthlyMASignals();
     await sendMessage(chatId, response);
     return;
   }
