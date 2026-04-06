@@ -56,20 +56,37 @@ function toTradingViewSymbol(symbol: string, market: string): string {
 // TradingView 차트 컴포넌트
 function TradingViewChart({ symbol, market }: { symbol: string; market: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const scriptRef = useRef<HTMLScriptElement | null>(null);
 
   useEffect(() => {
     if (!containerRef.current) return;
 
     const tvSymbol = toTradingViewSymbol(symbol, market);
+    const containerId = `tradingview_${symbol.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}`;
+
+    // 기존 스크립트 제거
+    if (scriptRef.current) {
+      scriptRef.current.remove();
+      scriptRef.current = null;
+    }
 
     // 기존 내용 제거
     containerRef.current.innerHTML = '';
 
+    // 위젯 컨테이너 생성
+    const widgetContainer = document.createElement('div');
+    widgetContainer.id = containerId;
+    widgetContainer.style.height = '100%';
+    widgetContainer.style.width = '100%';
+    containerRef.current.appendChild(widgetContainer);
+
+    // 스크립트 생성
     const script = document.createElement('script');
     script.src = 'https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js';
     script.type = 'text/javascript';
     script.async = true;
     script.innerHTML = JSON.stringify({
+      container_id: containerId,
       autosize: true,
       symbol: tvSymbol,
       interval: 'M',
@@ -86,18 +103,33 @@ function TradingViewChart({ symbol, market }: { symbol: string; market: string }
       support_host: 'https://www.tradingview.com',
       studies: [
         { id: 'MASimple@tv-basicstudies', inputs: { length: 10 } },
+        {
+          id: 'IchimokuCloud@tv-basicstudies',
+          inputs: {
+            conversionLinePeriods: 9,
+            baseLinePeriods: 26,
+            laggingSpan2Periods: 52,
+            displacement: 26,
+          },
+          styles: {
+            'Conversion Line': { visible: false },
+            'Base Line': { visible: false },
+            'Lagging Span': { visible: false },
+            'Lead 1': { visible: true },
+            'Lead 2': { visible: true },
+          },
+        },
       ],
     });
 
-    const container = document.createElement('div');
-    container.className = 'tradingview-widget-container__widget';
-    container.style.height = '100%';
-    container.style.width = '100%';
-
-    containerRef.current.appendChild(container);
-    container.appendChild(script);
+    scriptRef.current = script;
+    widgetContainer.appendChild(script);
 
     return () => {
+      if (scriptRef.current) {
+        scriptRef.current.remove();
+        scriptRef.current = null;
+      }
       if (containerRef.current) {
         containerRef.current.innerHTML = '';
       }
@@ -306,8 +338,8 @@ export default function MonthlyMADetailPage() {
         {!loading && !error && (
           <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden mb-6">
             <div className="px-5 py-4 border-b border-gray-100">
-              <h3 className="font-black text-gray-900">월봉 차트 (10MA 포함)</h3>
-              <p className="text-xs text-gray-400 mt-1">TradingView 차트 - 월봉 + 10개월 이동평균선</p>
+              <h3 className="font-black text-gray-900">월봉 차트 (10MA + 이치모쿠 구름)</h3>
+              <p className="text-xs text-gray-400 mt-1">TradingView 차트 - 월봉 + 10개월 이동평균선 + 이치모쿠 구름대</p>
             </div>
             <TradingViewChart symbol={symbol} market={market} />
           </div>
