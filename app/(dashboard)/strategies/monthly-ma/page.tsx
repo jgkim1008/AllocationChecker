@@ -1,18 +1,61 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import {
   ArrowLeft, RefreshCw, TrendingUp, TrendingDown,
   AlertTriangle, CheckCircle, XCircle, Activity, ChevronRight,
+  ChevronUp, ChevronDown,
 } from 'lucide-react';
 import { PremiumGate } from '@/components/PremiumGate';
 import type { MonthlyMAStock } from '@/app/api/strategies/monthly-ma/scan/route';
+
+type SortKey = 'signal' | 'symbol' | 'price' | 'maDeviation' | 'consecutive' | 'lastSignalDate' | 'returnSinceSignal' | 'fromYearHigh';
+type SortOrder = 'asc' | 'desc';
 
 function formatPrice(price: number, market: 'US' | 'KR'): string {
   if (market === 'KR') return `₩${Math.round(price).toLocaleString('ko-KR')}`;
   if (price >= 1000) return `$${price.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
   return `$${price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function SortHeader({
+  label,
+  sortKey,
+  currentSort,
+  currentOrder,
+  onSort,
+  align = 'left',
+}: {
+  label: string;
+  sortKey: SortKey;
+  currentSort: SortKey;
+  currentOrder: SortOrder;
+  onSort: (key: SortKey) => void;
+  align?: 'left' | 'center' | 'right';
+}) {
+  const isActive = currentSort === sortKey;
+  const alignClass = align === 'right' ? 'justify-end' : align === 'center' ? 'justify-center' : 'justify-start';
+
+  return (
+    <th
+      onClick={() => onSort(sortKey)}
+      className={`px-3 py-2.5 text-${align} text-[10px] font-black text-gray-400 uppercase tracking-wider cursor-pointer hover:text-gray-600 hover:bg-gray-100 transition-colors select-none`}
+    >
+      <div className={`flex items-center gap-1 ${alignClass}`}>
+        <span>{label}</span>
+        <span className={`transition-colors ${isActive ? 'text-indigo-600' : 'text-gray-300'}`}>
+          {isActive && currentOrder === 'asc' ? (
+            <ChevronUp className="h-3 w-3" />
+          ) : isActive && currentOrder === 'desc' ? (
+            <ChevronDown className="h-3 w-3" />
+          ) : (
+            <ChevronDown className="h-3 w-3 opacity-50" />
+          )}
+        </span>
+      </div>
+    </th>
+  );
 }
 
 function StockRow({ stock }: { stock: MonthlyMAStock }) {
@@ -124,6 +167,8 @@ export default function MonthlyMAPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+  const [sortKey, setSortKey] = useState<SortKey>('maDeviation');
+  const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -143,18 +188,63 @@ export default function MonthlyMAPage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  const holdCount = stocks.filter(s => s.signal === 'HOLD').length;
-  const sellCount = stocks.filter(s => s.signal === 'SELL').length;
-  const deathCount = stocks.filter(s => s.deathCandle).length;
-  const changedCount = stocks.filter(s => s.signalChanged).length;
+  const handleSort = useCallback((key: SortKey) => {
+    if (sortKey === key) {
+      setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortKey(key);
+      setSortOrder('asc');
+    }
+  }, [sortKey]);
 
-  // 정렬: 저승사자 → 신호전환 → 매도 → 보유 (MA 대비 % 순)
-  const sorted = [...stocks].sort((a, b) => {
-    if (a.deathCandle !== b.deathCandle) return a.deathCandle ? -1 : 1;
-    if (a.signalChanged !== b.signalChanged) return a.signalChanged ? -1 : 1;
-    if (a.signal !== b.signal) return a.signal === 'SELL' ? -1 : 1;
-    return a.maDeviation - b.maDeviation;
-  });
+  // 지수와 종목 분리
+  const { indices, stockList } = useMemo(() => {
+    const indices = stocks.filter(s => s.symbol.startsWith('^'));
+    const stockList = stocks.filter(s => !s.symbol.startsWith('^'));
+    return { indices, stockList };
+  }, [stocks]);
+
+  // 정렬 함수
+  const sortStocks = useCallback((items: MonthlyMAStock[]) => {
+    return [...items].sort((a, b) => {
+      let cmp = 0;
+      switch (sortKey) {
+        case 'signal':
+          cmp = (a.signal === 'HOLD' ? 1 : 0) - (b.signal === 'HOLD' ? 1 : 0);
+          break;
+        case 'symbol':
+          cmp = a.symbol.localeCompare(b.symbol);
+          break;
+        case 'price':
+          cmp = a.currentPrice - b.currentPrice;
+          break;
+        case 'maDeviation':
+          cmp = a.maDeviation - b.maDeviation;
+          break;
+        case 'consecutive':
+          cmp = a.consecutiveMonths - b.consecutiveMonths;
+          break;
+        case 'lastSignalDate':
+          cmp = (a.lastSignalDate || '').localeCompare(b.lastSignalDate || '');
+          break;
+        case 'returnSinceSignal':
+          cmp = (a.returnSinceSignal ?? -999) - (b.returnSinceSignal ?? -999);
+          break;
+        case 'fromYearHigh':
+          cmp = a.fromYearHigh - b.fromYearHigh;
+          break;
+      }
+      return sortOrder === 'asc' ? cmp : -cmp;
+    });
+  }, [sortKey, sortOrder]);
+
+  const sortedIndices = useMemo(() => sortStocks(indices), [indices, sortStocks]);
+  const sortedStocks = useMemo(() => sortStocks(stockList), [stockList, sortStocks]);
+
+  const holdCount = stockList.filter(s => s.signal === 'HOLD').length;
+  const sellCount = stockList.filter(s => s.signal === 'SELL').length;
+  const deathCount = stockList.filter(s => s.deathCandle).length;
+  const changedCount = stockList.filter(s => s.signalChanged).length;
 
   return (
     <div className="min-h-screen bg-gray-50/50">
@@ -238,8 +328,39 @@ export default function MonthlyMAPage() {
             </div>
           )}
 
-          {/* 테이블 */}
-          {!loading && sorted.length > 0 && (
+          {/* 지수 테이블 */}
+          {!loading && sortedIndices.length > 0 && (
+            <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden mb-6">
+              <div className="bg-indigo-50 px-5 py-3 border-b border-indigo-100">
+                <h3 className="font-black text-indigo-900 text-sm">📊 주요 지수 ({sortedIndices.length})</h3>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="bg-gray-50 border-b border-gray-100">
+                      <SortHeader label="신호" sortKey="signal" currentSort={sortKey} currentOrder={sortOrder} onSort={handleSort} />
+                      <SortHeader label="지수" sortKey="symbol" currentSort={sortKey} currentOrder={sortOrder} onSort={handleSort} />
+                      <SortHeader label="현재가" sortKey="price" currentSort={sortKey} currentOrder={sortOrder} onSort={handleSort} align="right" />
+                      <SortHeader label="MA대비" sortKey="maDeviation" currentSort={sortKey} currentOrder={sortOrder} onSort={handleSort} align="right" />
+                      <SortHeader label="연속" sortKey="consecutive" currentSort={sortKey} currentOrder={sortOrder} onSort={handleSort} align="center" />
+                      <SortHeader label="전환일" sortKey="lastSignalDate" currentSort={sortKey} currentOrder={sortOrder} onSort={handleSort} align="center" />
+                      <SortHeader label="수익률" sortKey="returnSinceSignal" currentSort={sortKey} currentOrder={sortOrder} onSort={handleSort} align="right" />
+                      <SortHeader label="고점대비" sortKey="fromYearHigh" currentSort={sortKey} currentOrder={sortOrder} onSort={handleSort} align="right" />
+                      <th className="px-2 py-2.5 w-8"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sortedIndices.map(stock => (
+                      <StockRow key={stock.symbol} stock={stock} />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* 종목 테이블 */}
+          {!loading && sortedStocks.length > 0 && (
             <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
 
               {/* 저승사자 경보 배너 */}
@@ -250,23 +371,27 @@ export default function MonthlyMAPage() {
                 </div>
               )}
 
+              <div className="bg-gray-50 px-5 py-3 border-b border-gray-100">
+                <h3 className="font-black text-gray-700 text-sm">📈 종목 ({sortedStocks.length})</h3>
+              </div>
+
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead>
                     <tr className="bg-gray-50 border-b border-gray-100">
-                      <th className="px-3 py-2.5 text-left text-[10px] font-black text-gray-400 uppercase tracking-wider">신호</th>
-                      <th className="px-3 py-2.5 text-left text-[10px] font-black text-gray-400 uppercase tracking-wider">종목</th>
-                      <th className="px-3 py-2.5 text-right text-[10px] font-black text-gray-400 uppercase tracking-wider">현재가</th>
-                      <th className="px-3 py-2.5 text-right text-[10px] font-black text-gray-400 uppercase tracking-wider">MA대비</th>
-                      <th className="px-3 py-2.5 text-center text-[10px] font-black text-gray-400 uppercase tracking-wider">연속</th>
-                      <th className="px-3 py-2.5 text-center text-[10px] font-black text-gray-400 uppercase tracking-wider">전환일</th>
-                      <th className="px-3 py-2.5 text-right text-[10px] font-black text-gray-400 uppercase tracking-wider">수익률</th>
-                      <th className="px-3 py-2.5 text-right text-[10px] font-black text-gray-400 uppercase tracking-wider">고점대비</th>
+                      <SortHeader label="신호" sortKey="signal" currentSort={sortKey} currentOrder={sortOrder} onSort={handleSort} />
+                      <SortHeader label="종목" sortKey="symbol" currentSort={sortKey} currentOrder={sortOrder} onSort={handleSort} />
+                      <SortHeader label="현재가" sortKey="price" currentSort={sortKey} currentOrder={sortOrder} onSort={handleSort} align="right" />
+                      <SortHeader label="MA대비" sortKey="maDeviation" currentSort={sortKey} currentOrder={sortOrder} onSort={handleSort} align="right" />
+                      <SortHeader label="연속" sortKey="consecutive" currentSort={sortKey} currentOrder={sortOrder} onSort={handleSort} align="center" />
+                      <SortHeader label="전환일" sortKey="lastSignalDate" currentSort={sortKey} currentOrder={sortOrder} onSort={handleSort} align="center" />
+                      <SortHeader label="수익률" sortKey="returnSinceSignal" currentSort={sortKey} currentOrder={sortOrder} onSort={handleSort} align="right" />
+                      <SortHeader label="고점대비" sortKey="fromYearHigh" currentSort={sortKey} currentOrder={sortOrder} onSort={handleSort} align="right" />
                       <th className="px-2 py-2.5 w-8"></th>
                     </tr>
                   </thead>
                   <tbody>
-                    {sorted.map(stock => (
+                    {sortedStocks.map(stock => (
                       <StockRow key={stock.symbol} stock={stock} />
                     ))}
                   </tbody>
