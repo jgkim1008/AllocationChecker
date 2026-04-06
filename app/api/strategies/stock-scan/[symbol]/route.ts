@@ -414,9 +414,9 @@ export async function GET(
   // 최종 심볼 (DB 저장용)
   const upperSymbol = market === 'KR' ? baseSymbol : rawSymbol;
 
-  // KR: .KS 접미사 / US: BRK.B → BRK-B (Yahoo Finance dot-to-dash)
+  // KR: .KS 접미사 (단, ^로 시작하는 지수는 그대로 사용) / US: BRK.B → BRK-B
   const yahooTicker = market === 'KR'
-    ? `${baseSymbol}.KS`
+    ? (baseSymbol.startsWith('^') ? baseSymbol : `${baseSymbol}.KS`)
     : rawSymbol.replace(/\./g, '-');
 
   // 1. 기본 가격 정보 (Yahoo v8/chart — 인증 불필요)
