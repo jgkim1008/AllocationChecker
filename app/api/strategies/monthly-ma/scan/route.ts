@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { KOSPI200_STOCKS } from '@/lib/utils/kospi200-stocks';
+import { createClient } from '@/lib/supabase/server';
+
+const CACHE_DAYS = 15; // 캐시 유효 기간 (일)
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300; // 종목 수 증가로 시간 연장 (약 350종목)
@@ -262,7 +265,40 @@ function analyzeStock(
 }
 
 export async function GET(_req: NextRequest) {
+  const { searchParams } = new URL(_req.url);
+  const forceRefresh = searchParams.get('refresh') === 'true';
+
   try {
+    const supabase = await createClient();
+
+    // 1. 캐시 확인 (강제 새로고침이 아닌 경우)
+    if (!forceRefresh) {
+      const { data: cached } = await supabase
+        .from('monthly_ma_cache')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (cached) {
+        const cacheAge = Date.now() - new Date(cached.created_at).getTime();
+        const cacheDaysMs = CACHE_DAYS * 24 * 60 * 60 * 1000;
+
+        if (cacheAge < cacheDaysMs) {
+          console.log(`[MonthlyMA] Using cached data (${Math.round(cacheAge / (1000 * 60 * 60))}h old)`);
+          return NextResponse.json({
+            stocks: cached.data,
+            count: cached.data.length,
+            timestamp: cached.created_at,
+            cached: true,
+            cacheAge: Math.round(cacheAge / (1000 * 60 * 60)), // hours
+          });
+        }
+      }
+    }
+
+    // 2. 새로 스캔
+    console.log(`[MonthlyMA] Starting fresh scan for ${TARGET_STOCKS.length} stocks...`);
     const results: MonthlyMAStock[] = [];
 
     for (const stock of TARGET_STOCKS) {
@@ -273,13 +309,27 @@ export async function GET(_req: NextRequest) {
       }
       const analyzed = analyzeStock(stock, candles);
       if (analyzed) results.push(analyzed);
-      await new Promise(r => setTimeout(r, 150)); // 딜레이 단축 (350종목 대응)
+      await new Promise(r => setTimeout(r, 150));
+    }
+
+    // 3. 캐시 저장
+    const { error: upsertError } = await supabase
+      .from('monthly_ma_cache')
+      .upsert({
+        id: 'latest',
+        data: results,
+        created_at: new Date().toISOString(),
+      });
+
+    if (upsertError) {
+      console.warn('[MonthlyMA] Cache save failed:', upsertError.message);
     }
 
     return NextResponse.json({
       stocks: results,
       count: results.length,
       timestamp: new Date().toISOString(),
+      cached: false,
     });
   } catch (error) {
     console.error('[MonthlyMA Scan API Error]', error);
