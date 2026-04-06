@@ -62,11 +62,11 @@ function TradingViewChart({ symbol, market }: { symbol: string; market: string }
 
     const tvSymbol = toTradingViewSymbol(symbol, market);
 
-    // TradingView 위젯 URL에 지표 포함 (10MA만 - 이전에 작동했던 형식)
+    // TradingView 위젯 URL에 지표 포함
     const studiesOverrides = encodeURIComponent(JSON.stringify({
       'Moving Average.length': 10,
     }));
-    const widgetUrl = `https://www.tradingview.com/widgetembed/?symbol=${encodeURIComponent(tvSymbol)}&interval=M&hidetoptoolbar=0&hidelegend=0&saveimage=0&toolbarbg=f1f3f6&studies=MASimple%40tv-basicstudies&studies_overrides=${studiesOverrides}&theme=light&style=1&timezone=Asia%2FSeoul&withdateranges=1&locale=kr`;
+    const widgetUrl = `https://www.tradingview.com/widgetembed/?symbol=${encodeURIComponent(tvSymbol)}&interval=M&hidetoptoolbar=0&hidelegend=0&saveimage=0&toolbarbg=f1f3f6&studies=MASimple%40tv-basicstudies&studies=Ichimoku%40tv-basicstudies&studies_overrides=${studiesOverrides}&theme=light&style=1&timezone=Asia%2FSeoul&withdateranges=1&locale=kr`;
 
     // iframe 생성
     containerRef.current.innerHTML = '';
