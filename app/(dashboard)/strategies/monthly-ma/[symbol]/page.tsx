@@ -63,14 +63,13 @@ function TradingViewChart({ symbol, market }: { symbol: string; market: string }
     const tvSymbol = toTradingViewSymbol(symbol, market);
 
     // TradingView 위젯 URL에 지표 포함
+    const studies = encodeURIComponent('MASimple@tv-basicstudies,Ichimoku@tv-basicstudies');
     const studiesOverrides = encodeURIComponent(JSON.stringify({
       'Moving Average.length': 10,
-      'Moving Average.plottype': 'line',
       'Ichimoku.Kumo Cloud Upper Line.visible': false,
       'Ichimoku.Kumo Cloud Lower Line.visible': false,
-      'Ichimoku.Cloud Fill.visible': true,
     }));
-    const widgetUrl = `https://www.tradingview.com/widgetembed/?symbol=${encodeURIComponent(tvSymbol)}&interval=M&hidetoptoolbar=0&hidelegend=0&saveimage=0&toolbarbg=f1f3f6&studies=MASimple%40tv-basicstudies&studies=Ichimoku%40tv-basicstudies&studies_overrides=${studiesOverrides}&theme=light&style=1&timezone=Asia%2FSeoul&withdateranges=1&locale=kr`;
+    const widgetUrl = `https://www.tradingview.com/widgetembed/?symbol=${encodeURIComponent(tvSymbol)}&interval=M&hidetoptoolbar=0&hidelegend=0&saveimage=0&toolbarbg=f1f3f6&studies=${studies}&studies_overrides=${studiesOverrides}&theme=light&style=1&timezone=Asia%2FSeoul&withdateranges=1&locale=kr`;
 
     // iframe 생성
     containerRef.current.innerHTML = '';
