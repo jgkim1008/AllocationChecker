@@ -7,7 +7,7 @@ import {
   ArrowLeft, RefreshCw, TrendingUp, TrendingDown,
   AlertTriangle, CheckCircle, XCircle,
 } from 'lucide-react';
-import { createChart, ColorType, CrosshairMode, CandlestickSeries, LineSeries } from 'lightweight-charts';
+import { createChart, ColorType, CrosshairMode, CandlestickSeries, LineSeries, createSeriesMarkers } from 'lightweight-charts';
 
 interface MonthlyCandle {
   date: string;
@@ -112,8 +112,55 @@ function MonthlyChart({ candles, market }: { candles: MonthlyCandle[]; market: s
     });
     ma10Series.setData(calcMAData(sortedData, 10));
 
-    // 3. 현재가가 MA10 위/아래인지 표시하는 가격선
+    // 3. 신호 변경 마커 (매수: 초록 삼각형, 매도: 빨강 삼각형)
+    const markers: Array<{
+      time: string;
+      position: 'aboveBar' | 'belowBar';
+      shape: 'arrowUp' | 'arrowDown';
+      color: string;
+      text: string;
+      size: number;
+    }> = [];
+
     const closes = sortedData.map(c => c.close);
+    for (let i = 10; i < sortedData.length; i++) {
+      const prevMA = calcMA(closes, 10, i - 1);
+      const currMA = calcMA(closes, 10, i);
+      if (!prevMA || !currMA) continue;
+
+      const prevClose = closes[i - 1];
+      const currClose = closes[i];
+      const prevAbove = prevClose >= prevMA;
+      const currAbove = currClose >= currMA;
+
+      // 신호 변경 감지
+      if (!prevAbove && currAbove) {
+        // 매수 신호: 아래에서 위로 돌파
+        markers.push({
+          time: `${sortedData[i].date}-01`,
+          position: 'belowBar',
+          shape: 'arrowUp',
+          color: '#16a34a',
+          text: '매수',
+          size: 2,
+        });
+      } else if (prevAbove && !currAbove) {
+        // 매도 신호: 위에서 아래로 이탈
+        markers.push({
+          time: `${sortedData[i].date}-01`,
+          position: 'aboveBar',
+          shape: 'arrowDown',
+          color: '#dc2626',
+          text: '매도',
+          size: 2,
+        });
+      }
+    }
+    if (markers.length > 0) {
+      createSeriesMarkers(candleSeries, markers);
+    }
+
+    // 4. 현재가가 MA10 위/아래인지 표시하는 가격선
     const lastIdx = sortedData.length - 1;
     const currentClose = closes[lastIdx];
     const ma10Value = calcMA(closes, 10, lastIdx);
