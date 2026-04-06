@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { KOSPI200_STOCKS } from '@/lib/utils/kospi200-stocks';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 300; // 종목 수 증가로 시간 연장 (약 150종목)
+export const maxDuration = 300; // 종목 수 증가로 시간 연장 (약 350종목)
 
 export interface MonthlyMAStock {
   symbol: string;
@@ -49,10 +50,8 @@ const TOP_US_SYMBOLS = [
   'SHW','CB','MCO','LRCX','AON','WELL','ICE','MAR','HCA','GD',
 ];
 
-// 한국 개별종목
-const KR_STOCKS: { symbol: string; name: string }[] = [
-  { symbol: '005930', name: '삼성전자' },
-];
+// 한국 개별종목 (KOSPI 200)
+const KR_STOCKS = KOSPI200_STOCKS;
 
 // BASE_STOCKS 생성
 const BASE_STOCKS: { symbol: string; name: string; market: 'US' | 'KR'; yahooSymbol: string }[] = [
@@ -274,7 +273,7 @@ export async function GET(_req: NextRequest) {
       }
       const analyzed = analyzeStock(stock, candles);
       if (analyzed) results.push(analyzed);
-      await new Promise(r => setTimeout(r, 200)); // 딜레이 단축
+      await new Promise(r => setTimeout(r, 150)); // 딜레이 단축 (350종목 대응)
     }
 
     return NextResponse.json({
