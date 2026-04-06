@@ -7,7 +7,7 @@ import {
   ArrowLeft, RefreshCw, TrendingUp, TrendingDown,
   AlertTriangle, CheckCircle, XCircle,
 } from 'lucide-react';
-import { createChart, ColorType, CrosshairMode, CandlestickSeries, LineSeries, createSeriesMarkers } from 'lightweight-charts';
+import { createChart, ColorType, CrosshairMode, CandlestickSeries, LineSeries, AreaSeries, createSeriesMarkers } from 'lightweight-charts';
 
 interface MonthlyCandle {
   date: string;
@@ -35,6 +35,34 @@ function calcMA(values: number[], period: number, endIdx: number): number | null
   const slice = values.slice(endIdx - period + 1, endIdx + 1);
   if (slice.some(v => v == null)) return null;
   return slice.reduce((a, b) => a + b, 0) / period;
+}
+
+// 이치모쿠 계산 헬퍼 함수
+function calcHighest(data: number[], period: number, endIdx: number): number | null {
+  if (endIdx < period - 1) return null;
+  let max = -Infinity;
+  for (let i = endIdx - period + 1; i <= endIdx; i++) {
+    if (data[i] > max) max = data[i];
+  }
+  return max;
+}
+
+function calcLowest(data: number[], period: number, endIdx: number): number | null {
+  if (endIdx < period - 1) return null;
+  let min = Infinity;
+  for (let i = endIdx - period + 1; i <= endIdx; i++) {
+    if (data[i] < min) min = data[i];
+  }
+  return min;
+}
+
+// 미래 날짜 생성 (월봉 기준)
+function getFutureDate(baseDate: string, monthsAhead: number): string {
+  const [year, month] = baseDate.split('-').map(Number);
+  const futureMonth = month + monthsAhead;
+  const futureYear = year + Math.floor((futureMonth - 1) / 12);
+  const adjustedMonth = ((futureMonth - 1) % 12) + 1;
+  return `${futureYear}-${String(adjustedMonth).padStart(2, '0')}-01`;
 }
 
 // lightweight-charts 월봉 차트 컴포넌트
@@ -91,7 +119,114 @@ function MonthlyChart({ candles, market }: { candles: MonthlyCandle[]; market: s
     }));
     candleSeries.setData(candleData);
 
-    // 2. 10개월 이동평균선 (굵은 주황색)
+    // 2. 이치모쿠 구름 (Kumo Cloud)
+    const highs = sortedData.map(c => c.high);
+    const lows = sortedData.map(c => c.low);
+
+    // Tenkan-sen (9기간) 계산
+    const tenkan: (number | null)[] = [];
+    for (let i = 0; i < sortedData.length; i++) {
+      const h = calcHighest(highs, 9, i);
+      const l = calcLowest(lows, 9, i);
+      tenkan.push(h !== null && l !== null ? (h + l) / 2 : null);
+    }
+
+    // Kijun-sen (26기간) 계산
+    const kijun: (number | null)[] = [];
+    for (let i = 0; i < sortedData.length; i++) {
+      const h = calcHighest(highs, 26, i);
+      const l = calcLowest(lows, 26, i);
+      kijun.push(h !== null && l !== null ? (h + l) / 2 : null);
+    }
+
+    // Senkou Span A = (Tenkan + Kijun) / 2, 26기간 앞으로 이동
+    // Senkou Span B = (52기간 최고 + 52기간 최저) / 2, 26기간 앞으로 이동
+    interface CloudPoint {
+      time: string;
+      spanA: number;
+      spanB: number;
+    }
+    const cloudData: CloudPoint[] = [];
+
+    for (let i = 0; i < sortedData.length; i++) {
+      const tVal = tenkan[i];
+      const kVal = kijun[i];
+      const spanA = tVal !== null && kVal !== null ? (tVal + kVal) / 2 : null;
+
+      const h52 = calcHighest(highs, 52, i);
+      const l52 = calcLowest(lows, 52, i);
+      const spanB = h52 !== null && l52 !== null ? (h52 + l52) / 2 : null;
+
+      if (spanA !== null && spanB !== null) {
+        // 26기간 앞으로 이동
+        const futureTime = getFutureDate(sortedData[i].date, 26);
+        cloudData.push({ time: futureTime, spanA, spanB });
+      }
+    }
+
+    // 구름 그리기 - 상승 구름(초록)과 하락 구름(빨강)
+    if (cloudData.length > 0) {
+      // Span A 라인 (상단 경계)
+      const spanASeries = chart.addSeries(AreaSeries, {
+        lineColor: 'rgba(76, 175, 80, 0.5)',
+        topColor: 'rgba(76, 175, 80, 0.0)',
+        bottomColor: 'rgba(76, 175, 80, 0.0)',
+        lineWidth: 1,
+        priceLineVisible: false,
+        lastValueVisible: false,
+      });
+
+      // Span B 라인 (하단 경계)
+      const spanBSeries = chart.addSeries(AreaSeries, {
+        lineColor: 'rgba(244, 67, 54, 0.5)',
+        topColor: 'rgba(244, 67, 54, 0.0)',
+        bottomColor: 'rgba(244, 67, 54, 0.0)',
+        lineWidth: 1,
+        priceLineVisible: false,
+        lastValueVisible: false,
+      });
+
+      // 구름 채우기를 위한 영역 시리즈
+      // 상승 구름 (SpanA > SpanB): 초록색 채우기
+      const bullishCloudSeries = chart.addSeries(AreaSeries, {
+        lineColor: 'rgba(76, 175, 80, 0)',
+        topColor: 'rgba(76, 175, 80, 0.3)',
+        bottomColor: 'rgba(76, 175, 80, 0.1)',
+        lineWidth: 1,
+        priceLineVisible: false,
+        lastValueVisible: false,
+      });
+
+      // 하락 구름 (SpanA < SpanB): 빨간색 채우기
+      const bearishCloudSeries = chart.addSeries(AreaSeries, {
+        lineColor: 'rgba(244, 67, 54, 0)',
+        topColor: 'rgba(244, 67, 54, 0.3)',
+        bottomColor: 'rgba(244, 67, 54, 0.1)',
+        lineWidth: 1,
+        priceLineVisible: false,
+        lastValueVisible: false,
+      });
+
+      spanASeries.setData(cloudData.map(d => ({ time: d.time, value: d.spanA })));
+      spanBSeries.setData(cloudData.map(d => ({ time: d.time, value: d.spanB })));
+
+      // 상승/하락 구름 데이터 분리
+      const bullishData: { time: string; value: number }[] = [];
+      const bearishData: { time: string; value: number }[] = [];
+
+      cloudData.forEach(d => {
+        if (d.spanA >= d.spanB) {
+          bullishData.push({ time: d.time, value: d.spanA });
+        } else {
+          bearishData.push({ time: d.time, value: d.spanB });
+        }
+      });
+
+      if (bullishData.length > 0) bullishCloudSeries.setData(bullishData);
+      if (bearishData.length > 0) bearishCloudSeries.setData(bearishData);
+    }
+
+    // 3. 10개월 이동평균선 (굵은 주황색, 구름 위에 표시)
     const calcMAData = (data: typeof sortedData, period: number) => {
       const result: { time: string; value: number }[] = [];
       for (let i = period - 1; i < data.length; i++) {
@@ -112,7 +247,7 @@ function MonthlyChart({ candles, market }: { candles: MonthlyCandle[]; market: s
     });
     ma10Series.setData(calcMAData(sortedData, 10));
 
-    // 3. 신호 변경 마커 (매수: 초록 삼각형, 매도: 빨강 삼각형)
+    // 4. 신호 변경 마커 (매수: 초록 삼각형, 매도: 빨강 삼각형)
     const markers: Array<{
       time: string;
       position: 'aboveBar' | 'belowBar';
@@ -160,7 +295,7 @@ function MonthlyChart({ candles, market }: { candles: MonthlyCandle[]; market: s
       createSeriesMarkers(candleSeries, markers);
     }
 
-    // 4. 현재가가 MA10 위/아래인지 표시하는 가격선
+    // 5. 현재가가 MA10 위/아래인지 표시하는 가격선
     const lastIdx = sortedData.length - 1;
     const currentClose = closes[lastIdx];
     const ma10Value = calcMA(closes, 10, lastIdx);
