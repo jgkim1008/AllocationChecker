@@ -7,6 +7,7 @@ import {
   ArrowLeft, RefreshCw, TrendingUp, TrendingDown,
   AlertTriangle, CheckCircle, XCircle,
 } from 'lucide-react';
+import { createChart, ColorType, CrosshairMode, CandlestickSeries, LineSeries } from 'lightweight-charts';
 
 interface MonthlyCandle {
   date: string;
@@ -36,63 +37,116 @@ function calcMA(values: number[], period: number, endIdx: number): number | null
   return slice.reduce((a, b) => a + b, 0) / period;
 }
 
-// TradingView 심볼 변환
-function toTradingViewSymbol(symbol: string, market: string): string {
-  // 지수 변환 (임베드에서 지원되는 형식 사용)
-  if (symbol === '^GSPC') return 'FOREXCOM:SPXUSD';
-  if (symbol === '^IXIC') return 'NASDAQ:NDX';
-  if (symbol === '^KS11') return 'TVC:KOSPI';
-  if (symbol === '^KQ11') return 'TVC:KOSDAQ';
-
-  // 한국 주식
-  if (market === 'KR') {
-    return `KRX:${symbol}`;
-  }
-
-  // 미국 주식/ETF
-  return symbol;
-}
-
-// TradingView 차트 컴포넌트 (symbol chart widget 사용)
-function TradingViewChart({ symbol, market }: { symbol: string; market: string }) {
-  const containerRef = useRef<HTMLDivElement>(null);
+// lightweight-charts 월봉 차트 컴포넌트
+function MonthlyChart({ candles, market }: { candles: MonthlyCandle[]; market: string }) {
+  const chartContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!containerRef.current) return;
+    if (!chartContainerRef.current || candles.length < 10) return;
 
-    const tvSymbol = toTradingViewSymbol(symbol, market);
+    // 데이터 정렬 (오래된 순)
+    const sortedData = [...candles].sort((a, b) => a.date.localeCompare(b.date));
 
-    // TradingView 위젯 URL에 지표 포함 (10MA만)
-    const studiesOverrides = encodeURIComponent(JSON.stringify({
-      'Moving Average.length': 10,
+    const chart = createChart(chartContainerRef.current, {
+      width: chartContainerRef.current.clientWidth,
+      height: 500,
+      layout: {
+        background: { type: ColorType.Solid, color: '#ffffff' },
+        textColor: '#6b7280',
+        fontFamily: 'Inter, system-ui, sans-serif',
+      },
+      grid: {
+        vertLines: { color: '#f3f4f6' },
+        horzLines: { color: '#f3f4f6' },
+      },
+      crosshair: { mode: CrosshairMode.Normal },
+      rightPriceScale: {
+        borderColor: '#e5e7eb',
+        scaleMargins: { top: 0.1, bottom: 0.1 },
+      },
+      timeScale: {
+        borderColor: '#e5e7eb',
+        timeVisible: false,
+      },
+    });
+
+    // 1. 캔들스틱 차트
+    const candleSeries = chart.addSeries(CandlestickSeries, {
+      upColor: '#ef4444',
+      downColor: '#3b82f6',
+      borderUpColor: '#ef4444',
+      borderDownColor: '#3b82f6',
+      wickUpColor: '#ef4444',
+      wickDownColor: '#3b82f6',
+    });
+
+    const candleData = sortedData.map(h => ({
+      time: h.date as string,
+      open: h.open,
+      high: h.high,
+      low: h.low,
+      close: h.close,
     }));
-    const widgetUrl = `https://www.tradingview.com/widgetembed/?symbol=${encodeURIComponent(tvSymbol)}&interval=M&hidetoptoolbar=0&hidelegend=0&saveimage=0&toolbarbg=f1f3f6&studies=MASimple%40tv-basicstudies&studies_overrides=${studiesOverrides}&theme=light&style=1&timezone=Asia%2FSeoul&withdateranges=1&locale=kr&symboledit=1`;
+    candleSeries.setData(candleData);
 
-    // iframe 생성
-    containerRef.current.innerHTML = '';
-    const iframe = document.createElement('iframe');
-    iframe.src = widgetUrl;
-    iframe.style.width = '100%';
-    iframe.style.height = '100%';
-    iframe.style.border = 'none';
-    iframe.allowFullscreen = true;
-    iframe.loading = 'lazy';
+    // 2. 10개월 이동평균선 (굵은 주황색)
+    const calcMAData = (data: typeof sortedData, period: number) => {
+      const result: { time: string; value: number }[] = [];
+      for (let i = period - 1; i < data.length; i++) {
+        let sum = 0;
+        for (let j = 0; j < period; j++) {
+          sum += data[i - j].close;
+        }
+        result.push({ time: data[i].date, value: sum / period });
+      }
+      return result;
+    };
 
-    containerRef.current.appendChild(iframe);
+    const ma10Series = chart.addSeries(LineSeries, {
+      color: '#f97316', // 주황색
+      lineWidth: 3,
+      priceLineVisible: true,
+      lastValueVisible: true,
+    });
+    ma10Series.setData(calcMAData(sortedData, 10));
 
-    return () => {
-      if (containerRef.current) {
-        containerRef.current.innerHTML = '';
+    // 3. 현재가가 MA10 위/아래인지 표시하는 가격선
+    const closes = sortedData.map(c => c.close);
+    const lastIdx = sortedData.length - 1;
+    const currentClose = closes[lastIdx];
+    const ma10Value = calcMA(closes, 10, lastIdx);
+
+    if (ma10Value) {
+      const isAboveMA = currentClose >= ma10Value;
+      candleSeries.createPriceLine({
+        price: ma10Value,
+        color: isAboveMA ? '#16a34a' : '#dc2626',
+        lineWidth: 2,
+        lineStyle: 2, // dashed
+        axisLabelVisible: true,
+        title: '10MA',
+      });
+    }
+
+    // 리사이즈 핸들러
+    const handleResize = () => {
+      if (chartContainerRef.current) {
+        chart.applyOptions({ width: chartContainerRef.current.clientWidth });
       }
     };
-  }, [symbol, market]);
+    window.addEventListener('resize', handleResize);
 
-  return (
-    <div
-      ref={containerRef}
-      style={{ height: '500px', width: '100%' }}
-    />
-  );
+    chart.timeScale().fitContent();
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      chart.remove();
+    };
+  }, [candles, market]);
+
+  if (candles.length < 10) return null;
+
+  return <div ref={chartContainerRef} className="w-full" />;
 }
 
 async function fetchMonthlyCandles(symbol: string, market: string): Promise<MonthlyCandle[] | null> {
@@ -284,14 +338,16 @@ export default function MonthlyMADetailPage() {
           </div>
         )}
 
-        {/* TradingView 차트 */}
-        {!loading && !error && (
+        {/* 월봉 차트 (lightweight-charts) */}
+        {!loading && !error && candles.length >= 10 && (
           <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden mb-6">
             <div className="px-5 py-4 border-b border-gray-100">
-              <h3 className="font-black text-gray-900">월봉 차트 (10MA + 이치모쿠 구름)</h3>
-              <p className="text-xs text-gray-400 mt-1">TradingView 차트 - 월봉 + 10개월 이동평균선 + 이치모쿠 구름대</p>
+              <h3 className="font-black text-gray-900">월봉 차트 (10MA)</h3>
+              <p className="text-xs text-gray-400 mt-1">월봉 캔들 + 10개월 이동평균선 (주황색)</p>
             </div>
-            <TradingViewChart symbol={symbol} market={market} />
+            <div className="p-4">
+              <MonthlyChart candles={candles} market={market} />
+            </div>
           </div>
         )}
 
