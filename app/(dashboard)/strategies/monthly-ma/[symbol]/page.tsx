@@ -53,78 +53,31 @@ function toTradingViewSymbol(symbol: string, market: string): string {
   return symbol;
 }
 
-// TradingView 차트 컴포넌트
+// TradingView 차트 컴포넌트 (symbol chart widget 사용)
 function TradingViewChart({ symbol, market }: { symbol: string; market: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const scriptRef = useRef<HTMLScriptElement | null>(null);
 
   useEffect(() => {
     if (!containerRef.current) return;
 
     const tvSymbol = toTradingViewSymbol(symbol, market);
-    const containerId = `tradingview_${symbol.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}`;
 
-    // 기존 스크립트 제거
-    if (scriptRef.current) {
-      scriptRef.current.remove();
-      scriptRef.current = null;
-    }
+    // TradingView 위젯 URL에 지표 포함
+    const widgetUrl = `https://www.tradingview.com/widgetembed/?symbol=${encodeURIComponent(tvSymbol)}&interval=M&hidetoptoolbar=0&hidelegend=0&saveimage=0&toolbarbg=f1f3f6&studies=MA%40tv-basicstudies%7C10&studies_overrides=%7B%7D&theme=light&style=1&timezone=Asia%2FSeoul&withdateranges=1&locale=kr`;
 
-    // 기존 내용 제거
+    // iframe 생성
     containerRef.current.innerHTML = '';
+    const iframe = document.createElement('iframe');
+    iframe.src = widgetUrl;
+    iframe.style.width = '100%';
+    iframe.style.height = '100%';
+    iframe.style.border = 'none';
+    iframe.allowFullscreen = true;
+    iframe.loading = 'lazy';
 
-    // 위젯 컨테이너 생성
-    const widgetContainer = document.createElement('div');
-    widgetContainer.id = containerId;
-    widgetContainer.style.height = '100%';
-    widgetContainer.style.width = '100%';
-    containerRef.current.appendChild(widgetContainer);
-
-    // 스크립트 생성
-    const script = document.createElement('script');
-    script.src = 'https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js';
-    script.type = 'text/javascript';
-    script.async = true;
-    script.innerHTML = JSON.stringify({
-      container_id: containerId,
-      autosize: true,
-      symbol: tvSymbol,
-      interval: 'M',
-      timezone: 'Asia/Seoul',
-      theme: 'light',
-      style: '1',
-      locale: 'kr',
-      enable_publishing: false,
-      allow_symbol_change: false,
-      show_popup_button: false,
-      hide_top_toolbar: false,
-      hide_legend: false,
-      save_image: false,
-      calendar: false,
-      hide_volume: true,
-      details: false,
-      hotlist: false,
-      support_host: 'https://www.tradingview.com',
-      studies: [
-        'STD;SMA',
-        'STD;Ichimoku%1Cloud',
-      ],
-      studies_overrides: {
-        'sma.length': 10,
-        'ichimoku cloud.conversion line.visible': false,
-        'ichimoku cloud.base line.visible': false,
-        'ichimoku cloud.lagging span.visible': false,
-      },
-    });
-
-    scriptRef.current = script;
-    widgetContainer.appendChild(script);
+    containerRef.current.appendChild(iframe);
 
     return () => {
-      if (scriptRef.current) {
-        scriptRef.current.remove();
-        scriptRef.current = null;
-      }
       if (containerRef.current) {
         containerRef.current.innerHTML = '';
       }
@@ -134,7 +87,6 @@ function TradingViewChart({ symbol, market }: { symbol: string; market: string }
   return (
     <div
       ref={containerRef}
-      className="tradingview-widget-container"
       style={{ height: '500px', width: '100%' }}
     />
   );
