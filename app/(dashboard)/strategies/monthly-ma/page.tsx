@@ -21,19 +21,30 @@ function formatPrice(price: number, market: 'US' | 'KR'): string {
 
 function MiniChart({ candles, ma10, signal }: { candles: MonthlyMAStock['monthlyCandles']; ma10: number; signal: 'HOLD' | 'SELL' }) {
   if (candles.length < 2) return null;
-  const data = candles.map(c => ({ close: c.close, open: c.open, isUp: c.close >= c.open }));
-  const prices = candles.flatMap(c => [c.high, c.low]);
-  const minP = Math.min(...prices, ma10) * 0.993;
-  const maxP = Math.max(...prices, ma10) * 1.007;
+
+  // 최근 12개월만 표시 (더 보기 좋게)
+  const recentCandles = candles.slice(-12);
+  const data = recentCandles.map(c => ({
+    date: c.date,
+    close: c.close,
+    open: c.open,
+    high: c.high,
+    low: c.low,
+    isUp: c.close >= c.open,
+  }));
+
+  const prices = recentCandles.flatMap(c => [c.high, c.low]);
+  const minP = Math.min(...prices, ma10) * 0.99;
+  const maxP = Math.max(...prices, ma10) * 1.01;
 
   return (
-    <ResponsiveContainer width="100%" height={44}>
-      <ComposedChart data={data} margin={{ top: 1, right: 2, left: 2, bottom: 1 }}>
+    <ResponsiveContainer width="100%" height={56}>
+      <ComposedChart data={data} margin={{ top: 4, right: 4, left: 4, bottom: 4 }}>
         <XAxis dataKey="date" hide />
         <YAxis domain={[minP, maxP]} hide />
-        <ReferenceLine y={ma10} stroke={signal === 'HOLD' ? '#16a34a' : '#dc2626'} strokeDasharray="2 2" strokeWidth={1.5} />
-        <Bar dataKey="close" maxBarSize={8} isAnimationActive={false}>
-          {data.map((e, i) => <Cell key={i} fill={e.isUp ? '#16a34a' : '#ef4444'} />)}
+        <ReferenceLine y={ma10} stroke={signal === 'HOLD' ? '#16a34a' : '#dc2626'} strokeDasharray="3 2" strokeWidth={2} />
+        <Bar dataKey="close" maxBarSize={12} isAnimationActive={false}>
+          {data.map((e, i) => <Cell key={i} fill={e.isUp ? '#22c55e' : '#ef4444'} />)}
         </Bar>
       </ComposedChart>
     </ResponsiveContainer>
@@ -44,13 +55,19 @@ function StockRow({ stock }: { stock: MonthlyMAStock }) {
   const isHold = stock.signal === 'HOLD';
   const aboveMA = stock.maDeviation >= 0;
 
+  const handleClick = () => {
+    window.location.href = `/strategies/monthly-ma/${encodeURIComponent(stock.symbol)}?market=${stock.market}&name=${encodeURIComponent(stock.name)}`;
+  };
+
   return (
-    <tr className={`border-b transition-colors ${
+    <tr
+      onClick={handleClick}
+      className={`border-b transition-colors cursor-pointer ${
       stock.deathCandle
-        ? 'bg-red-50 border-red-200'
+        ? 'bg-red-50 border-red-200 hover:bg-red-100'
         : isHold
-          ? 'bg-white hover:bg-green-50/30'
-          : 'bg-red-50/40 hover:bg-red-50/60'
+          ? 'bg-white hover:bg-green-50/50'
+          : 'bg-red-50/40 hover:bg-red-100/60'
     }`}>
       {/* 신호 */}
       <td className="px-4 py-3 w-24">
@@ -111,7 +128,7 @@ function StockRow({ stock }: { stock: MonthlyMAStock }) {
       </td>
 
       {/* 미니 차트 */}
-      <td className="px-4 py-3 w-36">
+      <td className="px-4 py-3 w-48">
         <MiniChart candles={stock.monthlyCandles} ma10={stock.ma10} signal={stock.signal} />
       </td>
     </tr>
