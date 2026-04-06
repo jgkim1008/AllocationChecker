@@ -66,7 +66,7 @@ function TradingViewChart({ symbol, market }: { symbol: string; market: string }
     const studiesOverrides = encodeURIComponent(JSON.stringify({
       'Moving Average.length': 10,
     }));
-    const widgetUrl = `https://www.tradingview.com/widgetembed/?symbol=${encodeURIComponent(tvSymbol)}&interval=M&hidetoptoolbar=0&hidelegend=0&saveimage=0&toolbarbg=f1f3f6&studies=MASimple%40tv-basicstudies&studies_overrides=${studiesOverrides}&theme=light&style=1&timezone=Asia%2FSeoul&withdateranges=1&locale=kr`;
+    const widgetUrl = `https://www.tradingview.com/widgetembed/?symbol=${encodeURIComponent(tvSymbol)}&interval=M&hidetoptoolbar=0&hidelegend=0&saveimage=0&toolbarbg=f1f3f6&studies=MASimple%40tv-basicstudies&studies_overrides=${studiesOverrides}&theme=light&style=1&timezone=Asia%2FSeoul&withdateranges=1&locale=kr&symboledit=1`;
 
     // iframe 생성
     containerRef.current.innerHTML = '';
