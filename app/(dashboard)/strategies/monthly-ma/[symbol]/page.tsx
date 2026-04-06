@@ -104,7 +104,7 @@ function TradingViewChart({ symbol, market }: { symbol: string; market: string }
       studies: [
         { id: 'MASimple@tv-basicstudies', inputs: { length: 10 } },
         {
-          id: 'IchimokuCloud@tv-basicstudies',
+          id: 'Ichimoku Cloud@tv-basicstudies',
           inputs: {
             conversionLinePeriods: 9,
             baseLinePeriods: 26,
