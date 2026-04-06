@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60;
+export const maxDuration = 120; // 종목 수 증가로 시간 연장
 
 export interface MonthlyMAStock {
   symbol: string;
@@ -20,7 +20,8 @@ export interface MonthlyMAStock {
   monthlyCandles: { date: string; open: number; high: number; low: number; close: number }[];
 }
 
-const TARGET_STOCKS: { symbol: string; name: string; market: 'US' | 'KR'; yahooSymbol: string }[] = [
+// 기존 종목 + 지수
+const BASE_STOCKS: { symbol: string; name: string; market: 'US' | 'KR'; yahooSymbol: string }[] = [
   { symbol: '^GSPC',   name: 'S&P 500',              market: 'US', yahooSymbol: '%5EGSPC' },
   { symbol: 'SPY',     name: 'SPDR S&P 500 ETF',     market: 'US', yahooSymbol: 'SPY' },
   { symbol: 'QQQ',     name: 'Invesco QQQ Trust',    market: 'US', yahooSymbol: 'QQQ' },
@@ -28,6 +29,83 @@ const TARGET_STOCKS: { symbol: string; name: string; market: 'US' | 'KR'; yahooS
   { symbol: '^KS11',   name: 'KOSPI',                market: 'KR', yahooSymbol: '%5EKS11' },
   { symbol: '005930',  name: '삼성전자',              market: 'KR', yahooSymbol: '005930.KS' },
 ];
+
+// 배당의만장 2WEEKS ETF 목록
+const DIVIDEND_ETFS: { code: string; name: string }[] = [
+  // 월(초) 미국
+  { code: '483280', name: 'KODEX 미국AI테크TOP10타겟커버드콜' },
+  { code: '441640', name: 'KODEX 미국배당커버드콜액티브' },
+  { code: '446720', name: 'SOL 미국배당다우존스' },
+  { code: '468390', name: 'RISE 미국AI빅테크멀티플리어고배당커버드콜' },
+  { code: '490590', name: 'RISE 미국AI밸류체인데일리고정커버드콜' },
+  { code: '491620', name: 'RISE 미국테크100데일리고정커버드콜' },
+  { code: '452360', name: 'SOL 미국배당다우존스(H)' },
+  { code: '483290', name: 'KODEX 미국배당다우존스타겟커버드콜' },
+  { code: '490600', name: 'RISE 미국배당100데일리고정커버드콜' },
+  { code: '493420', name: 'SOL 미국배당다우존스2호' },
+  { code: '213630', name: 'PLUS 미국다우존스고배당주(합성H)' },
+  // 월(초) 국내
+  { code: '472150', name: 'TIGER 배당커버드콜액티브' },
+  { code: '161510', name: 'PLUS 고배당주' },
+  { code: '489030', name: 'PLUS 고배당주위클리커버드콜' },
+  { code: '400410', name: 'KODEX 공모주&리츠자산배분TOP10' },
+  { code: '278530', name: 'KODEX 3배당주' },
+  { code: '448410', name: 'KODEX 200타겟위클리커버드콜TOP10' },
+  { code: '487200', name: 'PLUS 고배당우선배당커버드콜' },
+  { code: '475720', name: 'RISE 200위클리커버드콜' },
+  { code: '422190', name: 'KODEX 리츠부동산인프라' },
+  { code: '329200', name: 'TIGER 리츠부동산인프라' },
+  // 월(중순) 미국
+  { code: '486290', name: 'TIGER 미국나스닥100타겟데일리커버드콜' },
+  { code: '474220', name: 'TIGER 미국테크TOP10타겟커버드콜' },
+  { code: '473540', name: 'TIGER 미국AI빅테크10타겟데일리커버드콜' },
+  { code: '493810', name: 'TIGER 미국AI빅테크10타겟데일리커버드콜 2호' },
+  { code: '458760', name: 'TIGER 미국배당다우존스타겟커버드콜2호' },
+  { code: '494300', name: 'KODEX 미국나스닥100데일리커버드콜OTM' },
+  { code: '482730', name: 'TIGER 미국S&P500타겟데일리커버드콜' },
+  { code: '468380', name: 'ACE 미국500데일리타겟커버드콜(합성)' },
+  { code: '480030', name: 'ACE 미국500데일리타겟커버드콜(합성) 2호' },
+  { code: '480020', name: 'ACE 미국빅테크7+데일리타겟커버드콜(합성)' },
+  { code: '480040', name: 'ACE 미국반도체데일리타겟커버드콜(합성)' },
+  { code: '489250', name: 'KODEX 미국배당다우존스' },
+  { code: '402970', name: 'ACE 미국배당다우존스' },
+  { code: '458750', name: 'TIGER 미국배당다우존스타겟커버드콜 1호' },
+  { code: '469760', name: 'TIGER 미국배당다우존스타겟데일리커버드콜' },
+  { code: '494420', name: 'PLUS 미국배당증가성장주데일리커버드콜' },
+  // 월(중순) 국내
+  { code: '498410', name: 'KODEX 금융고배당TOP10타겟위클리커버드콜' },
+  { code: '476800', name: 'KODEX 한국부동산리츠인프라' },
+  { code: '498400', name: 'KODEX 200타겟위클리커버드콜' },
+  { code: '484880', name: 'SOL 금융지주플러스고배당' },
+  { code: '469050', name: 'TIGER 200타겟위클리커버드콜' },
+  { code: '463160', name: 'RISE 프리미엄클린고배당커버드콜(라코)' },
+  { code: '466940', name: 'TIGER 은행고배당플러스TOP10' },
+  { code: '458730', name: 'KODEX 글로벌고배당TOP10' },
+  { code: '464600', name: 'KODEX 주주환원고배당주' },
+  { code: '468420', name: 'PLUS 자사주매입고배당주' },
+  { code: '290080', name: 'RISE 200고배당커버드콜ATM' },
+];
+
+// ETF를 TARGET_STOCKS 형식으로 변환 (6자리 숫자 코드만 처리)
+const ETF_STOCKS = DIVIDEND_ETFS
+  .filter(etf => /^\d{6}$/.test(etf.code))
+  .map(etf => ({
+    symbol: etf.code,
+    name: etf.name,
+    market: 'KR' as const,
+    yahooSymbol: `${etf.code}.KS`,
+  }));
+
+// 중복 제거하여 최종 목록 생성
+const seenSymbols = new Set<string>();
+const TARGET_STOCKS: { symbol: string; name: string; market: 'US' | 'KR'; yahooSymbol: string }[] = [];
+
+for (const stock of [...BASE_STOCKS, ...ETF_STOCKS]) {
+  if (!seenSymbols.has(stock.symbol)) {
+    seenSymbols.add(stock.symbol);
+    TARGET_STOCKS.push(stock);
+  }
+}
 
 async function fetchMonthlyCandles(yahooSymbol: string): Promise<{ date: string; open: number; high: number; low: number; close: number }[] | null> {
   try {
@@ -164,7 +242,7 @@ export async function GET(_req: NextRequest) {
       }
       const analyzed = analyzeStock(stock, candles);
       if (analyzed) results.push(analyzed);
-      await new Promise(r => setTimeout(r, 300));
+      await new Promise(r => setTimeout(r, 200)); // 딜레이 단축
     }
 
     return NextResponse.json({
