@@ -66,14 +66,11 @@ function TradingViewChart({ symbol, market }: { symbol: string; market: string }
     const studiesOverrides = encodeURIComponent(JSON.stringify({
       'Moving Average.length': 10,
       'Moving Average.plottype': 'line',
-      'Ichimoku Cloud.Conversion Line.visible': false,
-      'Ichimoku Cloud.Base Line.visible': false,
-      'Ichimoku Cloud.Lagging Span.visible': false,
-      'Ichimoku Cloud.Lead 1.visible': true,
-      'Ichimoku Cloud.Lead 2.visible': true,
-      'Ichimoku Cloud.Plots Background.visible': true,
+      'Ichimoku.Kumo Cloud Upper Line.visible': false,
+      'Ichimoku.Kumo Cloud Lower Line.visible': false,
+      'Ichimoku.Cloud Fill.visible': true,
     }));
-    const widgetUrl = `https://www.tradingview.com/widgetembed/?symbol=${encodeURIComponent(tvSymbol)}&interval=M&hidetoptoolbar=0&hidelegend=0&saveimage=0&toolbarbg=f1f3f6&studies=MASimple%40tv-basicstudies&studies=IchimokuCloud%40tv-basicstudies&studies_overrides=${studiesOverrides}&theme=light&style=1&timezone=Asia%2FSeoul&withdateranges=1&locale=kr`;
+    const widgetUrl = `https://www.tradingview.com/widgetembed/?symbol=${encodeURIComponent(tvSymbol)}&interval=M&hidetoptoolbar=0&hidelegend=0&saveimage=0&toolbarbg=f1f3f6&studies=MASimple%40tv-basicstudies&studies=Ichimoku%40tv-basicstudies&studies_overrides=${studiesOverrides}&theme=light&style=1&timezone=Asia%2FSeoul&withdateranges=1&locale=kr`;
 
     // iframe 생성
     containerRef.current.innerHTML = '';
