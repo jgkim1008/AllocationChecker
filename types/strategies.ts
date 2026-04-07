@@ -1,4 +1,6 @@
 import { InverseAlignmentResult } from '@/lib/utils/inverse-alignment-calculator';
+export type { ChartPatternType, PatternResult } from '@/lib/utils/chart-pattern-calculator';
+export type { ChartPatternStock } from '@/lib/utils/chart-pattern-scanner';
 import { MAAlignmentResult } from '@/lib/utils/ma-alignment-calculator';
 import { DualRSIResult } from '@/lib/utils/dual-rsi-calculator';
 import { RSIDivergenceResult } from '@/lib/utils/rsi-divergence-calculator';

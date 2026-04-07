@@ -1,11 +1,21 @@
 'use client';
 
 import Link from 'next/link';
-import { TrendingUp, Infinity, ChevronRight, Activity, Zap, BookOpen, CalendarDays, BarChart2 } from 'lucide-react';
+import { TrendingUp, Infinity, ChevronRight, Activity, Zap, BookOpen, CalendarDays, BarChart2, CandlestickChart } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { PremiumGate } from '@/components/PremiumGate';
 
 const STRATEGIES = [
+  {
+    id: 'chart-pattern',
+    title: '차트 패턴',
+    description: '일봉 기준 19개 차트 패턴(머리어깨·쌍봉·깃발·삼각형·V형 등)을 실시간 감지합니다. 패턴별 싱크로율과 매수/매도 신호를 한 눈에 확인하고 상세 차트로 패턴을 시각화합니다.',
+    icon: CandlestickChart,
+    href: '/strategies/chart-pattern',
+    color: 'bg-teal-50 text-teal-600',
+    tag: '신규',
+    tagColor: 'bg-teal-100 text-teal-700',
+  },
   {
     id: 'fibonacci',
     title: '피보나치 되돌림',
