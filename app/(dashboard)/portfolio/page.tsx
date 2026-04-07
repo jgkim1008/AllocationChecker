@@ -162,7 +162,7 @@ export default function PortfolioPage() {
   const showPagination = allAccountTabs.length > ACCOUNTS_PER_PAGE;
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen bg-gray-50 overflow-x-hidden">
       <div className="max-w-6xl mx-auto px-4 pt-6 pb-16">
 
         {/* 헤더 */}
@@ -198,11 +198,11 @@ export default function PortfolioPage() {
         </div>
 
         {/* 계좌 탭 */}
-        <div className="flex items-center gap-1.5 mb-6 pb-0.5">
+        <div className="flex items-center gap-1.5 mb-6 pb-0.5 overflow-x-auto scrollbar-hide">
           {/* 전체 탭 (고정) */}
           <button
             onClick={() => setSelectedAccountId('all')}
-            className={`shrink-0 px-4 py-1.5 rounded-full text-sm font-semibold transition-all ${
+            className={`shrink-0 px-4 py-1.5 rounded-full text-sm font-semibold transition-all whitespace-nowrap ${
               selectedAccountId === 'all'
                 ? 'bg-green-600 text-white'
                 : 'bg-gray-100 text-gray-600 hover:text-gray-900'
@@ -232,7 +232,7 @@ export default function PortfolioPage() {
             <button
               key={tab.id}
               onClick={() => setSelectedAccountId(tab.id)}
-              className={`shrink-0 px-4 py-1.5 rounded-full text-sm font-semibold transition-all ${
+              className={`shrink-0 px-4 py-1.5 rounded-full text-sm font-semibold transition-all whitespace-nowrap ${
                 selectedAccountId === tab.id
                   ? 'bg-green-600 text-white'
                   : 'bg-gray-100 text-gray-600 hover:text-gray-900'
@@ -265,7 +265,7 @@ export default function PortfolioPage() {
 
           {/* 페이지 표시 */}
           {showPagination && (
-            <span className="shrink-0 text-xs text-gray-400 ml-1">
+            <span className="shrink-0 text-xs text-gray-400 ml-1 whitespace-nowrap">
               {accountPage + 1}/{totalAccountPages}
             </span>
           )}

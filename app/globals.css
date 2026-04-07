@@ -151,3 +151,12 @@
 .dark .fc .fc-button {
   color: oklch(0.984 0.003 247.858);
 }
+
+/* Scrollbar hide utility */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
