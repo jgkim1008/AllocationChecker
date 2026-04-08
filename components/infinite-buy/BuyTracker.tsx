@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Plus, Trash2, RefreshCw, Pencil, Check, X } from 'lucide-react';
-import { useInfiniteBuyRecords, BuyRecord } from '@/hooks/useInfiniteBuyRecords';
+import { Plus, Trash2, RefreshCw, Pencil, Check, X, TrendingDown } from 'lucide-react';
+import { useInfiniteBuyRecords, BuyRecord, SellRecord } from '@/hooks/useInfiniteBuyRecords';
 
 interface BuyTrackerProps {
   symbol: string;
@@ -19,8 +19,11 @@ function fmtP(price: number, market: 'US' | 'KR' = 'US'): string {
 }
 
 export function BuyTracker({ symbol, capital, n, targetRate, market = 'US', onCycleReset }: BuyTrackerProps) {
-  const { records, loading: recordsLoading, addRecord, updateRecord, deleteRecord, deleteAllRecords } =
-    useInfiniteBuyRecords(symbol);
+  const {
+    records, sellRecords, loading: recordsLoading,
+    addRecord, updateRecord, deleteRecord, deleteAllRecords,
+    addSellRecord, deleteSellRecord,
+  } = useInfiniteBuyRecords(symbol);
 
   const [currentPrice, setCurrentPrice] = useState<number | null>(null);
   const [loadingPrice, setLoadingPrice] = useState(false);
@@ -33,6 +36,15 @@ export function BuyTracker({ symbol, capital, n, targetRate, market = 'US', onCy
   const [inputMode, setInputMode] = useState<'amount' | 'shares'>('shares');
   const [showForm, setShowForm] = useState(false);
   const [adding, setAdding] = useState(false);
+
+  // 매도 추가 폼 state
+  const [showSellForm, setShowSellForm] = useState(false);
+  const [sellFormDate, setSellFormDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [sellFormPrice, setSellFormPrice] = useState('');
+  const [sellFormShares, setSellFormShares] = useState('');
+  const [sellFormAmount, setSellFormAmount] = useState('');
+  const [sellInputMode, setSellInputMode] = useState<'amount' | 'shares'>('shares');
+  const [addingSell, setAddingSell] = useState(false);
 
   // 편집 state
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -140,6 +152,37 @@ export function BuyTracker({ symbol, capital, n, targetRate, market = 'US', onCy
       alert(err instanceof Error ? err.message : '수정 실패');
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleAddSell() {
+    const price = parseFloat(sellFormPrice);
+    if (!sellFormDate || isNaN(price) || price <= 0) return;
+
+    let shares: number;
+    let amount: number;
+
+    if (sellInputMode === 'amount') {
+      amount = parseFloat(sellFormAmount);
+      if (isNaN(amount) || amount <= 0) return;
+      shares = amount / price;
+    } else {
+      shares = parseFloat(sellFormShares);
+      if (isNaN(shares) || shares <= 0) return;
+      amount = shares * price;
+    }
+
+    setAddingSell(true);
+    try {
+      await addSellRecord({ sell_date: sellFormDate, price, shares, amount });
+      setSellFormPrice('');
+      setSellFormShares('');
+      setSellFormAmount('');
+      setShowSellForm(false);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : '추가 실패');
+    } finally {
+      setAddingSell(false);
     }
   }
 
@@ -562,6 +605,180 @@ export function BuyTracker({ symbol, capital, n, targetRate, market = 'US', onCy
                     </tr>
                   )
                 )}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Sell History Table */}
+      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+        <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+          <p className="text-sm font-medium text-gray-900 flex items-center gap-1.5">
+            <TrendingDown className="h-4 w-4 text-red-500" />
+            매도 내역
+            {recordsLoading && <span className="text-xs text-gray-400 ml-1">로딩 중...</span>}
+          </p>
+          <button
+            onClick={() => { setShowSellForm((v) => !v); setShowForm(false); }}
+            className="flex items-center gap-1.5 text-xs font-medium text-white bg-red-500 hover:bg-red-600 px-3 py-1.5 rounded-lg transition-colors"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            매도 추가
+          </button>
+        </div>
+
+        {/* 매도 추가 폼 */}
+        {showSellForm && (
+          <div className="px-4 py-3 bg-red-50 border-b border-red-100 space-y-2.5">
+            <div className="flex items-center gap-1 w-fit bg-white border border-gray-200 rounded-lg p-0.5">
+              <button
+                onClick={() => setSellInputMode('amount')}
+                className={`text-xs font-medium px-2.5 py-1 rounded-md transition-colors ${
+                  sellInputMode === 'amount' ? 'bg-red-500 text-white' : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                금액으로 입력
+              </button>
+              <button
+                onClick={() => setSellInputMode('shares')}
+                className={`text-xs font-medium px-2.5 py-1 rounded-md transition-colors ${
+                  sellInputMode === 'shares' ? 'bg-red-500 text-white' : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                수량으로 입력
+              </button>
+            </div>
+
+            <div className="flex flex-wrap items-end gap-2">
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">날짜</label>
+                <input
+                  type="date"
+                  value={sellFormDate}
+                  onChange={(e) => setSellFormDate(e.target.value)}
+                  className="text-sm border border-gray-200 rounded-lg px-2 py-1.5 bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-400"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">매도가 ({market === 'KR' ? '₩' : '$'})</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="0.00"
+                  value={sellFormPrice}
+                  onChange={(e) => setSellFormPrice(e.target.value)}
+                  className="text-sm border border-gray-200 rounded-lg px-2 py-1.5 w-28 bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-red-400"
+                />
+              </div>
+              {sellInputMode === 'amount' ? (
+                <div>
+                  <label className="text-xs text-gray-500 block mb-1">매도금액 ({market === 'KR' ? '₩' : '$'})</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    placeholder="0.00"
+                    value={sellFormAmount}
+                    onChange={(e) => setSellFormAmount(e.target.value)}
+                    className="text-sm border border-gray-200 rounded-lg px-2 py-1.5 w-28 bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-red-400"
+                  />
+                </div>
+              ) : (
+                <div>
+                  <label className="text-xs text-gray-500 block mb-1">수량 (주)</label>
+                  <input
+                    type="number"
+                    step="1"
+                    min="0"
+                    placeholder="0"
+                    value={sellFormShares}
+                    onChange={(e) => setSellFormShares(e.target.value)}
+                    className="text-sm border border-gray-200 rounded-lg px-2 py-1.5 w-28 bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-red-400"
+                  />
+                </div>
+              )}
+              {sellInputMode === 'amount' && parseFloat(sellFormPrice) > 0 && parseFloat(sellFormAmount) > 0 && (
+                <div className="text-xs text-gray-500 pb-1.5">
+                  = {Math.round(parseFloat(sellFormAmount) / parseFloat(sellFormPrice))}주
+                </div>
+              )}
+              {sellInputMode === 'shares' && parseFloat(sellFormPrice) > 0 && parseFloat(sellFormShares) > 0 && (
+                <div className="text-xs text-gray-500 pb-1.5">
+                  = {fmtP(parseFloat(sellFormShares) * parseFloat(sellFormPrice), market)}
+                </div>
+              )}
+              <button
+                onClick={handleAddSell}
+                disabled={addingSell}
+                className="text-sm font-medium text-white bg-red-500 hover:bg-red-600 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+              >
+                {addingSell ? '추가 중...' : '추가'}
+              </button>
+              <button
+                onClick={() => setShowSellForm(false)}
+                className="text-sm text-gray-500 hover:text-gray-700 px-2 py-1.5"
+              >
+                취소
+              </button>
+            </div>
+          </div>
+        )}
+
+        {sellRecords.length === 0 ? (
+          <div className="px-4 py-8 text-center text-sm text-gray-400">
+            {recordsLoading ? '로딩 중...' : '아직 매도 내역이 없습니다.'}
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-gray-50">
+                  <th className="text-left px-4 py-2.5 text-xs font-medium text-gray-500">날짜</th>
+                  <th className="text-right px-4 py-2.5 text-xs font-medium text-gray-500">매도가</th>
+                  <th className="text-right px-4 py-2.5 text-xs font-medium text-gray-500">수량</th>
+                  <th className="text-right px-4 py-2.5 text-xs font-medium text-gray-500">매도금액</th>
+                  <th className="text-right px-4 py-2.5 text-xs font-medium text-gray-500">손익</th>
+                  <th className="px-4 py-2.5" />
+                </tr>
+              </thead>
+              <tbody>
+                {sellRecords.map((s: SellRecord) => {
+                  const pnl = avgCost > 0 ? (s.price - avgCost) * s.shares : null;
+                  const pnlPct = avgCost > 0 ? (s.price - avgCost) / avgCost : null;
+                  return (
+                    <tr key={s.id} className="border-t border-gray-100 hover:bg-gray-50 group">
+                      <td className="px-4 py-2.5 text-gray-700">{s.sell_date}</td>
+                      <td className="px-4 py-2.5 text-right text-red-600 font-medium">{fmtP(s.price, market)}</td>
+                      <td className="px-4 py-2.5 text-right text-gray-700">{Math.round(s.shares)}주</td>
+                      <td className="px-4 py-2.5 text-right text-gray-700">{fmtP(s.amount, market)}</td>
+                      <td className="px-4 py-2.5 text-right">
+                        {pnl != null ? (
+                          <span className={pnl >= 0 ? 'text-green-600 font-medium' : 'text-red-500 font-medium'}>
+                            {pnl >= 0 ? '+' : ''}{fmtP(pnl, market)}
+                            {pnlPct != null && (
+                              <span className="text-xs ml-1 opacity-70">
+                                ({pnlPct >= 0 ? '+' : ''}{(pnlPct * 100).toFixed(2)}%)
+                              </span>
+                            )}
+                          </span>
+                        ) : (
+                          <span className="text-gray-400">-</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-2.5 text-right">
+                        <button
+                          onClick={() => deleteSellRecord(s.id)}
+                          className="text-gray-400 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
+                          title="삭제"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

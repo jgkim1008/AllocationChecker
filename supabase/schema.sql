@@ -164,6 +164,33 @@ CREATE INDEX IF NOT EXISTS idx_infinite_buy_symbol ON infinite_buy_records(symbo
 CREATE INDEX IF NOT EXISTS idx_infinite_buy_user ON infinite_buy_records(user_id);
 
 -- ============================================================
+-- infinite_sell_records (무한매수법 매도 기록)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS infinite_sell_records (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  symbol      TEXT NOT NULL,
+  sell_date   DATE NOT NULL,
+  price       NUMERIC(14, 4) NOT NULL,
+  shares      NUMERIC(14, 6) NOT NULL,
+  amount      NUMERIC(14, 4) NOT NULL,
+  user_id     UUID REFERENCES auth.users(id),
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE infinite_sell_records ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "infinite_sell_public_read" ON infinite_sell_records
+  FOR SELECT USING (true);
+
+CREATE POLICY "infinite_sell_public_insert" ON infinite_sell_records
+  FOR INSERT WITH CHECK (true);
+
+CREATE POLICY "infinite_sell_public_delete" ON infinite_sell_records
+  FOR DELETE USING (true);
+
+CREATE INDEX IF NOT EXISTS idx_infinite_sell_symbol ON infinite_sell_records(symbol);
+
+-- ============================================================
 -- fibonacci_reports (피보나치 되돌림 리포트)
 -- ============================================================
 CREATE TABLE IF NOT EXISTS fibonacci_reports (
