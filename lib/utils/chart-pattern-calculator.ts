@@ -262,6 +262,8 @@ export interface PatternCriteria {
   [key: string]: boolean;
 }
 
+export type PatternStatus = 'awaiting' | 'reached' | 'failed' | 'undefined';
+
 /** 차트 오버레이에 그릴 선 하나 */
 export interface PatternLine {
   points: Array<{ time: string; value: number }>;
@@ -295,6 +297,7 @@ export interface PatternResult {
   signal: 'buy' | 'sell';
   syncRate: number;
   detectedAt: string;
+  status?: PatternStatus;
   keyLevels: {
     support?: number;
     resistance?: number;
@@ -412,6 +415,19 @@ function getProjectionEndIndex(lastIdx: number, patternEndIdx: number, patternWi
   return Math.min(lastIdx, patternEndIdx + Math.max(10, Math.round(patternWidth * 0.9)));
 }
 
+function addTradingDays(dateStr: string, days: number): string {
+  const date = new Date(`${dateStr}T00:00:00Z`);
+  let remaining = Math.max(0, days);
+
+  while (remaining > 0) {
+    date.setUTCDate(date.getUTCDate() + 1);
+    const day = date.getUTCDay();
+    if (day !== 0 && day !== 6) remaining -= 1;
+  }
+
+  return date.toISOString().slice(0, 10);
+}
+
 function buildSampledPathPoints(
   bars: PriceBar[],
   values: number[],
@@ -439,123 +455,533 @@ function buildSampledPathPoints(
   return points;
 }
 
+function getRegressionValue(slope: number, intercept: number, x: number): number {
+  return slope * x + intercept;
+}
+
+function evaluateFlagChannel(
+  highs: number[],
+  lows: number[],
+  startIdx: number,
+  endIdx: number,
+  direction: 'buy' | 'sell',
+) {
+  if (endIdx - startIdx < 4) return null;
+
+  const highPoints = highs.slice(startIdx, endIdx + 1).map((value, offset) => ({ x: offset, y: value }));
+  const lowPoints = lows.slice(startIdx, endIdx + 1).map((value, offset) => ({ x: offset, y: value }));
+  const upper = linearRegression(highPoints);
+  const lower = linearRegression(lowPoints);
+  const span = endIdx - startIdx;
+  const upperStart = getRegressionValue(upper.slope, upper.intercept, 0);
+  const upperEnd = getRegressionValue(upper.slope, upper.intercept, span);
+  const lowerStart = getRegressionValue(lower.slope, lower.intercept, 0);
+  const lowerEnd = getRegressionValue(lower.slope, lower.intercept, span);
+  const startHeight = upperStart - lowerStart;
+  const endHeight = upperEnd - lowerEnd;
+
+  if (startHeight <= 0 || endHeight <= 0) return null;
+
+  const avgPrice = (upperStart + lowerStart + upperEnd + lowerEnd) / 4;
+  const avgHeight = (startHeight + endHeight) / 2;
+  const upperSlopePct = avgPrice > 0 ? upper.slope / avgPrice : 0;
+  const lowerSlopePct = avgPrice > 0 ? lower.slope / avgPrice : 0;
+  const slopeGapPct = Math.abs(upperSlopePct - lowerSlopePct);
+  const heightChangePct = avgHeight > 0 ? Math.abs(endHeight - startHeight) / avgHeight : 0;
+
+  const counterTrendOk = direction === 'sell'
+    ? upperSlopePct > -0.0015 && lowerSlopePct > -0.0015
+    : upperSlopePct < 0.0015 && lowerSlopePct < 0.0015;
+
+  const channelParallel = slopeGapPct <= 0.006;
+  const channelTight = avgPrice > 0 ? avgHeight / avgPrice <= 0.08 : false;
+  const stableHeight = heightChangePct <= 0.35;
+  const orderlyChannel = upper.r2 >= 0.2 && lower.r2 >= 0.2;
+
+  return {
+    upper,
+    lower,
+    upperStart,
+    upperEnd,
+    lowerStart,
+    lowerEnd,
+    avgHeight,
+    counterTrendOk,
+    channelParallel,
+    channelTight,
+    stableHeight,
+    orderlyChannel,
+  };
+}
+
+function buildWedgeTouchMarkers(
+  bars: PriceBar[],
+  startOffset: number,
+  upperPivots: { index: number; value: number }[],
+  lowerPivots: { index: number; value: number }[],
+  signal: 'buy' | 'sell',
+): PatternMarker[] {
+  const color = signal === 'buy' ? BUY_COLOR : SELL_COLOR;
+  const markers: Array<{ absIndex: number; value: number; position: 'above' | 'below' }> = [];
+  let nextUpperIdx = 0;
+  let nextLowerIdx = 0;
+
+  const firstUpper = upperPivots[0];
+  if (!firstUpper) return [];
+
+  markers.push({
+    absIndex: startOffset + firstUpper.index,
+    value: firstUpper.value,
+    position: 'above',
+  });
+  nextUpperIdx = 1;
+  let lastAbsIndex = startOffset + firstUpper.index;
+  let expect: 'lower' | 'upper' = 'lower';
+
+  while (markers.length < 4) {
+    if (expect === 'lower') {
+      const next = lowerPivots.slice(nextLowerIdx).find((pivot) => startOffset + pivot.index > lastAbsIndex);
+      if (!next) break;
+      nextLowerIdx = lowerPivots.findIndex((pivot) => pivot.index === next.index) + 1;
+      markers.push({
+        absIndex: startOffset + next.index,
+        value: next.value,
+        position: 'below',
+      });
+      lastAbsIndex = startOffset + next.index;
+      expect = 'upper';
+    } else {
+      const next = upperPivots.slice(nextUpperIdx).find((pivot) => startOffset + pivot.index > lastAbsIndex);
+      if (!next) break;
+      nextUpperIdx = upperPivots.findIndex((pivot) => pivot.index === next.index) + 1;
+      markers.push({
+        absIndex: startOffset + next.index,
+        value: next.value,
+        position: 'above',
+      });
+      lastAbsIndex = startOffset + next.index;
+      expect = 'lower';
+    }
+  }
+
+  return markers.map((point, idx) => ({
+    time: bars[point.absIndex].date,
+    value: point.value,
+    label: String(idx + 1),
+    position: point.position,
+    color,
+  }));
+}
+
 const BUY_COLOR  = '#16a34a';
 const SELL_COLOR = '#ef4444';
 const NECK_COLOR = '#f59e0b';
 const CHANNEL_COLOR = '#6366f1';
+const ACTIVE_PATTERN_MAX_AGE_BARS = 80;
+const AWAITING_PATTERN_MAX_AGE_BARS = 120;
+const ACTIONABLE_LEVEL_MAX_DISTANCE = 0.18;
+
+function getPatternStatusRank(status?: PatternStatus): number {
+  return status === 'awaiting'
+    ? 0
+    : status === 'undefined'
+      ? 3
+      : status === 'reached'
+        ? 2
+        : status === 'failed'
+          ? 2
+          : 1;
+}
+
+function getPatternActionableLevel(pattern: PatternResult): number | undefined {
+  return pattern.keyLevels.neckline
+    ?? (pattern.signal === 'buy' ? pattern.keyLevels.resistance : pattern.keyLevels.support)
+    ?? (pattern.signal === 'buy' ? pattern.keyLevels.support : pattern.keyLevels.resistance);
+}
+
+function getPatternHeight(pattern: PatternResult): number | undefined {
+  const actionable = getPatternActionableLevel(pattern);
+  if (!actionable) return undefined;
+
+  if (pattern.keyLevels.target != null) {
+    return Math.abs(pattern.keyLevels.target - actionable);
+  }
+
+  if (pattern.signal === 'buy' && pattern.keyLevels.support != null) {
+    return Math.abs(actionable - pattern.keyLevels.support);
+  }
+
+  if (pattern.signal === 'sell' && pattern.keyLevels.resistance != null) {
+    return Math.abs(pattern.keyLevels.resistance - actionable);
+  }
+
+  return undefined;
+}
+
+function isPatternStillRelevant(pattern: PatternResult, currentPrice: number, barsLength: number): boolean {
+  const age = barsLength - 1 - pattern.patternBars.endIdx;
+  const ageLimit = pattern.status === 'awaiting' ? AWAITING_PATTERN_MAX_AGE_BARS : ACTIVE_PATTERN_MAX_AGE_BARS;
+  if (age > ageLimit) return false;
+
+  const actionable = getPatternActionableLevel(pattern);
+  if (!actionable || actionable <= 0) return true;
+
+  const height = getPatternHeight(pattern) ?? actionable * 0.08;
+  const normalizedDistance = Math.abs(currentPrice - actionable) / actionable;
+  const dynamicDistanceCap = Math.max(height / actionable * 1.25, 0.08);
+  if (normalizedDistance > Math.min(ACTIONABLE_LEVEL_MAX_DISTANCE, dynamicDistanceCap)) {
+    return false;
+  }
+
+  if (pattern.keyLevels.target != null) {
+    if (pattern.signal === 'buy' && currentPrice >= pattern.keyLevels.target * 0.99) return false;
+    if (pattern.signal === 'sell' && currentPrice <= pattern.keyLevels.target * 1.01) return false;
+  }
+
+  return true;
+}
+
+function rangesOverlap(aStart: number, aEnd: number, bStart: number, bEnd: number): boolean {
+  return aStart <= bEnd && bStart <= aEnd;
+}
+
+function getDoubleTopStateInfo(
+  bars: PriceBar[],
+  fromIdx: number,
+  secondTop: number,
+  target: number,
+): { status: PatternStatus; endIdx: number } {
+  for (let idx = fromIdx; idx < bars.length; idx++) {
+    const bar = bars[idx];
+    const hitTarget = bar.low <= target;
+    const brokeTop = bar.high > secondTop;
+
+    if (hitTarget && brokeTop) return { status: 'undefined', endIdx: idx };
+    if (hitTarget) return { status: 'reached', endIdx: idx };
+    if (brokeTop) return { status: 'failed', endIdx: idx };
+  }
+
+  return { status: 'awaiting', endIdx: bars.length - 1 };
+}
+
+function getDoubleBottomStateInfo(
+  bars: PriceBar[],
+  fromIdx: number,
+  secondBottom: number,
+  target: number,
+): { status: PatternStatus; endIdx: number } {
+  for (let idx = fromIdx; idx < bars.length; idx++) {
+    const bar = bars[idx];
+    const hitTarget = bar.high >= target;
+    const brokeBottom = bar.low < secondBottom;
+
+    if (hitTarget && brokeBottom) return { status: 'undefined', endIdx: idx };
+    if (hitTarget) return { status: 'reached', endIdx: idx };
+    if (brokeBottom) return { status: 'failed', endIdx: idx };
+  }
+
+  return { status: 'awaiting', endIdx: bars.length - 1 };
+}
+
+function getBullContinuationStateInfo(
+  bars: PriceBar[],
+  fromIdx: number,
+  failureLevel: number,
+  target: number,
+): { status: PatternStatus; endIdx: number } {
+  for (let idx = fromIdx; idx < bars.length; idx++) {
+    const bar = bars[idx];
+    const hitTarget = bar.high >= target;
+    const failed = bar.low < failureLevel;
+    if (hitTarget && failed) return { status: 'undefined', endIdx: idx };
+    if (hitTarget) return { status: 'reached', endIdx: idx };
+    if (failed) return { status: 'failed', endIdx: idx };
+  }
+  return { status: 'awaiting', endIdx: bars.length - 1 };
+}
+
+function getBearContinuationStateInfo(
+  bars: PriceBar[],
+  fromIdx: number,
+  failureLevel: number,
+  target: number,
+): { status: PatternStatus; endIdx: number } {
+  for (let idx = fromIdx; idx < bars.length; idx++) {
+    const bar = bars[idx];
+    const hitTarget = bar.low <= target;
+    const failed = bar.high > failureLevel;
+    if (hitTarget && failed) return { status: 'undefined', endIdx: idx };
+    if (hitTarget) return { status: 'reached', endIdx: idx };
+    if (failed) return { status: 'failed', endIdx: idx };
+  }
+  return { status: 'awaiting', endIdx: bars.length - 1 };
+}
+
+function getContinuationMeta(
+  signal: 'buy' | 'sell',
+  bars: PriceBar[],
+  formedFromIdx: number | null,
+  failureLevel: number,
+  target: number,
+): {
+  status: PatternStatus;
+  rightTargetTime: string;
+  statusColor: string;
+  statusLabel?: string;
+} {
+  const lastIdx = bars.length - 1;
+  const stateInfo = formedFromIdx != null
+    ? (
+        signal === 'buy'
+          ? getBullContinuationStateInfo(bars, formedFromIdx + 1, failureLevel, target)
+          : getBearContinuationStateInfo(bars, formedFromIdx + 1, failureLevel, target)
+      )
+    : { status: 'awaiting' as PatternStatus, endIdx: lastIdx };
+
+  const status = stateInfo.status;
+  return {
+    status,
+    rightTargetTime: formedFromIdx != null ? bars[stateInfo.endIdx].date : addTradingDays(bars[lastIdx].date, 10),
+    statusColor:
+      status === 'reached' ? '#16a34a' :
+      status === 'failed' ? '#ef4444' :
+      status === 'undefined' ? '#6b7280' :
+      '#a855f7',
+    statusLabel: getStatusLabel(status),
+  };
+}
+
+function resolveDoubleTopCandidates(
+  candidates: Array<PatternResult & { accuracy: number }>
+): PatternResult | null {
+  if (!candidates.length) return null;
+
+  const kept: Array<PatternResult & { accuracy: number }> = [];
+
+  for (const candidate of candidates.sort((a, b) => {
+    const statusRank = (status?: PatternStatus) =>
+      status === 'awaiting' ? 0 :
+      status === 'reached' || status === 'failed' ? 1 :
+      2;
+
+    const rankDiff = statusRank(a.status) - statusRank(b.status);
+    if (rankDiff !== 0) return rankDiff;
+    if (a.accuracy !== b.accuracy) return b.accuracy - a.accuracy;
+    return b.syncRate - a.syncRate;
+  })) {
+    const overlaps = kept.find((existing) =>
+      rangesOverlap(
+        candidate.patternBars.startIdx,
+        candidate.patternBars.endIdx,
+        existing.patternBars.startIdx,
+        existing.patternBars.endIdx,
+      )
+    );
+
+    if (!overlaps) {
+      kept.push(candidate);
+      continue;
+    }
+
+    if (candidate.status === 'undefined' && overlaps.status !== 'undefined') {
+      continue;
+    }
+
+    if (candidate.status === 'awaiting' && overlaps.status !== 'awaiting') {
+      kept.splice(kept.indexOf(overlaps), 1, candidate);
+      continue;
+    }
+
+    if (candidate.status === overlaps.status && candidate.accuracy > overlaps.accuracy) {
+      kept.splice(kept.indexOf(overlaps), 1, candidate);
+    }
+  }
+
+  return kept[0] ?? null;
+}
+
+function resolveReversalCandidates(
+  candidates: Array<PatternResult & { accuracy: number }>
+): PatternResult | null {
+  if (!candidates.length) return null;
+
+  return [...candidates].sort((a, b) => {
+    const statusRankDiff = getPatternStatusRank(a.status) - getPatternStatusRank(b.status);
+    if (statusRankDiff !== 0) return statusRankDiff;
+
+    const ageA = a.patternBars.endIdx;
+    const ageB = b.patternBars.endIdx;
+    if (ageA !== ageB) return ageB - ageA;
+
+    if (a.accuracy !== b.accuracy) return b.accuracy - a.accuracy;
+    return b.syncRate - a.syncRate;
+  })[0] ?? null;
+}
 
 // ─────────────────────────────────────────────────────────────
 // 1. 머리어깨형 (Head & Shoulders) — 매도
 // ─────────────────────────────────────────────────────────────
+function getStatusLabel(status?: PatternStatus): string | undefined {
+  if (!status) return undefined;
+  return status === 'awaiting'
+    ? '대기'
+    : status === 'reached'
+      ? '도달'
+      : status === 'failed'
+        ? '실패'
+        : '정의불가';
+}
+
 function detectHeadAndShoulders(
   closes: number[], highs: number[], lows: number[], volumes: number[], bars: PriceBar[],
 ): PatternResult | null {
-  const peaks = findPeaks(closes, 4);
-  if (peaks.length < 3) return null;
+  const peaks = findPeaks(highs, 5);
+  const troughs = findTroughs(lows, 5);
+  if (peaks.length < 3 || troughs.length < 2) return null;
+
+  const candidates: Array<PatternResult & { accuracy: number }> = [];
+  const lastIdx = closes.length - 1;
+  const lastBar = bars[lastIdx];
 
   for (let i = 0; i < peaks.length - 2; i++) {
     const ls = peaks[i], head = peaks[i + 1], rs = peaks[i + 2];
     if (head.index - ls.index < 5 || rs.index - head.index < 5) continue;
+    if (head.index - ls.index > 28 || rs.index - head.index > 28) continue;
+    if (rs.index - ls.index > 60) continue;
+
+    const t1Candidates = troughs.filter((t) => t.index > ls.index && t.index < head.index);
+    const t2Candidates = troughs.filter((t) => t.index > head.index && t.index < rs.index);
+    if (!t1Candidates.length || !t2Candidates.length) continue;
+    const t1 = t1Candidates.reduce((best, t) => t.value < best.value ? t : best);
+    const t2 = t2Candidates.reduce((best, t) => t.value < best.value ? t : best);
+    const neckline = (t1.value + t2.value) / 2;
+    const shoulderSpacingBalance = Math.abs((head.index - ls.index) - (rs.index - head.index));
+    if (shoulderSpacingBalance > 14) continue;
 
     const headHigherThanLS = pct(head.value, ls.value) > 2;
     const headHigherThanRS = pct(head.value, rs.value) > 2;
-    const shouldersSymmetric = Math.abs(pct(ls.value, rs.value)) < 6;
+    const shouldersSymmetricPct = Math.abs(pct(ls.value, rs.value));
+    const shouldersSymmetric = shouldersSymmetricPct < 12;
+    const headProminenceLS = head.value - ls.value;
+    const headProminenceRS = head.value - rs.value;
+    const avgShoulderHeight = (ls.value + rs.value) / 2;
+    const headProminencePct = avgShoulderHeight > 0 ? ((head.value - avgShoulderHeight) / avgShoulderHeight) * 100 : 0;
+    if (headProminencePct < 3.5) continue;
+    if (!headHigherThanLS || !headHigherThanRS || !shouldersSymmetric) continue;
 
-    if (!headHigherThanLS || !headHigherThanRS) continue;
+    const priorTroughCandidates = troughs.filter((t) => t.index < ls.index);
+    if (!priorTroughCandidates.length) continue;
+    const priorTrough = priorTroughCandidates[priorTroughCandidates.length - 1];
+    const patternHeight = head.value - neckline;
+    if (patternHeight <= 0) continue;
+    const trendHeight = head.value - priorTrough.value;
+    if (trendHeight < patternHeight * 0.25) continue;
 
-    // Neckline troughs
-    const t1 = Math.min(...closes.slice(ls.index, head.index));
-    const t2 = Math.min(...closes.slice(head.index, rs.index));
-    const neckline = (t1 + t2) / 2;
+    const breakdownIdx = closes.findIndex((price, idx) => idx > rs.index && price < neckline);
+    const formed = breakdownIdx >= 0;
+    const postShoulderWindow = formed ? breakdownIdx - rs.index : lastIdx - rs.index;
+    const maxBreakdownDelay = Math.min(22, Math.max(8, Math.round((rs.index - ls.index) * 0.35)));
+    const point5Idx = formed ? breakdownIdx : lastIdx;
+    const point5Time = bars[point5Idx].date;
+    const ageFromCurrent = lastIdx - point5Idx;
+    if (ageFromCurrent > 45) continue;
+    if (postShoulderWindow > maxBreakdownDelay) continue;
+    const targetPrice = neckline - patternHeight;
+    const stateInfo = formed
+      ? getDoubleTopStateInfo(bars, breakdownIdx + 1, rs.value, targetPrice)
+      : { status: 'awaiting' as PatternStatus, endIdx: lastIdx };
+    const status = stateInfo.status;
+    const rightTargetTime = formed ? bars[stateInfo.endIdx].date : addTradingDays(lastBar.date, 10);
+    const statusColor =
+      status === 'reached' ? '#16a34a' :
+      status === 'failed' ? '#ef4444' :
+      status === 'undefined' ? '#6b7280' :
+      '#a855f7';
 
-    const currentPrice = closes[closes.length - 1];
-    const priceAtNeckline = currentPrice <= neckline * 1.03;
-    const necklineFlat = Math.abs(pct(t1, t2)) < 8;
+    const necklineFlat = Math.abs(pct(t1.value, t2.value)) < 8;
     const volPattern = avgVolume(volumes, ls.index, head.index) > avgVolume(volumes, head.index, rs.index);
-
     const criteria: PatternCriteria = {
-      '3개 봉우리 확인': true,
-      '머리 > 양 어깨': headHigherThanLS && headHigherThanRS,
+      '3개 피벗 고점': true,
+      '머리 > 양 어깨': true,
       '어깨 대칭성': shouldersSymmetric,
-      '넥라인 수평': necklineFlat,
-      '가격 넥라인 근접/이탈': priceAtNeckline,
+      '머리 prominence 충분': headProminencePct >= 3.5,
+      '조밀한 어깨 간격': rs.index - ls.index <= 60 && shoulderSpacingBalance <= 14,
+      '넥라인 수평성': necklineFlat,
+      '우측 어깨 이후 빠른 이탈': postShoulderWindow <= maxBreakdownDelay,
+      '종가 넥라인 이탈로 형성': formed,
       '거래량 패턴': volPattern,
     };
 
-    const score =
-      40 +
-      (shouldersSymmetric ? 15 : 0) +
-      (necklineFlat ? 15 : 0) +
-      (priceAtNeckline ? 20 : 0) +
-      (volPattern ? 10 : 0);
+    const compactness = 1 - Math.min(1, (rs.index - ls.index) / 60);
+    const timingScore = 1 - Math.min(1, postShoulderWindow / Math.max(maxBreakdownDelay, 1));
+    const prominenceScore = Math.min(1, headProminencePct / 8);
+    const accuracy =
+      (1 - shouldersSymmetricPct / 12) * 0.35 +
+      prominenceScore * 0.2 +
+      (necklineFlat ? 0.15 : 0) +
+      (volPattern ? 0.15 : 0) +
+      compactness * 0.15;
+    const score = Math.round(30 + Math.max(0, accuracy) * 35 + timingScore * 20 + (formed ? 10 : 0));
+    if (score < 50) continue;
 
-    // 두 넥라인 골짜기의 실제 인덱스
-    const t1Idx = minIdx(closes, ls.index, head.index);
-    const t2Idx = minIdx(closes, head.index, rs.index);
-    const lastIdx = closes.length - 1;
-    const projectionEndIdx = getProjectionEndIndex(lastIdx, rs.index, rs.index - ls.index);
-
-    // 목표가 계산: 넥라인 - (머리 - 넥라인)
-    const patternHeight = head.value - neckline;
-    const targetPrice = neckline - patternHeight;
-
-    return {
+    candidates.push({
       type: 'head_and_shoulders',
-      name: '머리어깨형',
+      name: formed ? '머리어깨형' : '머리어깨형 (진행중)',
       signal: 'sell',
       syncRate: Math.min(100, score),
-      detectedAt: bars[rs.index]?.date ?? bars[bars.length - 1].date,
+      detectedAt: bars[formed ? breakdownIdx : rs.index]?.date ?? lastBar.date,
+      status,
       keyLevels: { neckline, resistance: head.value, target: targetPrice },
-      patternBars: { startIdx: ls.index, endIdx: Math.min(rs.index + 5, closes.length - 1) },
+      patternBars: { startIdx: ls.index, endIdx: point5Idx },
       criteria,
-      // 패턴 채우기 영역
       fillArea: {
         points: [
           { time: bars[ls.index].date, value: ls.value },
-          { time: bars[t1Idx].date, value: closes[t1Idx] },
+          { time: bars[t1.index].date, value: t1.value },
           { time: bars[head.index].date, value: head.value },
-          { time: bars[t2Idx].date, value: closes[t2Idx] },
+          { time: bars[t2.index].date, value: t2.value },
           { time: bars[rs.index].date, value: rs.value },
+          { time: point5Time, value: neckline },
         ],
         outlinePoints: [
           { time: bars[ls.index].date, value: ls.value },
-          { time: bars[t1Idx].date, value: closes[t1Idx] },
+          { time: bars[t1.index].date, value: t1.value },
           { time: bars[head.index].date, value: head.value },
-          { time: bars[t2Idx].date, value: closes[t2Idx] },
+          { time: bars[t2.index].date, value: t2.value },
           { time: bars[rs.index].date, value: rs.value },
+          { time: point5Time, value: neckline },
         ],
         color: 'rgba(239, 68, 68, 0.12)',
         borderColor: SELL_COLOR,
         borderWidth: 2,
       },
       overlayLines: [
-        // 넥라인 (골짜기 연결 → 오른쪽으로 연장)
         {
           points: [
-            { time: bars[t1Idx].date,   value: closes[t1Idx] },
-            { time: bars[t2Idx].date,   value: closes[t2Idx] },
-            { time: bars[projectionEndIdx].date, value: neckline },
+            { time: bars[t1.index].date, value: t1.value },
+            { time: bars[t2.index].date, value: t2.value },
+            { time: point5Time, value: neckline },
           ],
           color: NECK_COLOR, width: 2, style: 'dotted', label: '넥라인',
         },
-        // 목표가 라인
         {
           points: [
-            { time: bars[rs.index].date, value: targetPrice },
-            { time: bars[projectionEndIdx].date,  value: targetPrice },
+            { time: point5Time, value: targetPrice },
+            { time: rightTargetTime, value: targetPrice },
           ],
-          color: '#a855f7', width: 2, style: 'dotted', label: '목표가',
+          color: statusColor, width: 2, style: 'dotted', label: getStatusLabel(status) ? `목표가 (${getStatusLabel(status)})` : '목표가',
         },
       ],
       patternMarkers: [
         { time: bars[ls.index].date, value: ls.value, label: '좌측 어깨', position: 'above', color: SELL_COLOR },
         { time: bars[head.index].date, value: head.value, label: '머리', position: 'above', color: SELL_COLOR },
         { time: bars[rs.index].date, value: rs.value, label: '우측 어깨', position: 'above', color: SELL_COLOR },
-        { time: bars[projectionEndIdx].date, value: targetPrice, label: '목표가', position: 'below', color: '#a855f7' },
       ],
-    };
+      accuracy,
+    });
   }
-  return null;
+
+  return resolveReversalCandidates(candidates);
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -564,109 +990,151 @@ function detectHeadAndShoulders(
 function detectInverseHeadAndShoulders(
   closes: number[], highs: number[], lows: number[], volumes: number[], bars: PriceBar[],
 ): PatternResult | null {
-  const troughs = findTroughs(closes, 4);
-  if (troughs.length < 3) return null;
+  const troughs = findTroughs(lows, 5);
+  const peaks = findPeaks(highs, 5);
+  if (troughs.length < 3 || peaks.length < 2) return null;
+
+  const candidates: Array<PatternResult & { accuracy: number }> = [];
+  const lastIdx = closes.length - 1;
+  const lastBar = bars[lastIdx];
 
   for (let i = 0; i < troughs.length - 2; i++) {
     const ls = troughs[i], head = troughs[i + 1], rs = troughs[i + 2];
     if (head.index - ls.index < 5 || rs.index - head.index < 5) continue;
+    if (head.index - ls.index > 28 || rs.index - head.index > 28) continue;
+    if (rs.index - ls.index > 60) continue;
+
+    const t1Candidates = peaks.filter((p) => p.index > ls.index && p.index < head.index);
+    const t2Candidates = peaks.filter((p) => p.index > head.index && p.index < rs.index);
+    if (!t1Candidates.length || !t2Candidates.length) continue;
+    const t1 = t1Candidates.reduce((best, p) => p.value > best.value ? p : best);
+    const t2 = t2Candidates.reduce((best, p) => p.value > best.value ? p : best);
+    const neckline = (t1.value + t2.value) / 2;
+    const shoulderSpacingBalance = Math.abs((head.index - ls.index) - (rs.index - head.index));
+    if (shoulderSpacingBalance > 14) continue;
 
     const headLowerThanLS = pct(head.value, ls.value) < -2;
     const headLowerThanRS = pct(head.value, rs.value) < -2;
-    const shouldersSymmetric = Math.abs(pct(ls.value, rs.value)) < 6;
+    const shouldersSymmetricPct = Math.abs(pct(ls.value, rs.value));
+    const shouldersSymmetric = shouldersSymmetricPct < 12;
+    const avgShoulderDepth = (ls.value + rs.value) / 2;
+    const headProminencePct = avgShoulderDepth > 0 ? ((avgShoulderDepth - head.value) / avgShoulderDepth) * 100 : 0;
+    if (headProminencePct < 3.5) continue;
+    if (!headLowerThanLS || !headLowerThanRS || !shouldersSymmetric) continue;
 
-    if (!headLowerThanLS || !headLowerThanRS) continue;
+    const priorPeakCandidates = peaks.filter((p) => p.index < ls.index);
+    if (!priorPeakCandidates.length) continue;
+    const priorPeak = priorPeakCandidates[priorPeakCandidates.length - 1];
+    const patternHeight = neckline - head.value;
+    if (patternHeight <= 0) continue;
+    const trendHeight = priorPeak.value - head.value;
+    if (trendHeight < patternHeight * 0.25) continue;
 
-    const t1 = Math.max(...closes.slice(ls.index, head.index));
-    const t2 = Math.max(...closes.slice(head.index, rs.index));
-    const neckline = (t1 + t2) / 2;
+    const breakoutIdx = closes.findIndex((price, idx) => idx > rs.index && price > neckline);
+    const formed = breakoutIdx >= 0;
+    const postShoulderWindow = formed ? breakoutIdx - rs.index : lastIdx - rs.index;
+    const maxBreakoutDelay = Math.min(22, Math.max(8, Math.round((rs.index - ls.index) * 0.35)));
+    const point5Idx = formed ? breakoutIdx : lastIdx;
+    const point5Time = bars[point5Idx].date;
+    const ageFromCurrent = lastIdx - point5Idx;
+    if (ageFromCurrent > 45) continue;
+    if (postShoulderWindow > maxBreakoutDelay) continue;
+    const targetPrice = neckline + patternHeight;
+    const stateInfo = formed
+      ? getDoubleBottomStateInfo(bars, breakoutIdx + 1, rs.value, targetPrice)
+      : { status: 'awaiting' as PatternStatus, endIdx: lastIdx };
+    const status = stateInfo.status;
+    const rightTargetTime = formed ? bars[stateInfo.endIdx].date : addTradingDays(lastBar.date, 10);
+    const statusColor =
+      status === 'reached' ? '#16a34a' :
+      status === 'failed' ? '#ef4444' :
+      status === 'undefined' ? '#6b7280' :
+      '#a855f7';
 
-    const currentPrice = closes[closes.length - 1];
-    const priceBreakout = currentPrice >= neckline * 0.97;
-    const necklineFlat = Math.abs(pct(t1, t2)) < 8;
+    const necklineFlat = Math.abs(pct(t1.value, t2.value)) < 8;
     const volPattern = avgVolume(volumes, head.index, rs.index) > avgVolume(volumes, ls.index, head.index);
-
     const criteria: PatternCriteria = {
-      '3개 바닥 확인': true,
-      '머리 < 양 어깨': headLowerThanLS && headLowerThanRS,
+      '3개 피벗 저점': true,
+      '머리 < 양 어깨': true,
       '어깨 대칭성': shouldersSymmetric,
-      '넥라인 수평': necklineFlat,
-      '가격 넥라인 돌파': priceBreakout,
+      '머리 prominence 충분': headProminencePct >= 3.5,
+      '조밀한 어깨 간격': rs.index - ls.index <= 60 && shoulderSpacingBalance <= 14,
+      '넥라인 수평성': necklineFlat,
+      '우측 어깨 이후 빠른 돌파': postShoulderWindow <= maxBreakoutDelay,
+      '종가 넥라인 돌파로 형성': formed,
       '거래량 증가': volPattern,
     };
 
-    const score =
-      40 +
-      (shouldersSymmetric ? 15 : 0) +
-      (necklineFlat ? 15 : 0) +
-      (priceBreakout ? 20 : 0) +
-      (volPattern ? 10 : 0);
+    const compactness = 1 - Math.min(1, (rs.index - ls.index) / 60);
+    const timingScore = 1 - Math.min(1, postShoulderWindow / Math.max(maxBreakoutDelay, 1));
+    const prominenceScore = Math.min(1, headProminencePct / 8);
+    const accuracy =
+      (1 - shouldersSymmetricPct / 12) * 0.35 +
+      prominenceScore * 0.2 +
+      (necklineFlat ? 0.15 : 0) +
+      (volPattern ? 0.15 : 0) +
+      compactness * 0.15;
+    const score = Math.round(30 + Math.max(0, accuracy) * 35 + timingScore * 20 + (formed ? 10 : 0));
+    if (score < 50) continue;
 
-    const t1Idx = maxIdx(closes, ls.index, head.index);
-    const t2Idx = maxIdx(closes, head.index, rs.index);
-    const lastIdx = closes.length - 1;
-    const projectionEndIdx = getProjectionEndIndex(lastIdx, rs.index, rs.index - ls.index);
-
-    // 목표가 계산: 넥라인 + (넥라인 - 머리)
-    const patternHeight = neckline - head.value;
-    const targetPrice = neckline + patternHeight;
-
-    return {
+    candidates.push({
       type: 'inverse_head_shoulders',
-      name: '역머리어깨형',
+      name: formed ? '역머리어깨형' : '역머리어깨형 (진행중)',
       signal: 'buy',
       syncRate: Math.min(100, score),
-      detectedAt: bars[rs.index]?.date ?? bars[bars.length - 1].date,
+      detectedAt: bars[formed ? breakoutIdx : rs.index]?.date ?? lastBar.date,
+      status,
       keyLevels: { neckline, support: head.value, target: targetPrice },
-      patternBars: { startIdx: ls.index, endIdx: Math.min(rs.index + 5, closes.length - 1) },
+      patternBars: { startIdx: ls.index, endIdx: point5Idx },
       criteria,
       fillArea: {
         points: [
           { time: bars[ls.index].date, value: ls.value },
-          { time: bars[t1Idx].date, value: closes[t1Idx] },
+          { time: bars[t1.index].date, value: t1.value },
           { time: bars[head.index].date, value: head.value },
-          { time: bars[t2Idx].date, value: closes[t2Idx] },
+          { time: bars[t2.index].date, value: t2.value },
           { time: bars[rs.index].date, value: rs.value },
+          { time: point5Time, value: neckline },
         ],
         outlinePoints: [
           { time: bars[ls.index].date, value: ls.value },
-          { time: bars[t1Idx].date, value: closes[t1Idx] },
+          { time: bars[t1.index].date, value: t1.value },
           { time: bars[head.index].date, value: head.value },
-          { time: bars[t2Idx].date, value: closes[t2Idx] },
+          { time: bars[t2.index].date, value: t2.value },
           { time: bars[rs.index].date, value: rs.value },
+          { time: point5Time, value: neckline },
         ],
         color: 'rgba(22, 163, 74, 0.12)',
         borderColor: BUY_COLOR,
         borderWidth: 2,
       },
       overlayLines: [
-        // 넥라인
         {
           points: [
-            { time: bars[t1Idx].date,   value: closes[t1Idx] },
-            { time: bars[t2Idx].date,   value: closes[t2Idx] },
-            { time: bars[projectionEndIdx].date, value: neckline },
+            { time: bars[t1.index].date, value: t1.value },
+            { time: bars[t2.index].date, value: t2.value },
+            { time: point5Time, value: neckline },
           ],
           color: NECK_COLOR, width: 2, style: 'dotted', label: '넥라인',
         },
-        // 목표가 라인
         {
           points: [
-            { time: bars[rs.index].date, value: targetPrice },
-            { time: bars[projectionEndIdx].date,  value: targetPrice },
+            { time: point5Time, value: targetPrice },
+            { time: rightTargetTime, value: targetPrice },
           ],
-          color: '#a855f7', width: 2, style: 'dotted', label: '목표가',
+          color: statusColor, width: 2, style: 'dotted', label: getStatusLabel(status) ? `목표가 (${getStatusLabel(status)})` : '목표가',
         },
       ],
       patternMarkers: [
         { time: bars[ls.index].date, value: ls.value, label: '좌측 어깨', position: 'below', color: BUY_COLOR },
         { time: bars[head.index].date, value: head.value, label: '머리', position: 'below', color: BUY_COLOR },
         { time: bars[rs.index].date, value: rs.value, label: '우측 어깨', position: 'below', color: BUY_COLOR },
-        { time: bars[projectionEndIdx].date, value: targetPrice, label: '목표가', position: 'above', color: '#a855f7' },
       ],
-    };
+      accuracy,
+    });
   }
-  return null;
+
+  return resolveReversalCandidates(candidates);
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -675,101 +1143,210 @@ function detectInverseHeadAndShoulders(
 function detectDoubleTop(
   closes: number[], highs: number[], lows: number[], volumes: number[], bars: PriceBar[],
 ): PatternResult | null {
-  const peaks = findPeaks(closes, 5);
-  if (peaks.length < 2) return null;
+  const pivotWindow = 5;
+  const trendHeightPct = 25;
+  const tolerancePct = 12;
+  const includeInProgress = true;
+  const peaks = findPeaks(highs, pivotWindow);
+  const troughs = findTroughs(lows, pivotWindow);
+  if (peaks.length < 1 || troughs.length < 1) return null;
 
-  for (let i = peaks.length - 2; i >= 0; i--) {
-    const p1 = peaks[i], p2 = peaks[i + 1];
-    const gap = p2.index - p1.index;
-    if (gap < 8 || gap > 50) continue;
+  const candidates: Array<PatternResult & { accuracy: number }> = [];
+  const lastIdx = closes.length - 1;
+  const lastBar = bars[lastIdx];
 
-    const heightSimilar = Math.abs(pct(p1.value, p2.value)) < 4;
-    if (!heightSimilar) continue;
+  for (let i = 0; i < peaks.length; i++) {
+    const p1 = peaks[i];
+    const priorTroughCandidates = troughs.filter((trough) => trough.index < p1.index);
+    if (!priorTroughCandidates.length) continue;
+    const priorTrough = priorTroughCandidates[priorTroughCandidates.length - 1];
 
-    const valleyMin = Math.min(...closes.slice(p1.index, p2.index + 1));
-    const declineDepth = pct(valleyMin, p1.value) < -4;
-    const neckline = valleyMin;
+    const pivotP2Candidates = peaks.filter((peak) => peak.index > p1.index + 5 && peak.index <= lastIdx - pivotWindow);
+    const inProgressPeak = includeInProgress
+      ? ({
+          index: lastIdx,
+          value: highs[lastIdx],
+          inProgress: true,
+        } as const)
+      : null;
 
-    const currentPrice = closes[closes.length - 1];
-    const priceDecline = currentPrice < p2.value * 0.98;
-    const atNeckline = currentPrice <= neckline * 1.03;
-    const vol2Higher = avgVolume(volumes, p1.index - 3, p1.index + 3) >= avgVolume(volumes, p2.index - 3, p2.index + 3);
-    const recentPattern = closes.length - 1 - p2.index <= 15;
+    const p2Candidates = [
+      ...pivotP2Candidates.map((peak) => ({ ...peak, inProgress: false as const })),
+      ...(inProgressPeak ? [inProgressPeak] : []),
+    ];
 
-    const criteria: PatternCriteria = {
-      '두 봉우리 높이 유사': heightSimilar,
-      '두 봉우리 사이 충분한 간격': gap >= 8,
-      '중간 골이 충분히 깊음': declineDepth,
-      '2차 봉 이후 하락 중': priceDecline,
-      '넥라인 근접/이탈': atNeckline,
-      '최근 형성된 패턴': recentPattern,
-    };
+    for (const p2Candidate of p2Candidates) {
+      const p2 = { index: p2Candidate.index, value: p2Candidate.value };
+      const gap = p2.index - p1.index;
+      if (gap < 8 || gap > 80) continue;
+      if (gap > 32) continue;
 
-    const score =
-      30 +
-      (declineDepth ? 15 : 0) +
-      (priceDecline ? 20 : 0) +
-      (atNeckline ? 15 : 0) +
-      (vol2Higher ? 10 : 0) +
-      (recentPattern ? 10 : 0);
+      const valleyCandidates = troughs.filter((trough) => trough.index > p1.index && trough.index < p2.index);
+      if (!valleyCandidates.length) continue;
+      const valley = valleyCandidates.reduce((bestTrough, trough) => trough.value < bestTrough.value ? trough : bestTrough);
 
-    if (score < 50) continue;
+      const topReference = Math.max(p1.value, p2.value);
+      const neckline = valley.value;
+      const patternHeight = topReference - neckline;
+      if (patternHeight <= 0) continue;
 
-    const valleyIdx = minIdx(closes, p1.index, p2.index);
-    const lastIdx   = closes.length - 1;
-    const projectionEndIdx = getProjectionEndIndex(lastIdx, p2.index, p2.index - p1.index);
-    const targetPrice = neckline - (p1.value - neckline);
+      const trendHeight = p1.value - priorTrough.value;
+      if (trendHeight < patternHeight * (trendHeightPct / 100)) continue;
 
-    return {
-      type: 'double_top',
-      name: '쌍봉형',
-      signal: 'sell',
-      syncRate: Math.min(100, score),
-      detectedAt: bars[p2.index]?.date ?? bars[bars.length - 1].date,
-      keyLevels: { resistance: Math.max(p1.value, p2.value), neckline, target: targetPrice },
-      patternBars: { startIdx: p1.index, endIdx: closes.length - 1 },
-      criteria,
-      fillArea: {
-        points: [
-          { time: bars[p1.index].date, value: p1.value },
-          { time: bars[valleyIdx].date, value: closes[valleyIdx] },
-          { time: bars[p2.index].date, value: p2.value },
-        ],
-        outlinePoints: [
-          { time: bars[p1.index].date, value: p1.value },
-          { time: bars[valleyIdx].date, value: closes[valleyIdx] },
-          { time: bars[p2.index].date, value: p2.value },
-        ],
-        color: 'rgba(239, 68, 68, 0.12)',
-        borderColor: SELL_COLOR,
-        borderWidth: 2,
-      },
-      overlayLines: [
-        // 넥라인
-        {
+      // TradingView: 넥라인(골)과 2차 고점 사이에 1차 고점보다 더 높은 피벗이 있으면 진정한 M형이 아님
+      const higherPeakBetweenValleyAndP2 = peaks.find((peak) =>
+        peak.index > valley.index &&
+        peak.index < p2.index &&
+        peak.value > p1.value * 1.01
+      );
+      if (higherPeakBetweenValleyAndP2) continue;
+
+      const topHeight1 = p1.value - neckline;
+      const topHeight2 = p2.value - neckline;
+      const topDeviationPct = Math.abs(topHeight1 - topHeight2) / Math.max(topHeight1, topHeight2, 1) * 100;
+      if (topDeviationPct > tolerancePct) continue;
+      // TradingView: 두 고점이 "비슷한 가격대"에 있어야 함 — 절대가 기준 5% 이내
+      if (Math.abs(pct(p1.value, p2.value)) > 5) continue;
+
+      const breakdownIdx = closes.findIndex((price, idx) => idx > p2.index && price < neckline);
+      const formed = breakdownIdx >= 0;
+      if (!formed && !p2Candidate.inProgress) continue;
+      const postPeakWindow = formed ? breakdownIdx - p2.index : lastIdx - p2.index;
+      const maxBreakdownDelay = Math.min(22, Math.max(8, Math.round(gap * 0.7)));
+      if (postPeakWindow > maxBreakdownDelay) continue;
+
+      const point5Idx = formed ? breakdownIdx : lastIdx;
+      const point5Time = bars[point5Idx].date;
+      const targetPrice = neckline - patternHeight;
+      const stateInfo = formed
+        ? getDoubleTopStateInfo(bars, breakdownIdx + 1, p2.value, targetPrice)
+        : { status: 'awaiting' as PatternStatus, endIdx: lastIdx };
+      const status = stateInfo.status;
+      const rightTargetTime = formed
+        ? bars[stateInfo.endIdx].date
+        : addTradingDays(lastBar.date, 10);
+
+      let leftNeckIdx = p1.index;
+      for (let idx = priorTrough.index; idx <= p1.index; idx++) {
+        if (highs[idx] >= neckline) {
+          leftNeckIdx = idx;
+          break;
+        }
+      }
+
+      const secondPeakWeaker =
+        avgVolume(volumes, Math.max(0, p2.index - 3), Math.min(lastIdx, p2.index + 3))
+        <= avgVolume(volumes, Math.max(0, p1.index - 3), Math.min(lastIdx, p1.index + 3));
+      const valleyDepthPct = topReference > 0 ? ((topReference - neckline) / topReference) * 100 : 0;
+      if (valleyDepthPct < 4) continue;
+
+      const criteria: PatternCriteria = {
+        '5/5 피벗 1차 고점': true,
+        '중간 저점 5/5 피벗': true,
+        '사전 추세 높이 충족': trendHeight >= patternHeight * (trendHeightPct / 100),
+        '두 고점 허용 편차': topDeviationPct <= tolerancePct,
+        '고점 구간 응축': gap <= 32,
+        '중간 저점 깊이 확보': valleyDepthPct >= 4,
+        '2차 고점 피벗 또는 진행중': !p2Candidate.inProgress,
+        '2차 고점 이후 빠른 이탈': postPeakWindow <= maxBreakdownDelay,
+        '종가 넥라인 이탈로 형성': formed,
+        '2차 고점 거래량 약화': secondPeakWeaker,
+      };
+
+      const accuracy = 1 - topDeviationPct / tolerancePct;
+      const timingScore = 1 - Math.min(1, postPeakWindow / Math.max(maxBreakdownDelay, 1));
+      const compactness = 1 - Math.min(1, gap / 32);
+      const valleyDepthScore = Math.min(1, valleyDepthPct / 10);
+      const score = Math.round(
+        28 +
+        Math.max(0, accuracy) * 25 +
+        Math.min(1, trendHeight / Math.max(patternHeight, 1)) * 10 +
+        compactness * 12 +
+        valleyDepthScore * 10 +
+        timingScore * 15 +
+        (formed ? 10 : 5) +
+        (secondPeakWeaker ? 5 : 0)
+      );
+      if (score < 50) continue;
+
+      const patternLabel = formed ? '쌍봉형' : '쌍봉형 (진행중)';
+      const secondLegStyle: PatternLine['style'] = p2Candidate.inProgress ? 'dashed' : 'solid';
+      const statusColor =
+        status === 'reached' ? '#16a34a' :
+        status === 'failed' ? '#ef4444' :
+        status === 'undefined' ? '#6b7280' :
+        '#a855f7';
+      const statusLabel = getStatusLabel(status);
+
+      candidates.push({
+        type: 'double_top',
+        name: patternLabel,
+        signal: 'sell',
+        syncRate: Math.min(100, score),
+        detectedAt: bars[formed ? breakdownIdx : p2.index]?.date ?? lastBar.date,
+        status,
+        keyLevels: { resistance: topReference, neckline, target: targetPrice },
+        patternBars: { startIdx: p1.index, endIdx: point5Idx },
+        criteria,
+        fillArea: {
           points: [
-            { time: bars[p1.index].date,  value: neckline },
-            { time: bars[projectionEndIdx].date,   value: neckline },
+            { time: bars[leftNeckIdx].date, value: neckline },
+            { time: point5Time, value: neckline },
+            { time: bars[p2.index].date, value: p2.value },
+            { time: bars[valley.index].date, value: valley.value },
+            { time: bars[p1.index].date, value: p1.value },
+            { time: bars[leftNeckIdx].date, value: highs[leftNeckIdx] },
           ],
-          color: NECK_COLOR, width: 2, style: 'dotted', label: '넥라인',
-        },
-        // 목표가 라인
-        {
-          points: [
-            { time: bars[p2.index].date, value: targetPrice },
-            { time: bars[projectionEndIdx].date,  value: targetPrice },
+          outlinePoints: [
+            { time: bars[priorTrough.index].date, value: priorTrough.value },
+            { time: bars[p1.index].date, value: p1.value },
+            { time: bars[valley.index].date, value: valley.value },
+            { time: bars[p2.index].date, value: p2.value },
+            { time: point5Time, value: neckline },
           ],
-          color: '#a855f7', width: 2, style: 'dotted', label: '목표가',
+          color: 'rgba(239, 68, 68, 0.12)',
+          borderColor: SELL_COLOR,
+          borderWidth: 2,
         },
-      ],
-      patternMarkers: [
-        { time: bars[p1.index].date, value: p1.value, label: '1차 봉', position: 'above', color: SELL_COLOR },
-        { time: bars[p2.index].date, value: p2.value, label: '2차 봉', position: 'above', color: SELL_COLOR },
-        { time: bars[projectionEndIdx].date, value: targetPrice, label: '목표가', position: 'below', color: '#a855f7' },
-      ],
-    };
+        overlayLines: [
+          {
+            points: [
+              { time: bars[leftNeckIdx].date, value: neckline },
+              { time: point5Time, value: neckline },
+            ],
+            color: NECK_COLOR, width: 2, style: 'dotted', label: '넥라인',
+          },
+          ...(formed || p2Candidate.inProgress ? [{
+            points: [
+              { time: point5Time, value: targetPrice },
+              { time: rightTargetTime, value: targetPrice },
+            ],
+            color: statusColor,
+            width: 2 as const,
+            style: 'dotted' as const,
+            label: statusLabel ? `목표가 (${statusLabel})` : '목표가',
+          }] : []),
+          {
+            points: [
+              { time: bars[valley.index].date, value: valley.value },
+              { time: bars[p2.index].date, value: p2.value },
+            ],
+            color: SELL_COLOR,
+            width: 2,
+            style: secondLegStyle,
+          },
+        ],
+        patternMarkers: [
+          { time: bars[p1.index].date, value: p1.value, label: '1차 봉', position: 'above', color: SELL_COLOR },
+          { time: bars[p2.index].date, value: p2.value, label: '2차 봉', position: 'above', color: SELL_COLOR },
+          { time: point5Time, value: neckline, label: formed ? '▼ 매도' : '대기', position: 'above', color: SELL_COLOR },
+        ],
+        accuracy,
+      });
+    }
   }
-  return null;
+
+  return resolveDoubleTopCandidates(candidates);
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -778,177 +1355,350 @@ function detectDoubleTop(
 function detectDoubleBottom(
   closes: number[], highs: number[], lows: number[], volumes: number[], bars: PriceBar[],
 ): PatternResult | null {
-  const troughs = findTroughs(closes, 5);
-  if (troughs.length < 2) return null;
+  const pivotWindow = 5;
+  const trendHeightPct = 25;
+  const tolerancePct = 12;
+  const includeInProgress = true;
+  const troughs = findTroughs(lows, pivotWindow);
+  const peaks = findPeaks(highs, pivotWindow);
+  if (troughs.length < 1 || peaks.length < 1) return null;
 
-  for (let i = troughs.length - 2; i >= 0; i--) {
-    const t1 = troughs[i], t2 = troughs[i + 1];
-    const gap = t2.index - t1.index;
-    if (gap < 8 || gap > 50) continue;
+  const candidates: Array<PatternResult & { accuracy: number }> = [];
+  const lastIdx = closes.length - 1;
+  const lastBar = bars[lastIdx];
 
-    const depthSimilar = Math.abs(pct(t1.value, t2.value)) < 4;
-    if (!depthSimilar) continue;
+  for (let i = 0; i < troughs.length; i++) {
+    const t1 = troughs[i];
+    const priorPeakCandidates = peaks.filter((peak) => peak.index < t1.index);
+    if (!priorPeakCandidates.length) continue;
+    const priorPeak = priorPeakCandidates[priorPeakCandidates.length - 1];
 
-    const peakMax = Math.max(...closes.slice(t1.index, t2.index + 1));
-    const riseHeight = pct(peakMax, t1.value) > 4;
-    const neckline = peakMax;
+    const pivotT2Candidates = troughs.filter((trough) => trough.index > t1.index + 5 && trough.index <= lastIdx - pivotWindow);
+    const hasPivotT2Candidate = pivotT2Candidates.length > 0;
+    const inProgressTrough = includeInProgress && !hasPivotT2Candidate
+      ? ({ index: lastIdx, value: lows[lastIdx], inProgress: true } as const)
+      : null;
 
-    const currentPrice = closes[closes.length - 1];
-    const priceRise = currentPrice > t2.value * 1.02;
-    const breakout = currentPrice >= neckline * 0.97;
-    const vol2Higher = avgVolume(volumes, t2.index - 3, t2.index + 3) >= avgVolume(volumes, t1.index - 3, t1.index + 3);
-    const recentPattern = closes.length - 1 - t2.index <= 15;
+    const t2Candidates = [
+      ...pivotT2Candidates.map((trough) => ({ ...trough, inProgress: false as const })),
+      ...(inProgressTrough ? [inProgressTrough] : []),
+    ];
 
-    const criteria: PatternCriteria = {
-      '두 바닥 깊이 유사': depthSimilar,
-      '두 바닥 사이 충분한 간격': gap >= 8,
-      '중간 봉이 충분히 높음': riseHeight,
-      '2차 바닥 이후 상승 중': priceRise,
-      '넥라인 근접/돌파': breakout,
-      '최근 형성된 패턴': recentPattern,
-    };
+    for (const t2Candidate of t2Candidates) {
+      const t2 = { index: t2Candidate.index, value: t2Candidate.value };
+      const gap = t2.index - t1.index;
+      if (gap < 8 || gap > 80) continue;
 
-    const score =
-      30 +
-      (riseHeight ? 15 : 0) +
-      (priceRise ? 20 : 0) +
-      (breakout ? 15 : 0) +
-      (vol2Higher ? 10 : 0) +
-      (recentPattern ? 10 : 0);
+      const earlierSimilarTrough = pivotT2Candidates.find((trough) =>
+        trough.index > t1.index &&
+        trough.index < t2.index &&
+        t2.index - trough.index <= 10 &&
+        Math.abs(trough.value - t2.value) / Math.max(Math.abs(t2.value), 1) * 100 <= 2.5
+      );
+      if (earlierSimilarTrough) continue;
 
-    if (score < 50) continue;
+      const peakCandidates = peaks.filter((peak) => peak.index > t1.index && peak.index < t2.index);
+      if (!peakCandidates.length) continue;
+      const peak = peakCandidates.reduce((bestPeak, currentPeak) => currentPeak.value > bestPeak.value ? currentPeak : bestPeak);
 
-    const peakIdx = maxIdx(closes, t1.index, t2.index);
-    const lastIdx = closes.length - 1;
-    const projectionEndIdx = getProjectionEndIndex(lastIdx, t2.index, t2.index - t1.index);
-    const targetPrice = neckline + (neckline - Math.min(t1.value, t2.value));
+      const laterBetterFirstBottom = troughs.find((trough) =>
+        trough.index > t1.index &&
+        trough.index < peak.index &&
+        trough.index - t1.index <= 12 &&
+        trough.value <= t1.value * 1.01
+      );
+      if (laterBetterFirstBottom) continue;
 
-    return {
-      type: 'double_bottom',
-      name: '역쌍봉형',
-      signal: 'buy',
-      syncRate: Math.min(100, score),
-      detectedAt: bars[t2.index]?.date ?? bars[bars.length - 1].date,
-      keyLevels: { support: Math.min(t1.value, t2.value), neckline, target: targetPrice },
-      patternBars: { startIdx: t1.index, endIdx: closes.length - 1 },
-      criteria,
-      fillArea: {
-        points: [
-          { time: bars[t1.index].date, value: t1.value },
-          { time: bars[peakIdx].date, value: closes[peakIdx] },
-          { time: bars[t2.index].date, value: t2.value },
-        ],
-        outlinePoints: [
-          { time: bars[t1.index].date, value: t1.value },
-          { time: bars[peakIdx].date, value: closes[peakIdx] },
-          { time: bars[t2.index].date, value: t2.value },
-        ],
-        color: 'rgba(22, 163, 74, 0.12)',
-        borderColor: BUY_COLOR,
-        borderWidth: 2,
-      },
-      overlayLines: [
-        // 넥라인
-        {
+      // TradingView: 넥라인과 2차 저점 사이에 1차 저점보다 더 깊은 저점이 있으면 진정한 W형이 아님
+      // → 이 경우 그 더 깊은 저점이 실제 1차 바닥이어야 하므로 현재 조합은 무효
+      const deeperTroughBetweenNeckAndT2 = troughs.find((trough) =>
+        trough.index > peak.index &&
+        trough.index < t2.index &&
+        trough.value < t1.value * 0.99
+      );
+      if (deeperTroughBetweenNeckAndT2) continue;
+
+      const bottomReference = Math.min(t1.value, t2.value);
+      const neckline = peak.value;
+      const patternHeight = neckline - bottomReference;
+      if (patternHeight <= 0) continue;
+
+      const trendHeight = priorPeak.value - t1.value;
+      if (trendHeight < patternHeight * (trendHeightPct / 100)) continue;
+
+      const depth1 = neckline - t1.value;
+      const depth2 = neckline - t2.value;
+      const bottomDeviationPct = Math.abs(depth1 - depth2) / Math.max(depth1, depth2, 1) * 100;
+      if (bottomDeviationPct > tolerancePct) continue;
+      // TradingView: 두 저점이 "비슷한 가격대"에 있어야 함 — 절대가 기준 5% 이내
+      if (Math.abs(pct(t1.value, t2.value)) > 5) continue;
+
+      const breakoutIdx = closes.findIndex((price, idx) => idx > t2.index && price > neckline);
+      const formed = breakoutIdx >= 0;
+      const postBottomWindow = formed ? breakoutIdx - t2.index : lastIdx - t2.index;
+      const maxBreakoutDelay = Math.min(28, Math.max(10, Math.round(gap * 0.7)));
+      if (postBottomWindow > maxBreakoutDelay) continue;
+      const reboundHigh = Math.max(...highs.slice(t2.index, (formed ? breakoutIdx : lastIdx) + 1));
+      const reboundProgress = (reboundHigh - t2.value) / Math.max(patternHeight, 1);
+      if (!formed && reboundProgress < 0.35) continue;
+
+      const point5Idx = formed ? breakoutIdx : lastIdx;
+      const point5Time = bars[point5Idx].date;
+      const targetPrice = neckline + patternHeight;
+      const stateInfo = formed
+        ? getDoubleBottomStateInfo(bars, breakoutIdx + 1, t2.value, targetPrice)
+        : { status: 'awaiting' as PatternStatus, endIdx: lastIdx };
+      const status = stateInfo.status;
+      const rightTargetTime = formed ? bars[stateInfo.endIdx].date : addTradingDays(lastBar.date, 10);
+
+      let leftNeckIdx = t1.index;
+      for (let idx = priorPeak.index; idx <= t1.index; idx++) {
+        if (lows[idx] <= neckline) {
+          leftNeckIdx = idx;
+          break;
+        }
+      }
+
+      const secondBottomStronger =
+        avgVolume(volumes, Math.max(0, t2.index - 3), Math.min(lastIdx, t2.index + 3))
+        >= avgVolume(volumes, Math.max(0, t1.index - 3), Math.min(lastIdx, t1.index + 3));
+
+      const criteria: PatternCriteria = {
+        '5/5 피벗 1차 저점': true,
+        '중간 고점 5/5 피벗': true,
+        '사전 추세 높이 충족': trendHeight >= patternHeight * (trendHeightPct / 100),
+        '두 저점 허용 편차': bottomDeviationPct <= tolerancePct,
+        '2차 저점 피벗 또는 진행중': !t2Candidate.inProgress,
+        '바닥 군집에서 선행 2차 저점 우선': !earlierSimilarTrough,
+        '2차 바닥 이후 빠른 돌파/접근': postBottomWindow <= maxBreakoutDelay,
+        '2차 바닥 이후 의미있는 반등': formed || reboundProgress >= 0.35,
+        '종가 넥라인 돌파로 형성': formed,
+        '2차 저점 거래량 강화': secondBottomStronger,
+      };
+
+      const accuracy = 1 - bottomDeviationPct / tolerancePct;
+      const timingScore = 1 - Math.min(1, postBottomWindow / Math.max(maxBreakoutDelay, 1));
+      const reboundScore = Math.min(1, reboundProgress / 0.8);
+      const score = Math.round(
+        30 +
+        Math.max(0, accuracy) * 30 +
+        Math.min(1, trendHeight / Math.max(patternHeight, 1)) * 10 +
+        timingScore * 15 +
+        reboundScore * 10 +
+        (formed ? 10 : 5) +
+        (secondBottomStronger ? 5 : 0)
+      );
+      if (score < 50) continue;
+
+      const patternLabel = formed ? '역쌍봉형' : '역쌍봉형 (진행중)';
+      const secondLegStyle: PatternLine['style'] = t2Candidate.inProgress ? 'dashed' : 'solid';
+      const statusColor =
+        status === 'reached' ? '#16a34a' :
+        status === 'failed' ? '#ef4444' :
+        status === 'undefined' ? '#6b7280' :
+        '#a855f7';
+      const statusLabel = getStatusLabel(status);
+
+      candidates.push({
+        type: 'double_bottom',
+        name: patternLabel,
+        signal: 'buy',
+        syncRate: Math.min(100, score),
+        detectedAt: bars[formed ? breakoutIdx : t2.index]?.date ?? lastBar.date,
+        status,
+        keyLevels: { support: bottomReference, neckline, target: targetPrice },
+        patternBars: { startIdx: t1.index, endIdx: point5Idx },
+        criteria,
+        fillArea: {
           points: [
-            { time: bars[t1.index].date, value: neckline },
-            { time: bars[projectionEndIdx].date,  value: neckline },
+            { time: bars[leftNeckIdx].date, value: neckline },
+            { time: point5Time, value: neckline },
+            { time: bars[t2.index].date, value: t2.value },
+            { time: bars[peak.index].date, value: peak.value },
+            { time: bars[t1.index].date, value: t1.value },
+            { time: bars[leftNeckIdx].date, value: lows[leftNeckIdx] },
           ],
-          color: NECK_COLOR, width: 2, style: 'dotted', label: '넥라인',
-        },
-        // 목표가 라인
-        {
-          points: [
-            { time: bars[t2.index].date, value: targetPrice },
-            { time: bars[projectionEndIdx].date,  value: targetPrice },
+          outlinePoints: [
+            { time: bars[priorPeak.index].date, value: priorPeak.value },
+            { time: bars[t1.index].date, value: t1.value },
+            { time: bars[peak.index].date, value: peak.value },
+            { time: bars[t2.index].date, value: t2.value },
+            { time: point5Time, value: neckline },
           ],
-          color: '#a855f7', width: 2, style: 'dotted', label: '목표가',
+          color: 'rgba(22, 163, 74, 0.12)',
+          borderColor: BUY_COLOR,
+          borderWidth: 2,
         },
-      ],
-      patternMarkers: [
-        { time: bars[t1.index].date, value: t1.value, label: '1차 바닥', position: 'below', color: BUY_COLOR },
-        { time: bars[t2.index].date, value: t2.value, label: '2차 바닥', position: 'below', color: BUY_COLOR },
-        { time: bars[projectionEndIdx].date, value: targetPrice, label: '목표가', position: 'above', color: '#a855f7' },
-      ],
-    };
+        overlayLines: [
+          {
+            points: [
+              { time: bars[leftNeckIdx].date, value: neckline },
+              { time: point5Time, value: neckline },
+            ],
+            color: NECK_COLOR, width: 2, style: 'dotted', label: '넥라인',
+          },
+          ...(formed || t2Candidate.inProgress ? [{
+            points: [
+              { time: point5Time, value: targetPrice },
+              { time: rightTargetTime, value: targetPrice },
+            ],
+            color: statusColor,
+            width: 2 as const,
+            style: 'dotted' as const,
+            label: statusLabel ? `목표가 (${statusLabel})` : '목표가',
+          }] : []),
+          {
+            points: [
+              { time: bars[peak.index].date, value: peak.value },
+              { time: bars[t2.index].date, value: t2.value },
+            ],
+            color: BUY_COLOR,
+            width: 2,
+            style: secondLegStyle,
+          },
+        ],
+        patternMarkers: [
+          { time: bars[t1.index].date, value: t1.value, label: '1차 바닥', position: 'below', color: BUY_COLOR },
+          { time: bars[t2.index].date, value: t2.value, label: '2차 바닥', position: 'below', color: BUY_COLOR },
+          { time: point5Time, value: neckline, label: formed ? '▲ 매수' : '대기', position: 'below', color: BUY_COLOR },
+        ],
+        accuracy,
+      });
+    }
   }
-  return null;
+
+  return resolveReversalCandidates(candidates);
 }
 
 // ─────────────────────────────────────────────────────────────
 // 5. 트리플 탑 — 매도
 // ─────────────────────────────────────────────────────────────
 function detectTripleTop(
-  closes: number[], _highs: number[], _lows: number[], _volumes: number[], bars: PriceBar[],
+  closes: number[], highs: number[], lows: number[], _volumes: number[], bars: PriceBar[],
 ): PatternResult | null {
-  const peaks = findPeaks(closes, 4);
-  if (peaks.length < 3) return null;
+  const pivotWindow = 5;
+  const trendHeightPct = 25;
+  const tolerancePct = 12;
+  const peaks = findPeaks(highs, pivotWindow);
+  const troughs = findTroughs(lows, pivotWindow);
+  if (peaks.length < 3 || troughs.length < 2) return null;
 
-  for (let i = peaks.length - 3; i >= 0; i--) {
-    const p1 = peaks[i], p2 = peaks[i + 1], p3 = peaks[i + 2];
-    const gap1 = p2.index - p1.index;
-    const gap2 = p3.index - p2.index;
-    if (gap1 < 6 || gap2 < 6 || gap1 > 40 || gap2 > 40) continue;
+  const candidates: Array<PatternResult & { accuracy: number }> = [];
+  const lastIdx = closes.length - 1;
+  const lastBar = bars[lastIdx];
 
-    const topAvg = (p1.value + p2.value + p3.value) / 3;
-    const peaksAligned =
-      Math.abs(pct(p1.value, topAvg)) < 5 &&
-      Math.abs(pct(p2.value, topAvg)) < 5 &&
-      Math.abs(pct(p3.value, topAvg)) < 5;
-    if (!peaksAligned) continue;
+  for (let i = 0; i <= peaks.length - 3; i++) {
+    const p1 = peaks[i];
+    const p2 = peaks[i + 1];
+    const p3 = peaks[i + 2];
+    if (p1.index >= p2.index || p2.index >= p3.index) continue;
+    if (p2.index - p1.index < 4 || p3.index - p2.index < 4) continue;
+    if (p2.index - p1.index > 28 || p3.index - p2.index > 28) continue;
+    if (p3.index - p1.index > 60) continue;
 
-    const v1Idx = minIdx(closes, p1.index, p2.index);
-    const v2Idx = minIdx(closes, p2.index, p3.index);
-    const neckline = Math.min(closes[v1Idx], closes[v2Idx]);
-    const depthEnough = pct(neckline, topAvg) < -4;
-    const currentPrice = closes[closes.length - 1];
-    const necklineBreak = currentPrice <= neckline * 1.03;
-    const recentPattern = closes.length - 1 - p3.index <= 20;
+    const v1Candidates = troughs.filter((t) => t.index > p1.index && t.index < p2.index);
+    const v2Candidates = troughs.filter((t) => t.index > p2.index && t.index < p3.index);
+    if (!v1Candidates.length || !v2Candidates.length) continue;
+    const v1 = v1Candidates.reduce((best, t) => t.value < best.value ? t : best);
+    const v2 = v2Candidates.reduce((best, t) => t.value < best.value ? t : best);
+    const peakSpacingBalance = Math.abs((p2.index - p1.index) - (p3.index - p2.index));
+    if (peakSpacingBalance > 14) continue;
+
+    const neckline = Math.min(v1.value, v2.value);
+    const topReference = Math.max(p1.value, p2.value, p3.value);
+    const patternHeight = topReference - neckline;
+    if (patternHeight <= 0) continue;
+
+    const priorTroughCandidates = troughs.filter((t) => t.index < p1.index);
+    if (!priorTroughCandidates.length) continue;
+    const priorTrough = priorTroughCandidates[priorTroughCandidates.length - 1];
+    const trendHeight = p1.value - priorTrough.value;
+    if (trendHeight < patternHeight * (trendHeightPct / 100)) continue;
+
+    const topHeights = [p1.value - neckline, p2.value - neckline, p3.value - neckline];
+    const topDeviationPct = (Math.max(...topHeights) - Math.min(...topHeights)) / Math.max(...topHeights, 1) * 100;
+    if (topDeviationPct > tolerancePct) continue;
+    // TradingView: 세 고점이 "비슷한 가격대"에 있어야 함 — 절대가 기준 5% 이내
+    const topPriceSpreadPct = (Math.max(p1.value, p2.value, p3.value) - Math.min(p1.value, p2.value, p3.value)) / Math.min(p1.value, p2.value, p3.value) * 100;
+    if (topPriceSpreadPct > 5) continue;
+
+    const breakdownIdx = closes.findIndex((price, idx) => idx > p3.index && price < neckline);
+    const formed = breakdownIdx >= 0;
+    const point7Idx = formed ? breakdownIdx : lastIdx;
+    const point7Time = bars[point7Idx].date;
+    const ageFromCurrent = lastIdx - point7Idx;
+    if (ageFromCurrent > 45) continue;
+    const targetPrice = neckline - patternHeight;
+    const stateInfo = formed
+      ? getDoubleTopStateInfo(bars, breakdownIdx + 1, p3.value, targetPrice)
+      : { status: 'awaiting' as PatternStatus, endIdx: lastIdx };
+    const status = stateInfo.status;
+    const rightTargetTime = formed ? bars[stateInfo.endIdx].date : addTradingDays(lastBar.date, 10);
+
+    let leftNeckIdx = p1.index;
+    for (let idx = priorTrough.index; idx <= p1.index; idx++) {
+      if (highs[idx] >= neckline) {
+        leftNeckIdx = idx;
+        break;
+      }
+    }
 
     const criteria: PatternCriteria = {
-      '3개 고점 확인': true,
-      '고점 높이 유사': peaksAligned,
-      '두 골짜기 깊이 확보': depthEnough,
-      '넥라인 근접/이탈': necklineBreak,
-      '최근 형성된 패턴': recentPattern,
+      '5/5 피벗 고점 3개': true,
+      '중간 저점 5/5 피벗': true,
+      '사전 추세 높이 충족': true,
+      '세 고점 허용 편차': topDeviationPct <= tolerancePct,
+      '조밀한 패턴 폭': p3.index - p1.index <= 60 && peakSpacingBalance <= 14,
+      '종가 넥라인 이탈로 형성': formed,
     };
 
-    const score =
+    const accuracy = 1 - topDeviationPct / tolerancePct;
+    const compactness = 1 - Math.min(1, (p3.index - p1.index) / 60);
+    const score = Math.round(
       35 +
-      (peaksAligned ? 20 : 0) +
-      (depthEnough ? 15 : 0) +
-      (necklineBreak ? 20 : 0) +
-      (recentPattern ? 10 : 0);
-
+      Math.max(0, accuracy) * 30 +
+      Math.min(1, trendHeight / Math.max(patternHeight, 1)) * 10 +
+      compactness * 15 +
+      (formed ? 10 : 0)
+    );
     if (score < 50) continue;
 
-    const lastIdx = closes.length - 1;
-    const projectionEndIdx = getProjectionEndIndex(lastIdx, p3.index, p3.index - p1.index);
-    const targetPrice = neckline - (topAvg - neckline);
+    const statusColor =
+      status === 'reached' ? '#16a34a' :
+      status === 'failed' ? '#ef4444' :
+      status === 'undefined' ? '#6b7280' :
+      '#a855f7';
+    const statusLabel = getStatusLabel(status);
 
-    return {
+    candidates.push({
       type: 'triple_top',
-      name: '트리플 탑',
+      name: formed ? '트리플 탑' : '트리플 탑 (진행중)',
       signal: 'sell',
       syncRate: Math.min(100, score),
-      detectedAt: bars[p3.index]?.date ?? bars[lastIdx].date,
-      keyLevels: { resistance: topAvg, neckline, target: targetPrice },
-      patternBars: { startIdx: p1.index, endIdx: p3.index },
+      detectedAt: bars[formed ? breakdownIdx : p3.index]?.date ?? lastBar.date,
+      status,
+      keyLevels: { resistance: topReference, neckline, target: targetPrice },
+      patternBars: { startIdx: p1.index, endIdx: point7Idx },
       criteria,
       fillArea: {
         points: [
-          { time: bars[p1.index].date, value: p1.value },
-          { time: bars[v1Idx].date, value: closes[v1Idx] },
-          { time: bars[p2.index].date, value: p2.value },
-          { time: bars[v2Idx].date, value: closes[v2Idx] },
+          { time: bars[leftNeckIdx].date, value: neckline },
+          { time: point7Time, value: neckline },
           { time: bars[p3.index].date, value: p3.value },
+          { time: bars[v2.index].date, value: v2.value },
+          { time: bars[p2.index].date, value: p2.value },
+          { time: bars[v1.index].date, value: v1.value },
+          { time: bars[p1.index].date, value: p1.value },
+          { time: bars[leftNeckIdx].date, value: highs[leftNeckIdx] },
         ],
         outlinePoints: [
+          { time: bars[priorTrough.index].date, value: priorTrough.value },
           { time: bars[p1.index].date, value: p1.value },
-          { time: bars[v1Idx].date, value: closes[v1Idx] },
+          { time: bars[v1.index].date, value: v1.value },
           { time: bars[p2.index].date, value: p2.value },
-          { time: bars[v2Idx].date, value: closes[v2Idx] },
+          { time: bars[v2.index].date, value: v2.value },
           { time: bars[p3.index].date, value: p3.value },
+          { time: point7Time, value: neckline },
         ],
         color: 'rgba(239, 68, 68, 0.12)',
         borderColor: SELL_COLOR,
@@ -957,17 +1707,17 @@ function detectTripleTop(
       overlayLines: [
         {
           points: [
-            { time: bars[v1Idx].date, value: neckline },
-            { time: bars[projectionEndIdx].date, value: neckline },
+            { time: bars[leftNeckIdx].date, value: neckline },
+            { time: point7Time, value: neckline },
           ],
           color: NECK_COLOR, width: 2, style: 'dotted', label: '넥라인',
         },
         {
           points: [
-            { time: bars[p3.index].date, value: targetPrice },
-            { time: bars[projectionEndIdx].date, value: targetPrice },
+            { time: point7Time, value: targetPrice },
+            { time: rightTargetTime, value: targetPrice },
           ],
-          color: '#a855f7', width: 2, style: 'dotted', label: '목표가',
+          color: statusColor, width: 2, style: 'dotted', label: statusLabel ? `목표가 (${statusLabel})` : '목표가',
         },
       ],
       patternMarkers: [
@@ -975,86 +1725,142 @@ function detectTripleTop(
         { time: bars[p2.index].date, value: p2.value, label: '2차 고점', position: 'above', color: SELL_COLOR },
         { time: bars[p3.index].date, value: p3.value, label: '3차 고점', position: 'above', color: SELL_COLOR },
       ],
-    };
+      accuracy,
+    });
   }
 
-  return null;
+  return resolveReversalCandidates(candidates);
 }
 
 // ─────────────────────────────────────────────────────────────
 // 6. 트리플 바텀 — 매수
 // ─────────────────────────────────────────────────────────────
 function detectTripleBottom(
-  closes: number[], _highs: number[], _lows: number[], _volumes: number[], bars: PriceBar[],
+  closes: number[], highs: number[], lows: number[], _volumes: number[], bars: PriceBar[],
 ): PatternResult | null {
-  const troughs = findTroughs(closes, 4);
-  if (troughs.length < 3) return null;
+  const pivotWindow = 5;
+  const tolerancePct = 12;
+  const trendHeightPct = 25;
+  const troughs = findTroughs(lows, pivotWindow);
+  const peaks = findPeaks(highs, pivotWindow);
+  if (troughs.length < 3 || peaks.length < 2) return null;
 
-  for (let i = troughs.length - 3; i >= 0; i--) {
-    const t1 = troughs[i], t2 = troughs[i + 1], t3 = troughs[i + 2];
-    const gap1 = t2.index - t1.index;
-    const gap2 = t3.index - t2.index;
-    if (gap1 < 6 || gap2 < 6 || gap1 > 40 || gap2 > 40) continue;
+  const candidates: Array<PatternResult & { accuracy: number }> = [];
+  const lastIdx = closes.length - 1;
+  const lastBar = bars[lastIdx];
 
-    const bottomAvg = (t1.value + t2.value + t3.value) / 3;
-    const bottomsAligned =
-      Math.abs(pct(t1.value, bottomAvg)) < 5 &&
-      Math.abs(pct(t2.value, bottomAvg)) < 5 &&
-      Math.abs(pct(t3.value, bottomAvg)) < 5;
-    if (!bottomsAligned) continue;
+  for (let i = 0; i <= troughs.length - 3; i++) {
+    const t1 = troughs[i];
+    const t2 = troughs[i + 1];
+    const t3 = troughs[i + 2];
+    if (t1.index >= t2.index || t2.index >= t3.index) continue;
+    if (t2.index - t1.index < 4 || t3.index - t2.index < 4) continue;
+    if (t2.index - t1.index > 28 || t3.index - t2.index > 28) continue;
+    if (t3.index - t1.index > 60) continue;
 
-    const p1Idx = maxIdx(closes, t1.index, t2.index);
-    const p2Idx = maxIdx(closes, t2.index, t3.index);
-    const neckline = Math.max(closes[p1Idx], closes[p2Idx]);
-    const riseEnough = pct(neckline, bottomAvg) > 4;
-    const currentPrice = closes[closes.length - 1];
-    const necklineBreak = currentPrice >= neckline * 0.97;
-    const recentPattern = closes.length - 1 - t3.index <= 20;
+    const p1Candidates = peaks.filter((p) => p.index > t1.index && p.index < t2.index);
+    const p2Candidates = peaks.filter((p) => p.index > t2.index && p.index < t3.index);
+    if (!p1Candidates.length || !p2Candidates.length) continue;
+    const p1 = p1Candidates.reduce((best, p) => p.value > best.value ? p : best);
+    const p2 = p2Candidates.reduce((best, p) => p.value > best.value ? p : best);
+    const troughSpacingBalance = Math.abs((t2.index - t1.index) - (t3.index - t2.index));
+    if (troughSpacingBalance > 14) continue;
+
+    const neckline = Math.max(p1.value, p2.value);
+    const bottomReference = Math.min(t1.value, t2.value, t3.value);
+    const patternHeight = neckline - bottomReference;
+    if (patternHeight <= 0) continue;
+
+    const priorPeakCandidates = peaks.filter((p) => p.index < t1.index);
+    if (!priorPeakCandidates.length) continue;
+    const priorPeak = priorPeakCandidates[priorPeakCandidates.length - 1];
+    const trendHeight = priorPeak.value - t1.value;
+    if (trendHeight < patternHeight * (trendHeightPct / 100)) continue;
+
+    const bottomDepths = [neckline - t1.value, neckline - t2.value, neckline - t3.value];
+    const bottomDeviationPct = (Math.max(...bottomDepths) - Math.min(...bottomDepths)) / Math.max(...bottomDepths, 1) * 100;
+    if (bottomDeviationPct > tolerancePct) continue;
+    // TradingView: 세 저점이 "비슷한 가격대"에 있어야 함 — 절대가 기준 5% 이내
+    const bottomPriceSpreadPct = (Math.max(t1.value, t2.value, t3.value) - Math.min(t1.value, t2.value, t3.value)) / Math.min(t1.value, t2.value, t3.value) * 100;
+    if (bottomPriceSpreadPct > 5) continue;
+
+    const breakoutIdx = closes.findIndex((price, idx) => idx > t3.index && price > neckline);
+    const formed = breakoutIdx >= 0;
+    const point7Idx = formed ? breakoutIdx : lastIdx;
+    const point7Time = bars[point7Idx].date;
+    const ageFromCurrent = lastIdx - point7Idx;
+    if (ageFromCurrent > 45) continue;
+    const targetPrice = neckline + patternHeight;
+    const stateInfo = formed
+      ? getDoubleBottomStateInfo(bars, breakoutIdx + 1, t3.value, targetPrice)
+      : { status: 'awaiting' as PatternStatus, endIdx: lastIdx };
+    const status = stateInfo.status;
+    const rightTargetTime = formed ? bars[stateInfo.endIdx].date : addTradingDays(lastBar.date, 10);
+
+    let leftNeckIdx = t1.index;
+    for (let idx = priorPeak.index; idx <= t1.index; idx++) {
+      if (lows[idx] <= neckline) {
+        leftNeckIdx = idx;
+        break;
+      }
+    }
 
     const criteria: PatternCriteria = {
-      '3개 저점 확인': true,
-      '저점 깊이 유사': bottomsAligned,
-      '두 반등 고점 확보': riseEnough,
-      '넥라인 근접/돌파': necklineBreak,
-      '최근 형성된 패턴': recentPattern,
+      '5/5 피벗 저점 3개': true,
+      '중간 고점 5/5 피벗': true,
+      '사전 추세 높이 충족': true,
+      '세 저점 허용 편차': bottomDeviationPct <= tolerancePct,
+      '조밀한 패턴 폭': t3.index - t1.index <= 60 && troughSpacingBalance <= 14,
+      '종가 넥라인 돌파로 형성': formed,
     };
 
-    const score =
+    const accuracy = 1 - bottomDeviationPct / tolerancePct;
+    const compactness = 1 - Math.min(1, (t3.index - t1.index) / 60);
+    const score = Math.round(
       35 +
-      (bottomsAligned ? 20 : 0) +
-      (riseEnough ? 15 : 0) +
-      (necklineBreak ? 20 : 0) +
-      (recentPattern ? 10 : 0);
-
+      Math.max(0, accuracy) * 30 +
+      Math.min(1, trendHeight / Math.max(patternHeight, 1)) * 10 +
+      compactness * 15 +
+      (formed ? 10 : 0)
+    );
     if (score < 50) continue;
 
-    const lastIdx = closes.length - 1;
-    const projectionEndIdx = getProjectionEndIndex(lastIdx, t3.index, t3.index - t1.index);
-    const targetPrice = neckline + (neckline - bottomAvg);
+    const statusColor =
+      status === 'reached' ? '#16a34a' :
+      status === 'failed' ? '#ef4444' :
+      status === 'undefined' ? '#6b7280' :
+      '#a855f7';
+    const statusLabel = getStatusLabel(status);
 
-    return {
+    candidates.push({
       type: 'triple_bottom',
-      name: '트리플 바텀',
+      name: formed ? '트리플 바텀' : '트리플 바텀 (진행중)',
       signal: 'buy',
       syncRate: Math.min(100, score),
-      detectedAt: bars[t3.index]?.date ?? bars[lastIdx].date,
-      keyLevels: { support: bottomAvg, neckline, target: targetPrice },
-      patternBars: { startIdx: t1.index, endIdx: t3.index },
+      detectedAt: bars[formed ? breakoutIdx : t3.index]?.date ?? lastBar.date,
+      status,
+      keyLevels: { support: bottomReference, neckline, target: targetPrice },
+      patternBars: { startIdx: t1.index, endIdx: point7Idx },
       criteria,
       fillArea: {
         points: [
-          { time: bars[t1.index].date, value: t1.value },
-          { time: bars[p1Idx].date, value: closes[p1Idx] },
-          { time: bars[t2.index].date, value: t2.value },
-          { time: bars[p2Idx].date, value: closes[p2Idx] },
+          { time: bars[leftNeckIdx].date, value: neckline },
+          { time: point7Time, value: neckline },
           { time: bars[t3.index].date, value: t3.value },
+          { time: bars[p2.index].date, value: p2.value },
+          { time: bars[t2.index].date, value: t2.value },
+          { time: bars[p1.index].date, value: p1.value },
+          { time: bars[t1.index].date, value: t1.value },
+          { time: bars[leftNeckIdx].date, value: lows[leftNeckIdx] },
         ],
         outlinePoints: [
+          { time: bars[priorPeak.index].date, value: priorPeak.value },
           { time: bars[t1.index].date, value: t1.value },
-          { time: bars[p1Idx].date, value: closes[p1Idx] },
+          { time: bars[p1.index].date, value: p1.value },
           { time: bars[t2.index].date, value: t2.value },
-          { time: bars[p2Idx].date, value: closes[p2Idx] },
+          { time: bars[p2.index].date, value: p2.value },
           { time: bars[t3.index].date, value: t3.value },
+          { time: point7Time, value: neckline },
         ],
         color: 'rgba(22, 163, 74, 0.12)',
         borderColor: BUY_COLOR,
@@ -1063,17 +1869,17 @@ function detectTripleBottom(
       overlayLines: [
         {
           points: [
-            { time: bars[p1Idx].date, value: neckline },
-            { time: bars[projectionEndIdx].date, value: neckline },
+            { time: bars[leftNeckIdx].date, value: neckline },
+            { time: point7Time, value: neckline },
           ],
           color: NECK_COLOR, width: 2, style: 'dotted', label: '넥라인',
         },
         {
           points: [
-            { time: bars[t3.index].date, value: targetPrice },
-            { time: bars[projectionEndIdx].date, value: targetPrice },
+            { time: point7Time, value: targetPrice },
+            { time: rightTargetTime, value: targetPrice },
           ],
-          color: '#a855f7', width: 2, style: 'dotted', label: '목표가',
+          color: statusColor, width: 2, style: 'dotted', label: statusLabel ? `목표가 (${statusLabel})` : '목표가',
         },
       ],
       patternMarkers: [
@@ -1081,10 +1887,11 @@ function detectTripleBottom(
         { time: bars[t2.index].date, value: t2.value, label: '2차 저점', position: 'below', color: BUY_COLOR },
         { time: bars[t3.index].date, value: t3.value, label: '3차 저점', position: 'below', color: BUY_COLOR },
       ],
-    };
+      accuracy,
+    });
   }
 
-  return null;
+  return resolveReversalCandidates(candidates);
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -1093,36 +1900,47 @@ function detectTripleBottom(
 function detectBullFlag(
   closes: number[], highs: number[], lows: number[], volumes: number[], bars: PriceBar[],
 ): PatternResult | null {
-  // Look back up to 50 bars for flagpole
   const lookback = Math.min(50, closes.length - 1);
   const n = closes.length;
+  const lastIdx = n - 1;
+  const lastBar = bars[lastIdx];
+  const candidates: Array<PatternResult & { accuracy: number }> = [];
 
   for (let poleEnd = n - 10; poleEnd >= n - lookback; poleEnd--) {
     for (let poleStart = poleEnd - 15; poleStart >= Math.max(0, poleEnd - 25); poleStart--) {
       const poleReturn = pct(closes[poleEnd], closes[poleStart]);
       if (poleReturn < 8) continue; // Need at least 8% rise
 
-      // Flag: consolidation after poleEnd
-      const flagBars = closes.slice(poleEnd, n);
+      const flagStart = poleEnd;
+      const flagBars = closes.slice(flagStart, n);
       if (flagBars.length < 5) continue;
 
-      const flagHigh = Math.max(...flagBars);
-      const flagLow  = Math.min(...flagBars);
-      const flagRange = pct(flagHigh, flagLow);
-      const isFlat    = Math.abs(flagRange) < 6; // Tight consolidation
+      const channel = evaluateFlagChannel(highs, lows, flagStart, lastIdx, 'buy');
+      if (!channel) continue;
+
+      const { upperStart, upperEnd, lowerStart, lowerEnd, avgHeight, counterTrendOk, channelParallel, channelTight, stableHeight, orderlyChannel } = channel;
+      const flagHigh = Math.max(...highs.slice(flagStart, n));
+      const flagLow  = Math.min(...lows.slice(flagStart, n));
+      const channelValid = counterTrendOk && channelParallel && channelTight && stableHeight && orderlyChannel;
 
       // Flag should not retrace more than 50% of pole
-      const retracement = pct(Math.min(...flagBars), closes[poleEnd]);
-      const limitedRetracement = retracement > -poleReturn * 0.5;
+      const retracement = closes[poleEnd] - flagLow;
+      const limitedRetracement = retracement <= (closes[poleEnd] - closes[poleStart]) * 0.5;
 
       const strongPole   = poleReturn > 10;
       const recentFlag   = n - 1 - poleEnd <= 20;
-      const volDecline   = avgVolume(volumes, poleEnd, n - 1) < avgVolume(volumes, poleStart, poleEnd);
+      const volDecline   = avgVolume(volumes, flagStart, n - 1) < avgVolume(volumes, poleStart, poleEnd);
+      const nearBreakout = closes[lastIdx] >= upperEnd * 0.99;
+      const breakoutIdx = closes.findIndex((price, idx) => idx > poleEnd && price > getRegressionValue(channel.upper.slope, channel.upper.intercept, idx - flagStart));
+      const formed = breakoutIdx >= 0;
+      if (!formed && !nearBreakout) continue;
+      if (!channelValid || !limitedRetracement) continue;
 
       const criteria: PatternCriteria = {
         '강한 상승 깃대': strongPole,
-        '횡보 구간(깃발)': isFlat,
+        '하향/횡보 채널 깃발': channelValid,
         '눌림폭 50% 이내': limitedRetracement,
+        '상단 돌파 근접': nearBreakout,
         '최근 형성된 패턴': recentFlag,
         '깃발 구간 거래량 감소': volDecline,
       };
@@ -1130,56 +1948,84 @@ function detectBullFlag(
       const score =
         25 +
         (strongPole ? 20 : 10) +
-        (isFlat ? 20 : 0) +
+        (channelValid ? 20 : 0) +
         (limitedRetracement ? 15 : 0) +
+        (nearBreakout ? 10 : 0) +
         (volDecline ? 10 : 0) +
         (recentFlag ? 10 : 0);
 
       if (score < 50) continue;
 
       const targetPrice = flagHigh + (closes[poleEnd] - closes[poleStart]);
+      const point5Idx = formed ? breakoutIdx : lastIdx;
+      const point5Time = bars[point5Idx].date;
+      const upperAtPoint5 = getRegressionValue(channel.upper.slope, channel.upper.intercept, point5Idx - flagStart);
+      const lowerAtPoint5 = getRegressionValue(channel.lower.slope, channel.lower.intercept, point5Idx - flagStart);
+      const stateInfo = formed
+        ? getBullContinuationStateInfo(bars, breakoutIdx + 1, lowerAtPoint5, targetPrice)
+        : { status: 'awaiting' as PatternStatus, endIdx: lastIdx };
+      const status: PatternStatus = stateInfo.status;
+      if (status === 'failed' || status === 'undefined') continue;
+      const rightTargetTime = formed ? bars[stateInfo.endIdx].date : addTradingDays(lastBar.date, 10);
+      const statusColor =
+        status === 'reached' ? '#16a34a' : '#a855f7';
+      const statusLabel = getStatusLabel(status);
+      const accuracy =
+        (strongPole ? 0.35 : 0.15) +
+        (channelValid ? 0.25 : 0) +
+        (limitedRetracement ? 0.2 : 0) +
+        (volDecline ? 0.1 : 0) +
+        (nearBreakout ? 0.1 : 0);
 
-      return {
+      candidates.push({
         type: 'bull_flag',
-        name: '상승사각깃발형',
+        name: formed ? '불리쉬 플래그' : '불리쉬 플래그 (진행중)',
         signal: 'buy',
         syncRate: Math.min(100, score),
-        detectedAt: bars[poleEnd]?.date ?? bars[n - 1].date,
-        keyLevels: { support: flagLow, resistance: flagHigh, target: targetPrice },
-        patternBars: { startIdx: poleStart, endIdx: n - 1 },
+        detectedAt: bars[formed ? breakoutIdx : poleEnd]?.date ?? lastBar.date,
+        status,
+        keyLevels: { support: lowerAtPoint5, resistance: upperAtPoint5, target: targetPrice },
+        patternBars: { startIdx: poleStart, endIdx: point5Idx },
         criteria,
         fillArea: {
           points: [
-            { time: bars[poleEnd].date, value: flagHigh },
-            { time: bars[n - 1].date, value: flagHigh },
-            { time: bars[n - 1].date, value: flagLow },
-            { time: bars[poleEnd].date, value: flagLow },
+            { time: bars[flagStart].date, value: upperStart },
+            { time: point5Time, value: upperAtPoint5 },
+            { time: point5Time, value: lowerAtPoint5 },
+            { time: bars[flagStart].date, value: lowerStart },
           ],
           color: 'rgba(22, 163, 74, 0.12)',
           borderColor: BUY_COLOR,
           borderWidth: 2,
         },
         overlayLines: [
-          // 깃대 (수직 상승)
           { points: [
               { time: bars[poleStart].date, value: closes[poleStart] },
               { time: bars[poleEnd].date,   value: closes[poleEnd] },
             ], color: BUY_COLOR, width: 3, style: 'solid', label: '깃대' },
-          // 목표가 라인
           { points: [
-              { time: bars[poleEnd].date, value: targetPrice },
-              { time: bars[n - 1].date,   value: targetPrice },
-            ], color: '#a855f7', width: 2, style: 'dotted', label: '목표가' },
+              { time: bars[flagStart].date, value: upperStart },
+              { time: point5Time, value: upperAtPoint5 },
+            ], color: CHANNEL_COLOR, width: 2, style: 'solid', label: '상단 채널' },
+          { points: [
+              { time: bars[flagStart].date, value: lowerStart },
+              { time: point5Time, value: lowerAtPoint5 },
+            ], color: CHANNEL_COLOR, width: 2, style: 'solid', label: '하단 채널' },
+          { points: [
+              { time: point5Time, value: targetPrice },
+              { time: rightTargetTime,   value: targetPrice },
+            ], color: statusColor, width: 2, style: 'dotted', label: statusLabel ? `목표가 (${statusLabel})` : '목표가' },
         ],
         patternMarkers: [
           { time: bars[poleStart].date, value: closes[poleStart], label: '깃대 시작', position: 'below', color: BUY_COLOR },
           { time: bars[poleEnd].date, value: closes[poleEnd], label: '깃대 끝', position: 'above', color: BUY_COLOR },
-          { time: bars[n - 1].date, value: targetPrice, label: '목표가', position: 'above', color: '#a855f7' },
+          { time: point5Time, value: upperAtPoint5, label: formed ? '▲ 돌파' : '대기', position: 'above', color: BUY_COLOR },
         ],
-      };
+        accuracy,
+      });
     }
   }
-  return null;
+  return resolveReversalCandidates(candidates);
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -1190,30 +2036,43 @@ function detectBearFlag(
 ): PatternResult | null {
   const lookback = Math.min(50, closes.length - 1);
   const n = closes.length;
+  const lastIdx = n - 1;
+  const lastBar = bars[lastIdx];
+  const candidates: Array<PatternResult & { accuracy: number }> = [];
 
   for (let poleEnd = n - 10; poleEnd >= n - lookback; poleEnd--) {
     for (let poleStart = poleEnd - 15; poleStart >= Math.max(0, poleEnd - 25); poleStart--) {
       const poleReturn = pct(closes[poleEnd], closes[poleStart]);
       if (poleReturn > -8) continue;
 
-      const flagBars = closes.slice(poleEnd, n);
+      const flagStart = poleEnd;
+      const flagBars = closes.slice(flagStart, n);
       if (flagBars.length < 5) continue;
 
-      const flagHigh  = Math.max(...flagBars);
-      const flagLow   = Math.min(...flagBars);
-      const flagRange = pct(flagHigh, flagLow);
-      const isFlat    = Math.abs(flagRange) < 6;
-      const retracement = pct(Math.max(...flagBars), closes[poleEnd]);
-      const limitedRetracement = retracement < Math.abs(poleReturn) * 0.5;
+      const channel = evaluateFlagChannel(highs, lows, flagStart, lastIdx, 'sell');
+      if (!channel) continue;
+
+      const { upperStart, upperEnd, lowerStart, lowerEnd, counterTrendOk, channelParallel, channelTight, stableHeight, orderlyChannel } = channel;
+      const flagHigh = Math.max(...highs.slice(flagStart, n));
+      const flagLow = Math.min(...lows.slice(flagStart, n));
+      const channelValid = counterTrendOk && channelParallel && channelTight && stableHeight && orderlyChannel;
+      const retracement = flagHigh - closes[poleEnd];
+      const limitedRetracement = retracement <= (closes[poleStart] - closes[poleEnd]) * 0.5;
 
       const strongPole  = poleReturn < -10;
       const recentFlag  = n - 1 - poleEnd <= 20;
-      const volDecline  = avgVolume(volumes, poleEnd, n - 1) < avgVolume(volumes, poleStart, poleEnd);
+      const volDecline  = avgVolume(volumes, flagStart, n - 1) < avgVolume(volumes, poleStart, poleEnd);
+      const nearBreakdown = closes[lastIdx] <= lowerEnd * 1.01;
+      const breakdownIdx = closes.findIndex((price, idx) => idx > poleEnd && price < getRegressionValue(channel.lower.slope, channel.lower.intercept, idx - flagStart));
+      const formed = breakdownIdx >= 0;
+      if (!formed && !nearBreakdown) continue;
+      if (!channelValid || !limitedRetracement) continue;
 
       const criteria: PatternCriteria = {
         '강한 하락 깃대': strongPole,
-        '횡보 구간(깃발)': isFlat,
+        '상향/횡보 채널 깃발': channelValid,
         '반등폭 50% 이내': limitedRetracement,
+        '하단 이탈 근접': nearBreakdown,
         '최근 형성된 패턴': recentFlag,
         '깃발 구간 거래량 감소': volDecline,
       };
@@ -1221,30 +2080,51 @@ function detectBearFlag(
       const score =
         25 +
         (strongPole ? 20 : 10) +
-        (isFlat ? 20 : 0) +
+        (channelValid ? 20 : 0) +
         (limitedRetracement ? 15 : 0) +
+        (nearBreakdown ? 10 : 0) +
         (volDecline ? 10 : 0) +
         (recentFlag ? 10 : 0);
 
       if (score < 50) continue;
 
       const targetPrice = flagLow - (closes[poleStart] - closes[poleEnd]);
+      const point5Idx = formed ? breakdownIdx : lastIdx;
+      const point5Time = bars[point5Idx].date;
+      const upperAtPoint5 = getRegressionValue(channel.upper.slope, channel.upper.intercept, point5Idx - flagStart);
+      const lowerAtPoint5 = getRegressionValue(channel.lower.slope, channel.lower.intercept, point5Idx - flagStart);
+      const stateInfo = formed
+        ? getBearContinuationStateInfo(bars, breakdownIdx + 1, upperAtPoint5, targetPrice)
+        : { status: 'awaiting' as PatternStatus, endIdx: lastIdx };
+      const status: PatternStatus = stateInfo.status;
+      if (status === 'failed' || status === 'undefined') continue;
+      const rightTargetTime = formed ? bars[stateInfo.endIdx].date : addTradingDays(lastBar.date, 10);
+      const statusColor =
+        status === 'reached' ? '#16a34a' : '#a855f7';
+      const statusLabel = getStatusLabel(status);
+      const accuracy =
+        (strongPole ? 0.35 : 0.15) +
+        (channelValid ? 0.25 : 0) +
+        (limitedRetracement ? 0.2 : 0) +
+        (volDecline ? 0.1 : 0) +
+        (nearBreakdown ? 0.1 : 0);
 
-      return {
+      candidates.push({
         type: 'bear_flag',
-        name: '하락사각깃발형',
+        name: formed ? '베어리쉬 플래그' : '베어리쉬 플래그 (진행중)',
         signal: 'sell',
         syncRate: Math.min(100, score),
-        detectedAt: bars[poleEnd]?.date ?? bars[n - 1].date,
-        keyLevels: { resistance: flagHigh, support: flagLow, target: targetPrice },
-        patternBars: { startIdx: poleStart, endIdx: n - 1 },
+        detectedAt: bars[formed ? breakdownIdx : poleEnd]?.date ?? lastBar.date,
+        status,
+        keyLevels: { resistance: upperAtPoint5, support: lowerAtPoint5, target: targetPrice },
+        patternBars: { startIdx: poleStart, endIdx: point5Idx },
         criteria,
         fillArea: {
           points: [
-            { time: bars[poleEnd].date, value: flagHigh },
-            { time: bars[n - 1].date, value: flagHigh },
-            { time: bars[n - 1].date, value: flagLow },
-            { time: bars[poleEnd].date, value: flagLow },
+            { time: bars[flagStart].date, value: upperStart },
+            { time: point5Time, value: upperAtPoint5 },
+            { time: point5Time, value: lowerAtPoint5 },
+            { time: bars[flagStart].date, value: lowerStart },
           ],
           color: 'rgba(239, 68, 68, 0.12)',
           borderColor: SELL_COLOR,
@@ -1255,21 +2135,29 @@ function detectBearFlag(
               { time: bars[poleStart].date, value: closes[poleStart] },
               { time: bars[poleEnd].date,   value: closes[poleEnd] },
             ], color: SELL_COLOR, width: 3, style: 'solid', label: '깃대' },
-          // 목표가 라인
           { points: [
-              { time: bars[poleEnd].date, value: targetPrice },
-              { time: bars[n - 1].date,   value: targetPrice },
-            ], color: '#a855f7', width: 2, style: 'dotted', label: '목표가' },
+              { time: bars[flagStart].date, value: upperStart },
+              { time: point5Time, value: upperAtPoint5 },
+            ], color: CHANNEL_COLOR, width: 2, style: 'solid', label: '상단 채널' },
+          { points: [
+              { time: bars[flagStart].date, value: lowerStart },
+              { time: point5Time, value: lowerAtPoint5 },
+            ], color: CHANNEL_COLOR, width: 2, style: 'solid', label: '하단 채널' },
+          { points: [
+              { time: point5Time, value: targetPrice },
+              { time: rightTargetTime,   value: targetPrice },
+            ], color: statusColor, width: 2, style: 'dotted', label: statusLabel ? `목표가 (${statusLabel})` : '목표가' },
         ],
         patternMarkers: [
           { time: bars[poleStart].date, value: closes[poleStart], label: '깃대 시작', position: 'above', color: SELL_COLOR },
           { time: bars[poleEnd].date, value: closes[poleEnd], label: '깃대 끝', position: 'below', color: SELL_COLOR },
-          { time: bars[n - 1].date, value: targetPrice, label: '목표가', position: 'below', color: '#a855f7' },
+          { time: point5Time, value: lowerAtPoint5, label: formed ? '▼ 이탈' : '대기', position: 'below', color: SELL_COLOR },
         ],
-      };
+        accuracy,
+      });
     }
   }
-  return null;
+  return resolveReversalCandidates(candidates);
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -1285,8 +2173,8 @@ function detectAscendingTriangle(
   const slicedHighs  = highs.slice(start);
   const slicedLows   = lows.slice(start);
 
-  const peaks   = findPeaks(slicedHighs, 4);
-  const troughs = findTroughs(slicedLows, 4);
+  const peaks   = findPeaks(slicedHighs, 5);
+  const troughs = findTroughs(slicedLows, 5);
 
   if (peaks.length < 2 || troughs.length < 2) return null;
 
@@ -1333,15 +2221,18 @@ function detectAscendingTriangle(
   const t0 = troughs[0], tLast = troughs[troughs.length - 1];
   const targetPrice = resistance + (resistance - support);
   const supportAtEnd = tLast.value + (tLast.value - t0.value) * 0.2;
+  const formedFromIdx = hasBreakout ? n - 1 : null;
+  const { status, rightTargetTime, statusColor, statusLabel } = getContinuationMeta('buy', bars, formedFromIdx, support, targetPrice);
 
   return {
     type: 'ascending_triangle',
-    name: '상승삼각형',
+    name: hasBreakout ? '상승삼각형' : '상승삼각형 (진행중)',
     signal: 'buy',
     syncRate: Math.min(100, score),
     detectedAt: bars[n - 1]?.date ?? '',
+    status,
     keyLevels: { resistance, support, target: targetPrice },
-    patternBars: { startIdx: 0, endIdx: lookback - 1 },
+    patternBars: { startIdx: start, endIdx: n - 1 },
     criteria,
     fillArea: {
       points: [
@@ -1358,8 +2249,8 @@ function detectAscendingTriangle(
       // 목표가 라인
       { points: [
           { time: firstBar.date, value: targetPrice },
-          { time: lastBar.date, value: targetPrice },
-        ], color: '#a855f7', width: 2, style: 'dotted', label: '목표가' },
+          { time: rightTargetTime, value: targetPrice },
+        ], color: statusColor, width: 2, style: 'dotted', label: statusLabel ? `목표가 (${statusLabel})` : '목표가' },
     ],
     patternMarkers: [
       { time: bars[start + t0.index].date, value: t0.value, label: '지지 시작', position: 'below', color: BUY_COLOR },
@@ -1380,8 +2271,8 @@ function detectDescendingTriangle(
   const slicedHighs = highs.slice(start);
   const slicedLows  = lows.slice(start);
 
-  const peaks   = findPeaks(slicedHighs, 4);
-  const troughs = findTroughs(slicedLows, 4);
+  const peaks   = findPeaks(slicedHighs, 5);
+  const troughs = findTroughs(slicedLows, 5);
 
   if (peaks.length < 2 || troughs.length < 2) return null;
 
@@ -1427,15 +2318,18 @@ function detectDescendingTriangle(
   const p0 = peaks[0], pLast = peaks[peaks.length - 1];
   const targetPrice = support - (resistance - support);
   const resistanceAtEnd = pLast.value - (p0.value - pLast.value) * 0.2;
+  const formedFromIdx = hasBreakdown ? n - 1 : null;
+  const { status, rightTargetTime, statusColor, statusLabel } = getContinuationMeta('sell', bars, formedFromIdx, resistance, targetPrice);
 
   return {
     type: 'descending_triangle',
-    name: '하락삼각형',
+    name: hasBreakdown ? '하락삼각형' : '하락삼각형 (진행중)',
     signal: 'sell',
     syncRate: Math.min(100, score),
     detectedAt: bars[n - 1]?.date ?? '',
+    status,
     keyLevels: { support, resistance, target: targetPrice },
-    patternBars: { startIdx: 0, endIdx: lookback - 1 },
+    patternBars: { startIdx: start, endIdx: n - 1 },
     criteria,
     fillArea: {
       points: [
@@ -1452,8 +2346,8 @@ function detectDescendingTriangle(
       // 목표가 라인
       { points: [
           { time: firstBar.date, value: targetPrice },
-          { time: lastBar.date, value: targetPrice },
-        ], color: '#a855f7', width: 2, style: 'dotted', label: '목표가' },
+          { time: rightTargetTime, value: targetPrice },
+        ], color: statusColor, width: 2, style: 'dotted', label: statusLabel ? `목표가 (${statusLabel})` : '목표가' },
     ],
     patternMarkers: [
       { time: bars[start + p0.index].date, value: p0.value, label: '저항 시작', position: 'above', color: SELL_COLOR },
@@ -1475,8 +2369,8 @@ function detectSymmetricalTriangle(
   const slicedHighs = highs.slice(start);
   const slicedLows  = lows.slice(start);
 
-  const peaks   = findPeaks(slicedHighs, 4);
-  const troughs = findTroughs(slicedLows, 4);
+  const peaks   = findPeaks(slicedHighs, 5);
+  const troughs = findTroughs(slicedLows, 5);
 
   if (peaks.length < 2 || troughs.length < 2) return null;
 
@@ -1538,15 +2432,26 @@ function detectSymmetricalTriangle(
 
   const fillColor = signal === 'buy' ? 'rgba(22, 163, 74, 0.12)' : 'rgba(239, 68, 68, 0.12)';
   const borderColor = signal === 'buy' ? BUY_COLOR : SELL_COLOR;
+  const formed = signal === 'buy' ? currentPrice > resistance : currentPrice < support;
+  const { status, rightTargetTime, statusColor, statusLabel } = getContinuationMeta(
+    signal,
+    bars,
+    formed ? n - 1 : null,
+    signal === 'buy' ? support : resistance,
+    targetPrice,
+  );
 
   return {
     type,
-    name: signal === 'buy' ? '강세 이등변삼각형' : '약세 이등변삼각형',
+    name: signal === 'buy'
+      ? (formed ? '강세 이등변삼각형' : '강세 이등변삼각형 (진행중)')
+      : (formed ? '약세 이등변삼각형' : '약세 이등변삼각형 (진행중)'),
     signal,
     syncRate: Math.min(100, score),
     detectedAt: bars[n - 1]?.date ?? '',
+    status,
     keyLevels: { support, resistance, target: targetPrice },
-    patternBars: { startIdx: 0, endIdx: lookback - 1 },
+    patternBars: { startIdx: start, endIdx: n - 1 },
     criteria,
     fillArea: {
       points: [
@@ -1562,8 +2467,8 @@ function detectSymmetricalTriangle(
       // 목표가 라인
       { points: [
           { time: lastBar.date, value: targetPrice },
-          { time: bars[Math.min(n - 1, apexBarIdx + 5)].date, value: targetPrice },
-        ], color: '#a855f7', width: 2, style: 'dotted', label: '목표가' },
+          { time: rightTargetTime, value: targetPrice },
+        ], color: statusColor, width: 2, style: 'dotted', label: statusLabel ? `목표가 (${statusLabel})` : '목표가' },
     ],
     patternMarkers: [
       { time: lastBar.date, value: signal === 'buy' ? resistance : support,
@@ -1632,6 +2537,8 @@ function detectCupHandle(
   const cupDepthValid = cupDepthPct >= 8 && cupDepthPct <= 35;
   const leftSpan = bottomIdxLocal - leftRimIdxLocal;
   const rightSpan = rightRimIdxLocal - bottomIdxLocal;
+  // TradingView: 컵 최소 폭 20봉
+  if (leftSpan + rightSpan < 20) return null;
   const balancedCup = leftSpan >= 6 && rightSpan >= 6 && Math.abs(leftSpan - rightSpan) <= Math.max(8, Math.round((leftSpan + rightSpan) * 0.45));
 
   const lowerBand = bottom + cupHeight * 0.35;
@@ -1690,13 +2597,16 @@ function detectCupHandle(
   const targetPrice = rightRim + (rightRim - bottom);
   const cupPath = buildSampledPathPoints(bars, closes, leftRimIdx, rightRimIdx, 11);
   const handlePath = buildSampledPathPoints(bars, closes, rightRimIdx, handleEndIdx, 5);
+  const formed = currentPrice > rightRim;
+  const { status, rightTargetTime, statusColor, statusLabel } = getContinuationMeta('buy', bars, formed ? handleEndIdx : null, handleLow, targetPrice);
 
   return {
     type: 'cup_handle',
-    name: '컵 앤 핸들',
+    name: formed ? '컵 앤 핸들' : '컵 앤 핸들 (진행중)',
     signal: 'buy',
     syncRate: Math.min(100, score),
     detectedAt: bars[handleEndIdx]?.date ?? bars[lastIdx].date,
+    status,
     keyLevels: { support: handleLow, resistance: rightRim, target: targetPrice },
     patternBars: { startIdx: leftRimIdx, endIdx: handleEndIdx },
     criteria,
@@ -1719,9 +2629,9 @@ function detectCupHandle(
       {
         points: [
           { time: bars[handleEndIdx].date, value: targetPrice },
-          { time: bars[projectionEndIdx].date, value: targetPrice },
+          { time: formed ? rightTargetTime : bars[projectionEndIdx].date, value: targetPrice },
         ],
-        color: '#a855f7', width: 2, style: 'dotted', label: '목표가',
+        color: statusColor, width: 2, style: 'dotted', label: statusLabel ? `목표가 (${statusLabel})` : '목표가',
       },
     ],
     patternMarkers: [
@@ -1822,11 +2732,13 @@ function detectRisingWedge(
 
   if (upperPivots.length < 2 || lowerPivots.length < 2) return null;
 
-  // 추세선 기울기 계산 (첫 번째와 마지막 피벗 연결)
-  const upperFirst = upperPivots[0];
-  const upperLast = upperPivots[upperPivots.length - 1];
-  const lowerFirst = lowerPivots[0];
-  const lowerLast = lowerPivots[lowerPivots.length - 1];
+  // 최근 수렴 구간 기준으로 포인트 1,2,3,4를 잡아야 TradingView와 비슷해진다.
+  const upperRecent = upperPivots.slice(-2);
+  const lowerRecent = lowerPivots.slice(-2);
+  const upperFirst = upperRecent[0];
+  const upperLast = upperRecent[1];
+  const lowerFirst = lowerRecent[0];
+  const lowerLast = lowerRecent[1];
 
   // 최소 간격 확인 (5봉 이상)
   const upperSpan = upperLast.index - upperFirst.index;
@@ -1842,6 +2754,14 @@ function detectRisingWedge(
   const converging = lowerSlope > upperSlope; // 하단이 더 가파르면 위에서 수렴
 
   if (!bothRising || !converging) return null;
+
+  const upperRisePct = upperFirst.value > 0 ? ((upperLast.value - upperFirst.value) / upperFirst.value) * 100 : 0;
+  const lowerRisePct = lowerFirst.value > 0 ? ((lowerLast.value - lowerFirst.value) / lowerFirst.value) * 100 : 0;
+  const startMidpoint = (upperFirst.value + lowerFirst.value) / 2;
+  const endMidpoint = (upperLast.value + lowerLast.value) / 2;
+  const midpointRisePct = startMidpoint > 0 ? ((endMidpoint - startMidpoint) / startMidpoint) * 100 : 0;
+  const clearUpwardTilt = upperRisePct >= 2 && lowerRisePct >= 2.5 && midpointRisePct >= 2;
+  if (!clearUpwardTilt) return null;
 
   // 추세선 방정식: y = slope * (x - x0) + y0
   const getUpperLine = (idx: number) => upperFirst.value + upperSlope * (idx - upperFirst.index);
@@ -1864,6 +2784,16 @@ function detectRisingWedge(
 
   if (!priceContained) return null;
 
+  const currentIdx = slicedCloses.length - 1;
+  const patternStartIdx = Math.max(0, Math.min(upperFirst.index, lowerFirst.index));
+  const patternEndIdx = currentIdx;
+  const preTrendBars = closes.slice(Math.max(0, start + patternStartIdx - 20), start + patternStartIdx);
+  const preTrendPct = preTrendBars.length >= 5
+    ? pct(preTrendBars[preTrendBars.length - 1], preTrendBars[0])
+    : 0;
+  const precededByRise = preTrendPct >= 2;
+  if (!precededByRise) return null;
+
   // 거래량 감소 체크
   const volDecline = avgVolume(volumes, start + Math.floor(lookback / 2), n - 1) <
                      avgVolume(volumes, start, start + Math.floor(lookback / 2));
@@ -1871,7 +2801,6 @@ function detectRisingWedge(
   // 수렴점(apex) 계산
   const apexIdx = (lowerFirst.value - upperFirst.value + upperSlope * upperFirst.index - lowerSlope * lowerFirst.index) /
                   (upperSlope - lowerSlope);
-  const currentIdx = slicedCloses.length - 1;
   const progressToApex = (currentIdx - checkStart) / (apexIdx - checkStart);
   const nearApex = progressToApex >= 0.6 && progressToApex <= 1.0;
 
@@ -1882,24 +2811,24 @@ function detectRisingWedge(
     '상단 추세선 상승': upperSlope > 0,
     '하단 추세선 상승': lowerSlope > 0,
     '수렴 구조 (하단 > 상단 기울기)': converging,
+    '명확한 우상향 기울기': clearUpwardTilt,
+    '선행 상승 추세': precededByRise,
     '가격 웻지 내 유지': priceContained,
     '거래량 감소': volDecline,
     '수렴점 근접 (60%+)': nearApex,
   };
 
   const score =
-    30 +
+    25 +
     (converging ? 20 : 0) +
+    (clearUpwardTilt ? 15 : 0) +
+    (precededByRise ? 10 : 0) +
     (priceContained ? 20 : 0) +
     (volDecline ? 10 : 0) +
     (nearApex ? 10 : 0) +
     (goodPivotCount ? 10 : 0);
 
   if (score < 50) return null;
-
-  // 웻지의 공통 시작점과 끝점 계산 (동일한 x좌표에서 추세선 값 계산)
-  const patternStartIdx = Math.min(upperFirst.index, lowerFirst.index);
-  const patternEndIdx = Math.max(upperLast.index, lowerLast.index);
 
   // 추세선을 공통 시작점/끝점까지 연장
   const startUpperValue = getUpperLine(patternStartIdx);
@@ -1915,16 +2844,30 @@ function detectRisingWedge(
   // 웻지 높이 및 목표가 계산
   const wedgeHeight = startUpperValue - startLowerValue;
   const targetPrice = endLowerValue - wedgeHeight;
+  const breakdownOffset = slicedCloses.findIndex((price, idx) => idx > lowerLast.index && price < getLowerLine(idx));
+  const breakdownIdx = breakdownOffset >= 0 ? start + breakdownOffset : -1;
+  const formed = breakdownIdx >= 0;
+  const detectedIdx = formed ? breakdownIdx : start + lowerLast.index;
+  const detectedTime = bars[detectedIdx]?.date ?? bars[n - 1]?.date ?? '';
+  const stateInfo = formed
+    ? getBearContinuationStateInfo(bars, breakdownIdx + 1, endUpperValue, targetPrice)
+    : { status: 'awaiting' as PatternStatus, endIdx: lastBar ? n - 1 : 0 };
+  const status = stateInfo.status;
+  if (status === 'failed' || status === 'undefined') return null;
+  const rightTargetTime = formed ? bars[stateInfo.endIdx].date : addTradingDays(lastBar.date, 10);
+  const statusColor = status === 'reached' ? '#16a34a' : '#a855f7';
+  const statusLabel = getStatusLabel(status);
 
   // 시작점과 끝점이 같으면 패턴 무효
   if (patternStartBar.date === patternEndBar.date) return null;
 
   return {
     type: 'rising_wedge',
-    name: '상향쐐기형',
+    name: formed ? '상향쐐기형' : '상향쐐기형 (진행중)',
     signal: 'sell',
     syncRate: Math.min(100, score),
-    detectedAt: bars[n - 1]?.date ?? '',
+    detectedAt: detectedTime,
+    status,
     keyLevels: {
       resistance: endUpperValue,
       support: endLowerValue,
@@ -1950,7 +2893,7 @@ function detectRisingWedge(
           { time: patternStartBar.date, value: startUpperValue },
           { time: patternEndBar.date, value: endUpperValue },
         ],
-        color: SELL_COLOR, width: 2 as const, style: 'solid' as const, label: '상단 추세선',
+        color: SELL_COLOR, width: 2 as const, style: 'solid' as const,
       },
       // 하단 추세선 (지지선)
       {
@@ -1958,23 +2901,24 @@ function detectRisingWedge(
           { time: patternStartBar.date, value: startLowerValue },
           { time: patternEndBar.date, value: endLowerValue },
         ],
-        color: SELL_COLOR, width: 2 as const, style: 'solid' as const, label: '하단 추세선',
+        color: SELL_COLOR, width: 2 as const, style: 'solid' as const,
       },
       // 목표가 라인
       ...(patternEndBar.date !== lastBar.date ? [{
         points: [
           { time: patternEndBar.date, value: targetPrice },
-          { time: lastBar.date, value: targetPrice },
+          { time: rightTargetTime, value: targetPrice },
         ],
-        color: '#a855f7', width: 2 as const, style: 'dotted' as const, label: '목표가',
+        color: statusColor, width: 2 as const, style: 'dotted' as const, label: statusLabel ? `목표가 (${statusLabel})` : '목표가',
       }] : []),
     ],
-    patternMarkers: [
-      { time: bars[start + upperFirst.index].date, value: upperFirst.value, label: '1', position: 'above', color: SELL_COLOR },
-      { time: bars[start + lowerFirst.index].date, value: lowerFirst.value, label: '2', position: 'below', color: SELL_COLOR },
-      { time: bars[start + upperLast.index].date, value: upperLast.value, label: '3', position: 'above', color: SELL_COLOR },
-      { time: bars[start + lowerLast.index].date, value: lowerLast.value, label: '4', position: 'below', color: SELL_COLOR },
-    ],
+    patternMarkers: buildWedgeTouchMarkers(
+      bars,
+      start,
+      upperPivots,
+      lowerPivots,
+      'sell',
+    ),
   };
 }
 
@@ -2018,11 +2962,13 @@ function detectFallingWedge(
 
   if (upperPivots.length < 2 || lowerPivots.length < 2) return null;
 
-  // 추세선 기울기 계산
-  const upperFirst = upperPivots[0];
-  const upperLast = upperPivots[upperPivots.length - 1];
-  const lowerFirst = lowerPivots[0];
-  const lowerLast = lowerPivots[lowerPivots.length - 1];
+  // 최근 수렴 구간만 사용해야 TradingView처럼 과도하게 넓지 않은 웻지가 된다.
+  const upperRecent = upperPivots.slice(-2);
+  const lowerRecent = lowerPivots.slice(-2);
+  const upperFirst = upperRecent[0];
+  const upperLast = upperRecent[1];
+  const lowerFirst = lowerRecent[0];
+  const lowerLast = lowerRecent[1];
 
   // 최소 간격 확인 (5봉 이상)
   const upperSpan = upperLast.index - upperFirst.index;
@@ -2037,6 +2983,14 @@ function detectFallingWedge(
   const converging = Math.abs(upperSlope) > Math.abs(lowerSlope); // 상단이 더 가파르면 아래에서 수렴
 
   if (!bothFalling || !converging) return null;
+
+  const upperDeclinePct = upperFirst.value > 0 ? ((upperFirst.value - upperLast.value) / upperFirst.value) * 100 : 0;
+  const lowerDeclinePct = lowerFirst.value > 0 ? ((lowerFirst.value - lowerLast.value) / lowerFirst.value) * 100 : 0;
+  const startMidpoint = (upperFirst.value + lowerFirst.value) / 2;
+  const endMidpoint = (upperLast.value + lowerLast.value) / 2;
+  const midpointDeclinePct = startMidpoint > 0 ? ((startMidpoint - endMidpoint) / startMidpoint) * 100 : 0;
+  const clearDownwardTilt = upperDeclinePct >= 2.5 && lowerDeclinePct >= 1.5 && midpointDeclinePct >= 2;
+  if (!clearDownwardTilt) return null;
 
   // 추세선 방정식
   const getUpperLine = (idx: number) => upperFirst.value + upperSlope * (idx - upperFirst.index);
@@ -2059,12 +3013,21 @@ function detectFallingWedge(
 
   if (!priceContained) return null;
 
+  const currentIdx = slicedCloses.length - 1;
+  const patternStartIdx = Math.max(0, Math.min(upperFirst.index, lowerFirst.index));
+  const patternEndIdx = currentIdx;
+  const preTrendBars = closes.slice(Math.max(0, start + patternStartIdx - 20), start + patternStartIdx);
+  const preTrendPct = preTrendBars.length >= 5
+    ? pct(preTrendBars[preTrendBars.length - 1], preTrendBars[0])
+    : 0;
+  const precededByDecline = preTrendPct <= -2;
+  if (!precededByDecline) return null;
+
   // 거래량 감소 체크
   const volDecline = avgVolume(volumes, start + Math.floor(lookback / 2), n - 1) <
                      avgVolume(volumes, start, start + Math.floor(lookback / 2));
 
   // 수렴점 및 진행도 계산
-  const currentIdx = slicedCloses.length - 1;
   const apexIdx = (lowerFirst.value - upperFirst.value + upperSlope * upperFirst.index - lowerSlope * lowerFirst.index) /
                   (upperSlope - lowerSlope);
   const progressToApex = (currentIdx - checkStart) / (apexIdx - checkStart);
@@ -2079,14 +3042,18 @@ function detectFallingWedge(
     '상단 추세선 하락': upperSlope < 0,
     '하단 추세선 하락': lowerSlope < 0,
     '수렴 구조 (상단 > 하단 기울기)': converging,
+    '명확한 우하향 기울기': clearDownwardTilt,
+    '선행 하락 추세': precededByDecline,
     '가격 웻지 내 유지': priceContained,
     '거래량 감소': volDecline,
     '저항선 근접/돌파': nearBreakout,
   };
 
   const score =
-    30 +
+    25 +
     (converging ? 20 : 0) +
+    (clearDownwardTilt ? 15 : 0) +
+    (precededByDecline ? 10 : 0) +
     (priceContained ? 20 : 0) +
     (volDecline ? 10 : 0) +
     (nearBreakout ? 15 : 0) +
@@ -2095,9 +3062,6 @@ function detectFallingWedge(
   if (score < 50) return null;
 
   // 웻지의 공통 시작점과 끝점 계산 (동일한 x좌표에서 추세선 값 계산)
-  const patternStartIdx = Math.min(upperFirst.index, lowerFirst.index);
-  const patternEndIdx = Math.max(upperLast.index, lowerLast.index);
-
   // 추세선을 공통 시작점/끝점까지 연장
   const startUpperValue = getUpperLine(patternStartIdx);
   const startLowerValue = getLowerLine(patternStartIdx);
@@ -2110,18 +3074,35 @@ function detectFallingWedge(
   const lastBar = bars[n - 1];
 
   // 웻지 높이 및 목표가 계산
-  const wedgeHeight = startUpperValue - startLowerValue;
+  const wedgeHeight = Math.max(
+    upperFirst.value - lowerFirst.value,
+    upperLast.value - lowerLast.value,
+  );
   const targetPrice = endUpperValue + wedgeHeight;
+  const breakoutOffset = slicedCloses.findIndex((price, idx) => idx > upperLast.index && price > getUpperLine(idx));
+  const breakoutIdx = breakoutOffset >= 0 ? start + breakoutOffset : -1;
+  const formed = breakoutIdx >= 0;
+  const detectedIdx = formed ? breakoutIdx : start + lowerLast.index;
+  const detectedTime = bars[detectedIdx]?.date ?? bars[n - 1]?.date ?? '';
+  const stateInfo = formed
+    ? getBullContinuationStateInfo(bars, breakoutIdx + 1, endLowerValue, targetPrice)
+    : { status: 'awaiting' as PatternStatus, endIdx: n - 1 };
+  const status = stateInfo.status;
+  if (status === 'failed' || status === 'undefined') return null;
+  const rightTargetTime = formed ? bars[stateInfo.endIdx].date : addTradingDays(lastBar.date, 10);
+  const statusColor = status === 'reached' ? '#16a34a' : '#a855f7';
+  const statusLabel = getStatusLabel(status);
 
   // 시작점과 끝점이 같으면 패턴 무효
   if (patternStartBar.date === patternEndBar.date) return null;
 
   return {
     type: 'falling_wedge',
-    name: '하향쐐기형',
+    name: formed ? '하향쐐기형' : '하향쐐기형 (진행중)',
     signal: 'buy',
     syncRate: Math.min(100, score),
-    detectedAt: bars[n - 1]?.date ?? '',
+    detectedAt: detectedTime,
+    status,
     keyLevels: {
       resistance: endUpperValue,
       support: endLowerValue,
@@ -2147,7 +3128,7 @@ function detectFallingWedge(
           { time: patternStartBar.date, value: startUpperValue },
           { time: patternEndBar.date, value: endUpperValue },
         ],
-        color: BUY_COLOR, width: 2 as const, style: 'solid' as const, label: '상단 추세선',
+        color: BUY_COLOR, width: 2 as const, style: 'solid' as const,
       },
       // 하단 추세선 (지지선)
       {
@@ -2155,23 +3136,24 @@ function detectFallingWedge(
           { time: patternStartBar.date, value: startLowerValue },
           { time: patternEndBar.date, value: endLowerValue },
         ],
-        color: BUY_COLOR, width: 2 as const, style: 'solid' as const, label: '하단 추세선',
+        color: BUY_COLOR, width: 2 as const, style: 'solid' as const,
       },
       // 목표가 라인
       ...(patternEndBar.date !== lastBar.date ? [{
         points: [
           { time: patternEndBar.date, value: targetPrice },
-          { time: lastBar.date, value: targetPrice },
+          { time: rightTargetTime, value: targetPrice },
         ],
-        color: '#a855f7', width: 2 as const, style: 'dotted' as const, label: '목표가',
+        color: statusColor, width: 2 as const, style: 'dotted' as const, label: statusLabel ? `목표가 (${statusLabel})` : '목표가',
       }] : []),
     ],
-    patternMarkers: [
-      { time: bars[start + upperFirst.index].date, value: upperFirst.value, label: '1', position: 'above', color: BUY_COLOR },
-      { time: bars[start + lowerFirst.index].date, value: lowerFirst.value, label: '2', position: 'below', color: BUY_COLOR },
-      { time: bars[start + upperLast.index].date, value: upperLast.value, label: '3', position: 'above', color: BUY_COLOR },
-      { time: bars[start + lowerLast.index].date, value: lowerLast.value, label: '4', position: 'below', color: BUY_COLOR },
-    ],
+    patternMarkers: buildWedgeTouchMarkers(
+      bars,
+      start,
+      upperPivots,
+      lowerPivots,
+      'buy',
+    ),
   };
 }
 
@@ -2189,8 +3171,13 @@ function detectBullPennant(
       const poleReturn = pct(closes[poleEnd], closes[poleStart]);
       if (poleReturn < 8) continue;
 
-      const flagSlice = { h: highs.slice(poleEnd, n), l: lows.slice(poleEnd, n) };
+      const poleLowIdx = minIdx(lows, poleStart, poleEnd);
+      const poleHighIdx = maxIdx(highs, poleLowIdx, poleEnd);
+      if (poleHighIdx - poleLowIdx < 4) continue;
+
+      const flagSlice = { h: highs.slice(poleHighIdx, n), l: lows.slice(poleHighIdx, n) };
       if (flagSlice.h.length < 5) continue;
+      if (flagSlice.h.length > 18) continue;
 
       const peaksF   = findPeaks(flagSlice.h, 2);
       const troughsF = findTroughs(flagSlice.l, 2);
@@ -2203,12 +3190,29 @@ function detectBullPennant(
       const converging  = highReg.slope < 0 && lowReg.slope > 0;
       if (!converging) continue;
 
-      const volDecline  = avgVolume(volumes, poleEnd, n - 1) < avgVolume(volumes, poleStart, poleEnd);
-      const strongPole  = poleReturn > 10;
+      const volDecline  = avgVolume(volumes, poleHighIdx, n - 1) < avgVolume(volumes, poleStart, poleHighIdx);
+      const poleHeight = highs[poleHighIdx] - lows[poleLowIdx];
+      const strongPole  = poleReturn > 10 && poleHeight > 0;
+      const currentUpper = highReg.slope * (flagSlice.h.length - 1) + highReg.intercept;
+      const currentLower = lowReg.slope * (flagSlice.l.length - 1) + lowReg.intercept;
+      const startWidth = highReg.intercept - lowReg.intercept;
+      const endWidth = currentUpper - currentLower;
+      if (startWidth <= 0 || endWidth <= 0) continue;
+
+      const pennantTightening = endWidth <= startWidth * 0.7;
+      const pennantHeight = Math.max(...flagSlice.h) - Math.min(...flagSlice.l);
+      const compactPennant = pennantHeight <= poleHeight * 0.6;
+      const shortPause = flagSlice.h.length <= Math.max(18, Math.round((poleHighIdx - poleLowIdx) * 1.4));
+      const nearBreakout = closes[n - 1] >= currentUpper * 0.97;
+      const formed = closes[n - 1] > currentUpper;
+      if (!pennantTightening || !compactPennant || !shortPause) continue;
 
       const criteria: PatternCriteria = {
         '강한 상승 깃대': strongPole,
         '수렴하는 삼각형(페넌트)': converging,
+        '페넌트 폭 수축': pennantTightening,
+        '짧고 타이트한 페넌트': compactPennant && shortPause,
+        '상단 돌파 근접': nearBreakout,
         '깃발 거래량 감소': volDecline,
       };
 
@@ -2216,51 +3220,63 @@ function detectBullPennant(
         30 +
         (strongPole ? 25 : 10) +
         (converging ? 25 : 0) +
+        (pennantTightening ? 10 : 0) +
+        (compactPennant ? 5 : 0) +
+        (nearBreakout ? 10 : 0) +
         (volDecline ? 20 : 0);
 
       if (score < 50) continue;
 
-      const pennantStartDate = bars[poleEnd]?.date ?? bars[n - 1].date;
+      const pennantStartDate = bars[poleHighIdx]?.date ?? bars[n - 1].date;
       const pennantEndDate   = bars[n - 1].date;
       const highEnd = highReg.slope * (flagSlice.h.length - 1) + highReg.intercept;
       const lowEnd  = lowReg.slope  * (flagSlice.l.length - 1) + lowReg.intercept;
-      const poleHeight = closes[poleEnd] - closes[poleStart];
       const targetPrice = Math.max(...flagSlice.h) + poleHeight;
+      const { status, rightTargetTime, statusColor, statusLabel } = getContinuationMeta('buy', bars, formed ? n - 1 : null, lowEnd, targetPrice);
 
       return {
         type: 'bull_pennant',
-        name: '상승삼각깃발형',
+        name: formed ? '불리쉬 페넌트' : '불리쉬 페넌트 (진행중)',
         signal: 'buy',
         syncRate: Math.min(100, score),
-        detectedAt: pennantStartDate,
+        detectedAt: bars[n - 1]?.date ?? pennantEndDate,
+        status,
         keyLevels: { support: Math.min(...flagSlice.l), resistance: Math.max(...flagSlice.h), target: targetPrice },
-        patternBars: { startIdx: poleStart, endIdx: n - 1 },
+        patternBars: { startIdx: poleLowIdx, endIdx: n - 1 },
         criteria,
+        fillArea: {
+          points: [
+            { time: pennantStartDate, value: highReg.intercept },
+            { time: pennantEndDate, value: highEnd },
+            { time: pennantEndDate, value: lowEnd },
+            { time: pennantStartDate, value: lowReg.intercept },
+          ],
+          color: 'rgba(22, 163, 74, 0.12)',
+          borderColor: BUY_COLOR,
+          borderWidth: 2,
+        },
         overlayLines: [
-          // 깃대
           { points: [
-              { time: bars[poleStart].date, value: closes[poleStart] },
-              { time: bars[poleEnd].date,   value: closes[poleEnd] },
+              { time: bars[poleLowIdx].date, value: lows[poleLowIdx] },
+              { time: bars[poleHighIdx].date,   value: highs[poleHighIdx] },
             ], color: BUY_COLOR, width: 3, style: 'solid', label: '깃대' },
-          // 페넌트 상단 (수렴)
           { points: [
               { time: pennantStartDate, value: highReg.intercept },
               { time: pennantEndDate,   value: highEnd },
-            ], color: CHANNEL_COLOR, width: 2, style: 'dashed', label: '페넌트 상단' },
-          // 페넌트 하단 (수렴)
+            ], color: BUY_COLOR, width: 2, style: 'solid', label: '페넌트 상단' },
           { points: [
               { time: pennantStartDate, value: lowReg.intercept },
               { time: pennantEndDate,   value: lowEnd },
-            ], color: CHANNEL_COLOR, width: 2, style: 'dashed', label: '페넌트 하단' },
-          // 목표가 라인
+            ], color: BUY_COLOR, width: 2, style: 'solid', label: '페넌트 하단' },
           { points: [
-              { time: pennantStartDate, value: targetPrice },
               { time: pennantEndDate, value: targetPrice },
-            ], color: '#a855f7', width: 2, style: 'dotted', label: '목표가' },
+              { time: rightTargetTime, value: targetPrice },
+            ], color: statusColor, width: 2, style: 'dotted', label: statusLabel ? `목표가 (${statusLabel})` : '목표가' },
         ],
         patternMarkers: [
-          { time: bars[poleStart].date, value: closes[poleStart], label: '깃대 시작', position: 'below', color: BUY_COLOR },
-          { time: bars[poleEnd].date, value: closes[poleEnd], label: '깃대 끝', position: 'above', color: BUY_COLOR },
+          { time: bars[poleLowIdx].date, value: lows[poleLowIdx], label: '깃대 시작', position: 'below', color: BUY_COLOR },
+          { time: bars[poleHighIdx].date, value: highs[poleHighIdx], label: '깃대 끝', position: 'above', color: BUY_COLOR },
+          { time: pennantEndDate, value: highEnd, label: formed ? '▲ 돌파' : '대기', position: 'above', color: BUY_COLOR },
         ],
       };
     }
@@ -2282,8 +3298,13 @@ function detectBearPennant(
       const poleReturn = pct(closes[poleEnd], closes[poleStart]);
       if (poleReturn > -8) continue;
 
-      const flagSlice = { h: highs.slice(poleEnd, n), l: lows.slice(poleEnd, n) };
+      const poleHighIdx = maxIdx(highs, poleStart, poleEnd);
+      const poleLowIdx = minIdx(lows, poleHighIdx, poleEnd);
+      if (poleLowIdx - poleHighIdx < 4) continue;
+
+      const flagSlice = { h: highs.slice(poleLowIdx, n), l: lows.slice(poleLowIdx, n) };
       if (flagSlice.h.length < 5) continue;
+      if (flagSlice.h.length > 18) continue;
 
       const peaksF   = findPeaks(flagSlice.h, 2);
       const troughsF = findTroughs(flagSlice.l, 2);
@@ -2296,12 +3317,29 @@ function detectBearPennant(
       const converging  = highReg.slope < 0 && lowReg.slope > 0;
       if (!converging) continue;
 
-      const volDecline  = avgVolume(volumes, poleEnd, n - 1) < avgVolume(volumes, poleStart, poleEnd);
-      const strongPole  = poleReturn < -10;
+      const volDecline  = avgVolume(volumes, poleLowIdx, n - 1) < avgVolume(volumes, poleStart, poleLowIdx);
+      const poleHeight = highs[poleHighIdx] - lows[poleLowIdx];
+      const strongPole  = poleReturn < -10 && poleHeight > 0;
+      const currentUpper = highReg.slope * (flagSlice.h.length - 1) + highReg.intercept;
+      const currentLower = lowReg.slope * (flagSlice.l.length - 1) + lowReg.intercept;
+      const startWidth = highReg.intercept - lowReg.intercept;
+      const endWidth = currentUpper - currentLower;
+      if (startWidth <= 0 || endWidth <= 0) continue;
+
+      const pennantTightening = endWidth <= startWidth * 0.7;
+      const pennantHeight = Math.max(...flagSlice.h) - Math.min(...flagSlice.l);
+      const compactPennant = pennantHeight <= poleHeight * 0.6;
+      const shortPause = flagSlice.h.length <= Math.max(18, Math.round((poleLowIdx - poleHighIdx) * 1.4));
+      const nearBreakdown = closes[n - 1] <= currentLower * 1.03;
+      const formed = closes[n - 1] < currentLower;
+      if (!pennantTightening || !compactPennant || !shortPause) continue;
 
       const criteria: PatternCriteria = {
         '강한 하락 깃대': strongPole,
         '수렴하는 삼각형(페넌트)': converging,
+        '페넌트 폭 수축': pennantTightening,
+        '짧고 타이트한 페넌트': compactPennant && shortPause,
+        '하단 이탈 근접': nearBreakdown,
         '깃발 거래량 감소': volDecline,
       };
 
@@ -2309,48 +3347,63 @@ function detectBearPennant(
         30 +
         (strongPole ? 25 : 10) +
         (converging ? 25 : 0) +
+        (pennantTightening ? 10 : 0) +
+        (compactPennant ? 5 : 0) +
+        (nearBreakdown ? 10 : 0) +
         (volDecline ? 20 : 0);
 
       if (score < 50) continue;
 
-      const pennantStartDate = bars[poleEnd]?.date ?? bars[n - 1].date;
+      const pennantStartDate = bars[poleLowIdx]?.date ?? bars[n - 1].date;
       const pennantEndDate   = bars[n - 1].date;
       const highEnd = highReg.slope * (flagSlice.h.length - 1) + highReg.intercept;
       const lowEnd  = lowReg.slope  * (flagSlice.l.length - 1) + lowReg.intercept;
-      const poleHeight = closes[poleStart] - closes[poleEnd];
       const targetPrice = Math.min(...flagSlice.l) - poleHeight;
+      const { status, rightTargetTime, statusColor, statusLabel } = getContinuationMeta('sell', bars, formed ? n - 1 : null, highEnd, targetPrice);
 
       return {
         type: 'bear_pennant',
-        name: '하락삼각깃발형',
+        name: formed ? '베어리쉬 페넌트' : '베어리쉬 페넌트 (진행중)',
         signal: 'sell',
         syncRate: Math.min(100, score),
-        detectedAt: pennantStartDate,
+        detectedAt: bars[n - 1]?.date ?? pennantEndDate,
+        status,
         keyLevels: { support: Math.min(...flagSlice.l), resistance: Math.max(...flagSlice.h), target: targetPrice },
-        patternBars: { startIdx: poleStart, endIdx: n - 1 },
+        patternBars: { startIdx: poleHighIdx, endIdx: n - 1 },
         criteria,
+        fillArea: {
+          points: [
+            { time: pennantStartDate, value: highReg.intercept },
+            { time: pennantEndDate, value: highEnd },
+            { time: pennantEndDate, value: lowEnd },
+            { time: pennantStartDate, value: lowReg.intercept },
+          ],
+          color: 'rgba(239, 68, 68, 0.12)',
+          borderColor: SELL_COLOR,
+          borderWidth: 2,
+        },
         overlayLines: [
           { points: [
-              { time: bars[poleStart].date, value: closes[poleStart] },
-              { time: bars[poleEnd].date,   value: closes[poleEnd] },
+              { time: bars[poleHighIdx].date, value: highs[poleHighIdx] },
+              { time: bars[poleLowIdx].date,   value: lows[poleLowIdx] },
             ], color: SELL_COLOR, width: 3, style: 'solid', label: '깃대' },
           { points: [
               { time: pennantStartDate, value: highReg.intercept },
               { time: pennantEndDate,   value: highEnd },
-            ], color: CHANNEL_COLOR, width: 2, style: 'dashed', label: '페넌트 상단' },
+            ], color: SELL_COLOR, width: 2, style: 'solid', label: '페넌트 상단' },
           { points: [
               { time: pennantStartDate, value: lowReg.intercept },
               { time: pennantEndDate,   value: lowEnd },
-            ], color: CHANNEL_COLOR, width: 2, style: 'dashed', label: '페넌트 하단' },
-          // 목표가 라인
+            ], color: SELL_COLOR, width: 2, style: 'solid', label: '페넌트 하단' },
           { points: [
-              { time: pennantStartDate, value: targetPrice },
               { time: pennantEndDate, value: targetPrice },
-            ], color: '#a855f7', width: 2, style: 'dotted', label: '목표가' },
+              { time: rightTargetTime, value: targetPrice },
+            ], color: statusColor, width: 2, style: 'dotted', label: statusLabel ? `목표가 (${statusLabel})` : '목표가' },
         ],
         patternMarkers: [
-          { time: bars[poleStart].date, value: closes[poleStart], label: '깃대 시작', position: 'above', color: SELL_COLOR },
-          { time: bars[poleEnd].date, value: closes[poleEnd], label: '깃대 끝', position: 'below', color: SELL_COLOR },
+          { time: bars[poleHighIdx].date, value: highs[poleHighIdx], label: '깃대 시작', position: 'above', color: SELL_COLOR },
+          { time: bars[poleLowIdx].date, value: lows[poleLowIdx], label: '깃대 끝', position: 'below', color: SELL_COLOR },
+          { time: pennantEndDate, value: lowEnd, label: formed ? '▼ 이탈' : '대기', position: 'below', color: SELL_COLOR },
         ],
       };
     }
@@ -2371,8 +3424,8 @@ function detectRectangle(
   const slicedHighs = highs.slice(start);
   const slicedLows  = lows.slice(start);
 
-  const peaks   = findPeaks(slicedHighs, 4);
-  const troughs = findTroughs(slicedLows, 4);
+  const peaks   = findPeaks(slicedHighs, 5);
+  const troughs = findTroughs(slicedLows, 5);
 
   if (peaks.length < 2 || troughs.length < 2) return null;
 
@@ -2424,15 +3477,26 @@ function detectRectangle(
   const boxColor = signal === 'buy' ? BUY_COLOR : SELL_COLOR;
   const boxHeight = avgPeak - avgTrough;
   const targetPrice = signal === 'buy' ? avgPeak + boxHeight : avgTrough - boxHeight;
+  const formed = signal === 'buy' ? currentPrice > avgPeak : currentPrice < avgTrough;
+  const { status, rightTargetTime, statusColor, statusLabel } = getContinuationMeta(
+    signal,
+    bars,
+    formed ? n - 1 : null,
+    signal === 'buy' ? avgTrough : avgPeak,
+    targetPrice,
+  );
 
   return {
     type,
-    name: signal === 'buy' ? '상승직사각형' : '하락직사각형',
+    name: signal === 'buy'
+      ? (formed ? '상승직사각형' : '상승직사각형 (진행중)')
+      : (formed ? '하락직사각형' : '하락직사각형 (진행중)'),
     signal,
     syncRate: Math.min(100, score),
     detectedAt: bars[n - 1]?.date ?? '',
+    status,
     keyLevels: { resistance: avgPeak, support: avgTrough, target: targetPrice },
-    patternBars: { startIdx: 0, endIdx: lookback - 1 },
+    patternBars: { startIdx: start, endIdx: n - 1 },
     criteria,
     overlayLines: [
       // 박스 상단
@@ -2453,8 +3517,8 @@ function detectRectangle(
       // 목표가 라인
       { points: [
           { time: firstBar.date, value: targetPrice },
-          { time: lastBar.date, value: targetPrice },
-        ], color: '#a855f7', width: 2, style: 'dotted', label: '목표가' },
+          { time: rightTargetTime, value: targetPrice },
+        ], color: statusColor, width: 2, style: 'dotted', label: statusLabel ? `목표가 (${statusLabel})` : '목표가' },
     ],
     patternMarkers: [
       { time: lastBar.date, value: signal === 'buy' ? avgPeak : avgTrough,
@@ -2516,8 +3580,8 @@ export function detectAllPatterns(history: PriceBar[]): PatternResult[] {
 
   // Convert to chronological order
   const bars = [...history].reverse();
-  // 최근 3개월 (약 63 거래일)만 분석
-  const lookback = Math.min(63, bars.length);
+  // TradingView automatic chart patterns docs describe scanning the last 600 bars.
+  const lookback = Math.min(600, bars.length);
   const recent = bars.slice(bars.length - lookback);
 
   const closes  = recent.map(b => b.price);
@@ -2534,5 +3598,26 @@ export function detectAllPatterns(history: PriceBar[]): PatternResult[] {
     } catch { /* skip on error */ }
   }
 
-  return results.sort((a, b) => b.syncRate - a.syncRate);
+  const activeResults = results.filter((pattern) => {
+    const currentPrice = closes[closes.length - 1];
+    return isPatternStillRelevant(pattern, currentPrice, recent.length);
+  });
+
+  return activeResults.sort((a, b) => {
+    const statusRankA = getPatternStatusRank(a.status);
+    const statusRankB = getPatternStatusRank(b.status);
+    if (statusRankA !== statusRankB) return statusRankA - statusRankB;
+
+    const ageA = recent.length - 1 - a.patternBars.endIdx;
+    const ageB = recent.length - 1 - b.patternBars.endIdx;
+    if (ageA !== ageB) return ageA - ageB;
+
+    const actionableA = getPatternActionableLevel(a);
+    const actionableB = getPatternActionableLevel(b);
+    const currentPrice = closes[closes.length - 1];
+    const distanceA = actionableA ? Math.abs(currentPrice - actionableA) / actionableA : 1;
+    const distanceB = actionableB ? Math.abs(currentPrice - actionableB) / actionableB : 1;
+    if (distanceA !== distanceB) return distanceA - distanceB;
+    return b.syncRate - a.syncRate;
+  });
 }

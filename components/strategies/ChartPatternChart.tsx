@@ -25,10 +25,21 @@ interface Bar {
   volume: number;
 }
 
+interface DisplayBar {
+  date: string;
+  price?: number;
+  open?: number;
+  high?: number;
+  low?: number;
+  volume?: number;
+  isWhitespace?: boolean;
+}
+
 interface Props {
   history: Bar[];
   market: 'US' | 'KR';
   pattern: PatternResult;
+  viewMode?: 'pattern' | 'full';
 }
 
 const LINE_STYLE_MAP: Record<PatternLine['style'], LineStyle> = {
@@ -58,7 +69,34 @@ function collectPatternDates(pattern: PatternResult): string[] {
   return [...dates].sort((a, b) => a.localeCompare(b));
 }
 
-export function ChartPatternChart({ history, market, pattern }: Props) {
+function addTradingDays(dateStr: string, days: number): string {
+  const date = new Date(`${dateStr}T00:00:00Z`);
+  let remaining = Math.max(0, days);
+
+  while (remaining > 0) {
+    date.setUTCDate(date.getUTCDate() + 1);
+    const day = date.getUTCDay();
+    if (day !== 0 && day !== 6) remaining -= 1;
+  }
+
+  return date.toISOString().slice(0, 10);
+}
+
+function getTradingDayDistance(fromDate: string, toDate: string): number {
+  if (toDate <= fromDate) return 0;
+
+  let current = fromDate;
+  let distance = 0;
+
+  while (current < toDate && distance < 260) {
+    current = addTradingDays(current, 1);
+    distance += 1;
+  }
+
+  return distance;
+}
+
+export function ChartPatternChart({ history, market, pattern, viewMode = 'pattern' }: Props) {
   const chartRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const chartApiRef = useRef<IChartApi | null>(null);
@@ -211,26 +249,48 @@ export function ChartPatternChart({ history, market, pattern }: Props) {
       .filter((h, i, arr) => i === 0 || h.date !== arr[i - 1].date);
 
     const relevantDates = collectPatternDates(pattern);
-    let displayStart = Math.max(0, sorted.length - 120);
-    let displayEnd = sorted.length;
+    let display: DisplayBar[];
 
-    if (relevantDates.length > 0) {
-      const firstRelevantIdx = sorted.findIndex((bar) => bar.date >= relevantDates[0]);
-      const lastRelevantDate = relevantDates[relevantDates.length - 1];
-      const lastRelevantIdx = [...sorted].reverse().findIndex((bar) => bar.date <= lastRelevantDate);
+    if (viewMode === 'full') {
+      display = sorted.slice(Math.max(0, sorted.length - 600));
+    } else {
+      let displayStart = Math.max(0, sorted.length - 120);
+      let displayEnd = sorted.length;
 
-      if (firstRelevantIdx !== -1 && lastRelevantIdx !== -1) {
-        const resolvedLastIdx = sorted.length - 1 - lastRelevantIdx;
-        const patternSpan = Math.max(1, resolvedLastIdx - firstRelevantIdx + 1);
-        const leftPadding = Math.max(12, Math.round(patternSpan * 0.7));
-        const rightPadding = Math.max(18, Math.round(patternSpan * 0.9));
+      if (relevantDates.length > 0) {
+        const firstRelevantIdx = sorted.findIndex((bar) => bar.date >= relevantDates[0]);
+        const lastRelevantDate = relevantDates[relevantDates.length - 1];
+        const lastRelevantIdx = [...sorted].reverse().findIndex((bar) => bar.date <= lastRelevantDate);
 
-        displayStart = Math.max(0, firstRelevantIdx - leftPadding);
-        displayEnd = Math.min(sorted.length, resolvedLastIdx + rightPadding + 1);
+        if (firstRelevantIdx !== -1 && lastRelevantIdx !== -1) {
+          const resolvedLastIdx = sorted.length - 1 - lastRelevantIdx;
+          const patternSpan = Math.max(1, resolvedLastIdx - firstRelevantIdx + 1);
+          const leftPadding = Math.max(12, Math.round(patternSpan * 0.7));
+          const rightPadding = Math.max(18, Math.round(patternSpan * 0.9));
+
+          displayStart = Math.max(0, firstRelevantIdx - leftPadding);
+          displayEnd = Math.min(sorted.length, resolvedLastIdx + rightPadding + 1);
+        }
       }
+
+      display = sorted.slice(displayStart, displayEnd);
     }
 
-    const display = sorted.slice(displayStart, displayEnd);
+    if (relevantDates.length > 0 && viewMode === 'pattern') {
+      const lastDisplayDate = display[display.length - 1]?.date;
+      const lastRelevantDate = relevantDates[relevantDates.length - 1];
+
+      if (lastDisplayDate && lastRelevantDate > lastDisplayDate) {
+        const futureBars = Array.from(
+          { length: getTradingDayDistance(lastDisplayDate, lastRelevantDate) },
+          (_, idx) => ({
+            date: addTradingDays(lastDisplayDate, idx + 1),
+            isWhitespace: true,
+          }),
+        );
+        display = [...display, ...futureBars];
+      }
+    }
 
     // ── Candlestick ──────────────────────────────────────────
     const candleSeries = chart.addSeries(CandlestickSeries, {
@@ -246,13 +306,17 @@ export function ChartPatternChart({ history, market, pattern }: Props) {
         minMove:   market === 'US' ? 0.01 : 1,
       },
     });
-    candleSeries.setData(display.map(h => ({
-      time:  h.date,
-      open:  h.open ?? h.price,
-      high:  h.high,
-      low:   h.low,
-      close: h.price,
-    })));
+    candleSeries.setData(display.map(h => (
+      h.isWhitespace
+        ? { time: h.date }
+        : {
+            time:  h.date,
+            open:  h.open ?? h.price,
+            high:  h.high!,
+            low:   h.low!,
+            close: h.price!,
+          }
+    )));
     candleSeriesRef.current = candleSeries;
 
     // ── Volume ───────────────────────────────────────────────
@@ -261,11 +325,15 @@ export function ChartPatternChart({ history, market, pattern }: Props) {
       priceScaleId: 'volume',
     });
     chart.priceScale('volume').applyOptions({ scaleMargins: { top: 0.85, bottom: 0 } });
-    volSeries.setData(display.map(h => ({
-      time:  h.date,
-      value: h.volume ?? 0,
-      color: (h.price >= (h.open ?? h.price)) ? 'rgba(239,68,68,0.35)' : 'rgba(59,130,246,0.35)',
-    })));
+    volSeries.setData(display.map(h => (
+      h.isWhitespace
+        ? { time: h.date }
+        : {
+            time:  h.date,
+            value: h.volume ?? 0,
+            color: (h.price! >= (h.open ?? h.price!)) ? 'rgba(239,68,68,0.35)' : 'rgba(59,130,246,0.35)',
+          }
+    )));
 
     // ── Pattern overlay lines ────────────────────────────────
     if (pattern.overlayLines?.length) {
@@ -344,8 +412,9 @@ export function ChartPatternChart({ history, market, pattern }: Props) {
       }
     }
 
-    // Add Buy/Sell signal marker
-    if (pattern.detectedAt) {
+    // 진행중 패턴은 아직 진입 신호가 아니라 대기 상태만 보여준다.
+    const shouldShowSignalMarker = pattern.detectedAt && !pattern.name.includes('(진행중)');
+    if (shouldShowSignalMarker) {
       const markerCandle =
         display.find(d => d.date >= pattern.detectedAt) ?? display[display.length - 1];
       allMarkers.push({
@@ -394,7 +463,7 @@ export function ChartPatternChart({ history, market, pattern }: Props) {
       // 클린업 시 캔버스도 초기화
       clearCanvas();
     };
-  }, [history, market, pattern, drawFillArea, clearCanvas]);
+  }, [history, market, pattern, viewMode, drawFillArea, clearCanvas]);
 
   // ── Legend ───────────────────────────────────────────────
   const overlayLabels = pattern.overlayLines

@@ -5,8 +5,31 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, CheckCircle2, XCircle, Activity, Target, Loader2, TrendingUp, TrendingDown, BookOpen, Eye, AlertTriangle, Lightbulb, ChevronDown, ChevronUp } from 'lucide-react';
 import { ChartPatternChart } from '@/components/strategies/ChartPatternChart';
 import { detectAllPatterns, PATTERN_INFO, type PatternGuide, type PriceBar } from '@/lib/utils/chart-pattern-calculator';
-import type { PatternResult } from '@/lib/utils/chart-pattern-calculator';
+import type { PatternResult, PatternStatus } from '@/lib/utils/chart-pattern-calculator';
 import { PremiumGate } from '@/components/PremiumGate';
+
+const PATTERN_STATUS_META: Record<PatternStatus, { label: string; description: string; className: string }> = {
+  awaiting: {
+    label: '대기',
+    description: '목표가에 아직 도달하지 않았고, 패턴 실패 조건도 발생하지 않았습니다.',
+    className: 'bg-amber-50 text-amber-700 border-amber-100',
+  },
+  reached: {
+    label: '도달',
+    description: '가격이 문서 기준 예상 목표가에 도달한 상태입니다.',
+    className: 'bg-green-50 text-green-700 border-green-100',
+  },
+  failed: {
+    label: '실패',
+    description: '목표가 도달 전에 가격이 두 번째 고점을 넘어 패턴이 무효화되었습니다.',
+    className: 'bg-red-50 text-red-700 border-red-100',
+  },
+  undefined: {
+    label: '정의불가',
+    description: '목표 도달과 실패 조건이 겹치거나 패턴 상태를 명확히 판정하기 어렵습니다.',
+    className: 'bg-gray-100 text-gray-700 border-gray-200',
+  },
+};
 
 export default function ChartPatternDetailPage({
   params,
@@ -43,6 +66,7 @@ function DetailContent({ params }: { params: Promise<{ symbol: string }> }) {
   const [loading, setLoading]           = useState(true);
   const [error, setError]               = useState<string | null>(null);
   const [guideOpen, setGuideOpen]       = useState(true);
+  const [chartViewMode, setChartViewMode] = useState<'pattern' | 'full'>('pattern');
 
   useEffect(() => {
     let active = true;
@@ -95,6 +119,7 @@ function DetailContent({ params }: { params: Promise<{ symbol: string }> }) {
   }
 
   const info = PATTERN_INFO[selectedPattern.type];
+  const statusMeta = selectedPattern.status ? PATTERN_STATUS_META[selectedPattern.status] : null;
 
   return (
     <div className="min-h-screen bg-gray-50/50">
@@ -169,11 +194,37 @@ function DetailContent({ params }: { params: Promise<{ symbol: string }> }) {
                 </div>
 
                 {/* 차트 */}
+                <div className="flex items-center justify-end mb-4">
+                  <div className="inline-flex items-center bg-gray-100 rounded-2xl p-1">
+                    <button
+                      onClick={() => setChartViewMode('pattern')}
+                      className={`px-3 py-2 rounded-xl text-xs font-black transition-colors ${
+                        chartViewMode === 'pattern'
+                          ? 'bg-white text-gray-900 shadow-sm'
+                          : 'text-gray-500 hover:text-gray-700'
+                      }`}
+                    >
+                      패턴 확대
+                    </button>
+                    <button
+                      onClick={() => setChartViewMode('full')}
+                      className={`px-3 py-2 rounded-xl text-xs font-black transition-colors ${
+                        chartViewMode === 'full'
+                          ? 'bg-white text-gray-900 shadow-sm'
+                          : 'text-gray-500 hover:text-gray-700'
+                      }`}
+                    >
+                      최근 600봉
+                    </button>
+                  </div>
+                </div>
+
                 <div className="h-[500px] -mx-4">
                   <ChartPatternChart
                     history={chartData}
                     market={market}
                     pattern={selectedPattern}
+                    viewMode={chartViewMode}
                   />
                 </div>
               </div>
@@ -234,6 +285,18 @@ function DetailContent({ params }: { params: Promise<{ symbol: string }> }) {
                   {selectedPattern.keyLevels.target && (
                     <LevelRow label="목표가" value={selectedPattern.keyLevels.target} market={market} color="text-purple-600" />
                   )}
+                </div>
+              )}
+
+              {statusMeta && (
+                <div className="bg-white p-6 rounded-[32px] border border-gray-200">
+                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3">PATTERN STATUS</p>
+                  <div className={`inline-flex items-center px-3 py-2 rounded-xl border text-xs font-black ${statusMeta.className}`}>
+                    {statusMeta.label}
+                  </div>
+                  <p className="mt-3 text-sm text-gray-600 font-medium leading-relaxed">
+                    {statusMeta.description}
+                  </p>
                 </div>
               )}
 
