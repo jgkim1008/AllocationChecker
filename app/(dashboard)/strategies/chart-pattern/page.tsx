@@ -11,7 +11,7 @@ import type { ChartPatternStock } from '@/lib/utils/chart-pattern-scanner';
 const SIGNAL_FILTERS = ['전체', '매수', '매도'] as const;
 type SignalFilter = typeof SIGNAL_FILTERS[number];
 
-const CATEGORIES = ['전체', '반전', '삼각형', '쐐기', '깃발', '직사각형', 'V형'] as const;
+const CATEGORIES = ['전체', '반전', '지속', '삼각형', '쐐기', '깃발', '직사각형'] as const;
 type Category = typeof CATEGORIES[number];
 
 export default function ChartPatternPage() {
@@ -53,6 +53,10 @@ export default function ChartPatternPage() {
   const buyCount  = stocks.filter(s => s.hasBuySignal && !s.hasSellSignal).length;
   const sellCount = stocks.filter(s => s.hasSellSignal && !s.hasBuySignal).length;
   const mixCount  = stocks.filter(s => s.hasBuySignal && s.hasSellSignal).length;
+  const uniquePatternGuides = (Object.entries(PATTERN_INFO) as [ChartPatternType, typeof PATTERN_INFO[ChartPatternType]][])
+    .filter(([type, info], idx, arr) =>
+      arr.findIndex(([, candidate]) => candidate.name === info.name) === idx
+    );
 
   return (
     <div className="min-h-screen bg-gray-50/50">
@@ -86,9 +90,9 @@ export default function ChartPatternPage() {
             </h1>
             <p className="text-gray-500 max-w-2xl font-medium leading-relaxed">
               일봉 기준으로{' '}
-              <span className="text-green-600 font-black">19개 차트 패턴</span>을
-              실시간 감지합니다. 머리어깨형·쌍봉형·깃발형·삼각형 등 주요 패턴의
-              싱크로율과 매수/매도 신호를 한 번에 확인하세요.
+              <span className="text-green-600 font-black">TradingView 차트 패턴 체계</span>를
+              기준으로 감지합니다. 헤드 앤 숄더·더블 탑·트라이앵글·컵 앤 핸들 등
+              주요 패턴의 싱크로율과 매수/매도 신호를 한 번에 확인하세요.
             </p>
           </div>
 
@@ -203,7 +207,7 @@ export default function ChartPatternPage() {
               <BarChart2 className="h-4 w-4" /> Pattern Guide
             </p>
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-              {(Object.entries(PATTERN_INFO) as [ChartPatternType, typeof PATTERN_INFO[ChartPatternType]][]).map(([type, info]) => (
+              {uniquePatternGuides.map(([type, info]) => (
                 <div key={type} className="flex items-start gap-2 p-3 rounded-xl bg-gray-50 border border-gray-100">
                   <span className={`shrink-0 w-5 h-5 rounded-full flex items-center justify-center mt-0.5 ${
                     info.signal === 'buy' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'

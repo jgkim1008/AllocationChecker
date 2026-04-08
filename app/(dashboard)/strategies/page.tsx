@@ -9,7 +9,7 @@ const STRATEGIES = [
   {
     id: 'chart-pattern',
     title: '차트 패턴',
-    description: '일봉 기준 19개 차트 패턴(머리어깨·쌍봉·깃발·삼각형·V형 등)을 실시간 감지합니다. 패턴별 싱크로율과 매수/매도 신호를 한 눈에 확인하고 상세 차트로 패턴을 시각화합니다.',
+    description: 'TradingView 차트 패턴 체계를 기준으로 헤드 앤 숄더, 더블 탑, 트라이앵글, 컵 앤 핸들, 플래그/페넌트 등을 실시간 감지합니다. 패턴별 싱크로율과 매수/매도 신호를 한 눈에 확인하고 상세 차트로 패턴을 시각화합니다.',
     icon: CandlestickChart,
     href: '/strategies/chart-pattern',
     color: 'bg-teal-50 text-teal-600',

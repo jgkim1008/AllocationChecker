@@ -4,7 +4,7 @@ import React, { useState, useEffect, use, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, CheckCircle2, XCircle, Activity, Target, Loader2, TrendingUp, TrendingDown, BookOpen, Eye, AlertTriangle, Lightbulb, ChevronDown, ChevronUp } from 'lucide-react';
 import { ChartPatternChart } from '@/components/strategies/ChartPatternChart';
-import { detectAllPatterns, PATTERN_INFO, type PatternGuide } from '@/lib/utils/chart-pattern-calculator';
+import { detectAllPatterns, PATTERN_INFO, type PatternGuide, type PriceBar } from '@/lib/utils/chart-pattern-calculator';
 import type { PatternResult } from '@/lib/utils/chart-pattern-calculator';
 import { PremiumGate } from '@/components/PremiumGate';
 
@@ -38,7 +38,7 @@ function DetailContent({ params }: { params: Promise<{ symbol: string }> }) {
 
   const [patterns, setPatterns]         = useState<PatternResult[]>([]);
   const [selectedPattern, setSelected]  = useState<PatternResult | null>(null);
-  const [chartData, setChartData]       = useState<any[]>([]);
+  const [chartData, setChartData]       = useState<PriceBar[]>([]);
   const [currentPrice, setCurrentPrice] = useState(0);
   const [loading, setLoading]           = useState(true);
   const [error, setError]               = useState<string | null>(null);
@@ -372,6 +372,21 @@ function PatternGuidePanel({
           <div className="flex gap-3 p-4 bg-gray-900 rounded-2xl">
             <Lightbulb className="h-4 w-4 text-yellow-400 shrink-0 mt-0.5" />
             <p className="text-sm text-gray-200 leading-relaxed font-medium">{guide.tip}</p>
+          </div>
+
+          <div className="flex items-center justify-between gap-3 p-4 rounded-2xl border border-gray-100 bg-gray-50">
+            <div>
+              <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">TradingView Reference</p>
+              <p className="text-sm text-gray-600 font-medium">공식 차트 패턴 가이드를 함께 확인할 수 있습니다.</p>
+            </div>
+            <a
+              href={guide.sourceUrl ?? 'https://kr.tradingview.com/support/folders/43000587407/'}
+              target="_blank"
+              rel="noreferrer"
+              className="shrink-0 px-4 py-2 rounded-xl bg-white border border-gray-200 text-xs font-black text-gray-700 hover:border-gray-400 transition-colors"
+            >
+              공식 문서
+            </a>
           </div>
         </div>
       )}

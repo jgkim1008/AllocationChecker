@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 import {
   createChart,
   ColorType,
@@ -10,6 +10,9 @@ import {
   LineSeries,
   HistogramSeries,
   createSeriesMarkers,
+  type IChartApi,
+  type ISeriesApi,
+  type Time,
 } from 'lightweight-charts';
 import type { PatternResult, PatternLine } from '@/lib/utils/chart-pattern-calculator';
 
@@ -34,10 +37,146 @@ const LINE_STYLE_MAP: Record<PatternLine['style'], LineStyle> = {
   dotted: LineStyle.Dotted,
 };
 
+function collectPatternDates(pattern: PatternResult): string[] {
+  const dates = new Set<string>();
+
+  pattern.overlayLines?.forEach((line) => {
+    line.points.forEach((point) => dates.add(point.time));
+  });
+
+  pattern.patternMarkers?.forEach((marker) => {
+    dates.add(marker.time);
+  });
+
+  pattern.fillArea?.points.forEach((point) => dates.add(point.time));
+  pattern.fillArea?.outlinePoints?.forEach((point) => dates.add(point.time));
+
+  if (pattern.detectedAt) {
+    dates.add(pattern.detectedAt);
+  }
+
+  return [...dates].sort((a, b) => a.localeCompare(b));
+}
+
 export function ChartPatternChart({ history, market, pattern }: Props) {
   const chartRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const chartApiRef = useRef<IChartApi | null>(null);
+  const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
+
+  // 캔버스에 채우기 영역 그리기
+  const drawFillArea = useCallback(() => {
+    if (!canvasRef.current || !chartApiRef.current || !candleSeriesRef.current || !pattern.fillArea) return;
+
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const chart = chartApiRef.current;
+    const series = candleSeriesRef.current;
+
+    // 캔버스 크기 조정
+    const container = chartRef.current;
+    if (!container) return;
+
+    const rect = container.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    canvas.style.width = `${rect.width}px`;
+    canvas.style.height = `${rect.height}px`;
+    ctx.scale(dpr, dpr);
+
+    // 클리어
+    ctx.clearRect(0, 0, rect.width, rect.height);
+
+    const fillArea = pattern.fillArea;
+    const points: { x: number; y: number }[] = [];
+
+    // 좌표 변환
+    for (const pt of fillArea.points) {
+      const x = chart.timeScale().timeToCoordinate(pt.time as Time);
+      const y = series.priceToCoordinate(pt.value);
+      if (x !== null && y !== null) {
+        points.push({ x, y });
+      }
+    }
+
+    if (points.length < 3) return;
+
+    // 폴리곤 채우기
+    ctx.beginPath();
+    ctx.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i++) {
+      ctx.lineTo(points[i].x, points[i].y);
+    }
+    ctx.closePath();
+
+    // 채우기
+    ctx.fillStyle = fillArea.color;
+    ctx.fill();
+
+    // 닫힌 다각형 외곽선은 패턴이 어색해 보일 수 있어 outlinePoints가 있을 때만 실제 스윙 경로를 그린다.
+    if (fillArea.outlinePoints && fillArea.outlinePoints.length >= 2) {
+      const outline: { x: number; y: number }[] = [];
+      for (const pt of fillArea.outlinePoints) {
+        const x = chart.timeScale().timeToCoordinate(pt.time as Time);
+        const y = series.priceToCoordinate(pt.value);
+        if (x !== null && y !== null) {
+          outline.push({ x, y });
+        }
+      }
+
+      if (outline.length >= 2) {
+        ctx.beginPath();
+        ctx.moveTo(outline[0].x, outline[0].y);
+        for (let i = 1; i < outline.length; i++) {
+          ctx.lineTo(outline[i].x, outline[i].y);
+        }
+        ctx.strokeStyle = fillArea.borderColor;
+        ctx.lineWidth = fillArea.borderWidth;
+        ctx.stroke();
+      }
+    }
+
+    // 패턴 이름 라벨 그리기
+    if (points.length >= 2) {
+      const labelX = points[0].x + 10;
+      const labelY = Math.min(...points.map(p => p.y)) - 10;
+
+      const labelText = pattern.name;
+      ctx.font = 'bold 11px sans-serif';
+      const metrics = ctx.measureText(labelText);
+      const padding = 6;
+      const labelWidth = metrics.width + padding * 2;
+      const labelHeight = 18;
+
+      // 라벨 배경
+      ctx.fillStyle = fillArea.borderColor;
+      ctx.beginPath();
+      ctx.roundRect(labelX, labelY - labelHeight + 4, labelWidth, labelHeight, 4);
+      ctx.fill();
+
+      // 라벨 텍스트
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(labelText, labelX + padding, labelY);
+    }
+  }, [pattern]);
+
+  // 캔버스 초기화 함수
+  const clearCanvas = useCallback(() => {
+    if (!canvasRef.current) return;
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+  }, []);
 
   useEffect(() => {
+    // 패턴이 변경될 때 먼저 캔버스 초기화
+    clearCanvas();
+
     if (!chartRef.current || !history.length) return;
 
     const chart = createChart(chartRef.current, {
@@ -64,13 +203,34 @@ export function ChartPatternChart({ history, market, pattern }: Props) {
       handleScale: { axisPressedMouseMove: true, mouseWheel: true, pinch: true },
     });
 
+    chartApiRef.current = chart;
+
     // Chronological order, deduplicated
     const sorted = [...history]
       .sort((a, b) => a.date.localeCompare(b.date))
       .filter((h, i, arr) => i === 0 || h.date !== arr[i - 1].date);
 
-    const display = sorted.slice(-120);
-    const displayDates = new Set(display.map(d => d.date));
+    const relevantDates = collectPatternDates(pattern);
+    let displayStart = Math.max(0, sorted.length - 120);
+    let displayEnd = sorted.length;
+
+    if (relevantDates.length > 0) {
+      const firstRelevantIdx = sorted.findIndex((bar) => bar.date >= relevantDates[0]);
+      const lastRelevantDate = relevantDates[relevantDates.length - 1];
+      const lastRelevantIdx = [...sorted].reverse().findIndex((bar) => bar.date <= lastRelevantDate);
+
+      if (firstRelevantIdx !== -1 && lastRelevantIdx !== -1) {
+        const resolvedLastIdx = sorted.length - 1 - lastRelevantIdx;
+        const patternSpan = Math.max(1, resolvedLastIdx - firstRelevantIdx + 1);
+        const leftPadding = Math.max(12, Math.round(patternSpan * 0.7));
+        const rightPadding = Math.max(18, Math.round(patternSpan * 0.9));
+
+        displayStart = Math.max(0, firstRelevantIdx - leftPadding);
+        displayEnd = Math.min(sorted.length, resolvedLastIdx + rightPadding + 1);
+      }
+    }
+
+    const display = sorted.slice(displayStart, displayEnd);
 
     // ── Candlestick ──────────────────────────────────────────
     const candleSeries = chart.addSeries(CandlestickSeries, {
@@ -93,6 +253,7 @@ export function ChartPatternChart({ history, market, pattern }: Props) {
       low:   h.low,
       close: h.price,
     })));
+    candleSeriesRef.current = candleSeries;
 
     // ── Volume ───────────────────────────────────────────────
     const volSeries = chart.addSeries(HistogramSeries, {
@@ -111,14 +272,15 @@ export function ChartPatternChart({ history, market, pattern }: Props) {
       for (const line of pattern.overlayLines) {
         if (line.points.length < 2) continue;
 
-        // Filter to dates that exist in display range, or clamp to display
         const firstDisplayDate = display[0].date;
         const lastDisplayDate  = display[display.length - 1].date;
 
-        // Clamp points to display window
         const pts = line.points
           .filter(p => p.time >= firstDisplayDate && p.time <= lastDisplayDate)
-          .filter(p => isFinite(p.value) && p.value > 0);
+          .filter(p => isFinite(p.value) && p.value > 0)
+          .sort((a, b) => a.time.localeCompare(b.time))
+          // 중복 시간 제거 (같은 시간이면 마지막 값 사용)
+          .filter((p, i, arr) => i === arr.length - 1 || p.time !== arr[i + 1].time);
 
         if (pts.length < 2) continue;
 
@@ -133,8 +295,8 @@ export function ChartPatternChart({ history, market, pattern }: Props) {
         });
         s.setData(pts.map(p => ({ time: p.time, value: p.value })));
       }
-    } else {
-      // Fallback: draw horizontal key levels if no overlay lines
+    } else if (!pattern.fillArea) {
+      // Fallback: draw horizontal key levels if no overlay lines and no fillArea
       const { support, resistance, neckline, target } = pattern.keyLevels;
       const lastDate  = display[display.length - 1].date;
       const firstDate = display[Math.max(0, display.length - 90)].date;
@@ -154,32 +316,85 @@ export function ChartPatternChart({ history, market, pattern }: Props) {
       addH(target,     '#a855f7', '목표가', LineStyle.SparseDotted);
     }
 
-    // ── Buy/Sell triangle marker ─────────────────────────────
+    // ── Pattern markers (key points) ──────────────────────────
+    const allMarkers: Array<{
+      time: string;
+      position: 'aboveBar' | 'belowBar';
+      color: string;
+      shape: 'circle' | 'arrowUp' | 'arrowDown' | 'square';
+      text: string;
+      size: number;
+    }> = [];
+
+    if (pattern.patternMarkers?.length) {
+      const firstDisplayDate = display[0].date;
+      const lastDisplayDate  = display[display.length - 1].date;
+
+      for (const marker of pattern.patternMarkers) {
+        if (marker.time >= firstDisplayDate && marker.time <= lastDisplayDate) {
+          allMarkers.push({
+            time: marker.time,
+            position: marker.position === 'above' ? 'aboveBar' : 'belowBar',
+            color: marker.color,
+            shape: 'circle',
+            text: marker.label,
+            size: 1,
+          });
+        }
+      }
+    }
+
+    // Add Buy/Sell signal marker
     if (pattern.detectedAt) {
       const markerCandle =
         display.find(d => d.date >= pattern.detectedAt) ?? display[display.length - 1];
-      createSeriesMarkers(candleSeries, [{
+      allMarkers.push({
         time:     markerCandle.date,
         position: pattern.signal === 'buy' ? 'belowBar' : 'aboveBar',
         color:    pattern.signal === 'buy' ? '#16a34a' : '#ef4444',
         shape:    pattern.signal === 'buy' ? 'arrowUp'  : 'arrowDown',
         text:     pattern.signal === 'buy' ? '▲ 매수'   : '▼ 매도',
         size:     2,
-      }]);
+      });
     }
+
+    if (allMarkers.length > 0) {
+      const sortedMarkers = allMarkers.sort((a, b) => a.time.localeCompare(b.time));
+      createSeriesMarkers(candleSeries, sortedMarkers);
+    }
+
+    // ── 채우기 영역 초기 그리기 ────────────────────────────────
+    chart.timeScale().fitContent();
+
+    // 약간의 딜레이 후 채우기 영역 그리기 (차트 렌더링 완료 대기)
+    const initialDrawTimeout = setTimeout(() => {
+      drawFillArea();
+    }, 100);
+
+    // ── 차트 이벤트 구독 ───────────────────────────────────────
+    const handleTimeRangeChange = () => drawFillArea();
+    chart.timeScale().subscribeVisibleLogicalRangeChange(handleTimeRangeChange);
 
     // ── Resize ───────────────────────────────────────────────
     const onResize = () => {
-      if (chartRef.current) chart.applyOptions({ width: chartRef.current.clientWidth });
+      if (chartRef.current) {
+        chart.applyOptions({ width: chartRef.current.clientWidth });
+        drawFillArea();
+      }
     };
     window.addEventListener('resize', onResize);
-    chart.timeScale().fitContent();
 
     return () => {
+      clearTimeout(initialDrawTimeout);
       window.removeEventListener('resize', onResize);
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(handleTimeRangeChange);
       chart.remove();
+      chartApiRef.current = null;
+      candleSeriesRef.current = null;
+      // 클린업 시 캔버스도 초기화
+      clearCanvas();
     };
-  }, [history, market, pattern]);
+  }, [history, market, pattern, drawFillArea, clearCanvas]);
 
   // ── Legend ───────────────────────────────────────────────
   const overlayLabels = pattern.overlayLines
@@ -187,14 +402,27 @@ export function ChartPatternChart({ history, market, pattern }: Props) {
     .map(l => ({ color: l.color, label: l.label!, style: l.style }))
     ?? [];
 
-  // Deduplicate by label
   const uniqueLabels = overlayLabels.filter(
     (item, idx, arr) => arr.findIndex(x => x.label === item.label) === idx
   );
 
+  // fillArea 색상 범례 추가
+  const fillAreaLabel = pattern.fillArea ? {
+    color: pattern.fillArea.borderColor,
+    label: pattern.name,
+  } : null;
+
   return (
     <div className="relative w-full h-full flex flex-col">
-      <div ref={chartRef} className="flex-1" />
+      {/* Chart container with canvas overlay */}
+      <div className="relative flex-1">
+        <div ref={chartRef} className="w-full h-full" />
+        <canvas
+          ref={canvasRef}
+          className="absolute top-0 left-0 pointer-events-none"
+          style={{ zIndex: 1 }}
+        />
+      </div>
 
       {/* Legend */}
       <div className="flex flex-wrap gap-2 mt-4 px-2 pb-2">
@@ -208,6 +436,20 @@ export function ChartPatternChart({ history, market, pattern }: Props) {
             <span className="text-[10px] text-gray-600 font-bold">{item.label}</span>
           </div>
         ))}
+
+        {/* 패턴 영역 범례 */}
+        {fillAreaLabel && (
+          <div className="flex items-center gap-1.5 bg-gray-50 px-2 py-1 rounded-lg border border-gray-100">
+            <div
+              className="w-4 h-3 rounded-sm border-2"
+              style={{
+                backgroundColor: pattern.fillArea?.color,
+                borderColor: fillAreaLabel.color,
+              }}
+            />
+            <span className="text-[10px] text-gray-600 font-bold">{fillAreaLabel.label}</span>
+          </div>
+        )}
 
         {/* 패턴 오버레이 범례 */}
         {uniqueLabels.map(item => (

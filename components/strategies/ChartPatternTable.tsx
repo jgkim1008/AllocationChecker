@@ -12,11 +12,11 @@ interface Props {
 
 const CATEGORY_COLOR: Record<string, string> = {
   '반전':    'bg-purple-50 text-purple-700',
+  '지속':    'bg-emerald-50 text-emerald-700',
   '삼각형':  'bg-blue-50 text-blue-700',
   '쐐기':    'bg-indigo-50 text-indigo-700',
   '깃발':    'bg-amber-50 text-amber-700',
   '직사각형':'bg-gray-100 text-gray-700',
-  'V형':     'bg-rose-50 text-rose-700',
 };
 
 export function ChartPatternTable({ stocks, loading }: Props) {
