@@ -63,6 +63,21 @@ export async function GET(request: NextRequest) {
 
     const liveOrders = buildLiveOrders(config, quoteResult.data.currentPrice);
 
+    // 오늘 이미 제출된 주문 확인 (중복 방지용 정보 제공)
+    const serviceSupabase = await createServiceClient();
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const { data: todayOrders } = await serviceSupabase
+      .from('pending_orders')
+      .select('side, status, order_time, order_quantity, order_price')
+      .eq('user_id', user.id)
+      .eq('symbol', symbol.toUpperCase())
+      .in('status', ['submitted', 'partial', 'filled'])
+      .gte('order_time', todayStart.toISOString());
+
+    const todayBuyExists = (todayOrders ?? []).some(o => o.side === 'buy');
+    const todaySellExists = (todayOrders ?? []).some(o => o.side === 'sell');
+
     // AutoTradePanel 호환을 위해 id 추가
     const withId = (orders: BrokerOrderRequest[], prefix: string) =>
       orders.map((o, i) => ({ ...o, id: `${prefix}-${i}`, targetPrice: o.price, status: 'pending' }));
@@ -75,6 +90,11 @@ export async function GET(request: NextRequest) {
           buyOrders: withId(liveOrders.buyOrders, 'buy'),
           sellOrders: withId(liveOrders.sellOrders, 'sell'),
           summary: liveOrders.summary,
+        },
+        todayDuplicates: {
+          buyExists: todayBuyExists,
+          sellExists: todaySellExists,
+          orders: todayOrders ?? [],
         },
       },
     });
@@ -113,11 +133,38 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: clientResult.error || '브로커에 연결되지 않았습니다.' }, { status: 400 });
     }
 
-    const results: { order: typeof orders[0]; success: boolean; result?: any; error?: string }[] = [];
+    // 오늘 이미 제출된 주문 목록 조회 (중복 방지)
+    const serviceSupabase = await createServiceClient();
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const { data: todayOrders } = await serviceSupabase
+      .from('pending_orders')
+      .select('symbol, side, status')
+      .eq('user_id', user.id)
+      .in('status', ['submitted', 'partial', 'filled'])
+      .gte('order_time', todayStart.toISOString());
+
+    const submittedToday = new Set(
+      (todayOrders ?? []).map(o => `${o.symbol.toUpperCase()}:${o.side}`)
+    );
+
+    const results: { order: typeof orders[0]; success: boolean; result?: any; error?: string; duplicate?: boolean }[] = [];
 
     for (const order of orders) {
       if (order.status !== 'confirmed') {
         results.push({ order, success: false, error: '확인되지 않은 주문입니다.' });
+        continue;
+      }
+
+      // 중복 주문 차단
+      const key = `${order.symbol.toUpperCase()}:${order.side}`;
+      if (submittedToday.has(key)) {
+        results.push({
+          order: { ...order, status: 'duplicate' },
+          success: false,
+          duplicate: true,
+          error: `오늘 이미 ${order.side === 'buy' ? '매수' : '매도'} 주문이 제출되었습니다. (중복 방지)`,
+        });
         continue;
       }
 

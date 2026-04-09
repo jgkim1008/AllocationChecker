@@ -166,21 +166,35 @@ function getV3SellPrices(symbol: string, avgCost: number, t: number): {
   };
 }
 
-// API에서 포지션 데이터 가져오기
+// API에서 포지션 데이터 가져오기 (매도 내역 반영)
 async function fetchTrackerPosition(symbol: string): Promise<TrackerPosition | null> {
   if (!symbol) return null;
   try {
-    const res = await fetch(`/api/infinite-buy/records?symbol=${encodeURIComponent(symbol)}`);
-    if (!res.ok) return null;
-    const records = await res.json();
+    const [buyRes, sellRes] = await Promise.all([
+      fetch(`/api/infinite-buy/records?symbol=${encodeURIComponent(symbol)}`),
+      fetch(`/api/infinite-buy/sell-records?symbol=${encodeURIComponent(symbol)}`),
+    ]);
+    if (!buyRes.ok) return null;
+    const records = await buyRes.json();
     if (!records || records.length === 0) return null;
 
-    const shares = records.reduce((s: number, b: { shares: number }) => s + b.shares, 0);
-    const invested = records.reduce((s: number, b: { amount: number }) => s + b.amount, 0);
+    const buyShares = records.reduce((s: number, b: { shares: number }) => s + b.shares, 0);
+    const buyInvested = records.reduce((s: number, b: { amount: number }) => s + b.amount, 0);
+
+    let soldShares = 0;
+    if (sellRes.ok) {
+      const sellRecords = await sellRes.json();
+      soldShares = sellRecords.reduce((s: number, r: { shares: number }) => s + r.shares, 0);
+    }
+
+    const remainingShares = buyShares - soldShares;
+    if (remainingShares <= 0) return null; // 전량 매도 완료 → 신규 사이클
+
+    // invested/avgCost는 매수 기준 그대로 유지 (T값은 매수 횟수 기반)
     return {
-      shares,
-      invested,
-      avgCost: shares > 0 ? invested / shares : 0,
+      shares: remainingShares,
+      invested: buyInvested,
+      avgCost: buyShares > 0 ? buyInvested / buyShares : 0,
       divisionsUsed: records.length,
     };
   } catch {

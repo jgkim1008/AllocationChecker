@@ -218,6 +218,15 @@ export function BuyTracker({ symbol, capital, n, targetRate, market = 'US', onCy
 
   const progressPct = Math.min((divisionsUsed / n) * 100, 100);
 
+  // 실현손익: 각 매도 건의 (매도가 - 평균단가) × 수량 합산
+  const totalRealizedPnl = avgCost > 0 && sellRecords.length > 0
+    ? sellRecords.reduce((sum, s) => sum + (s.price - avgCost) * s.shares, 0)
+    : null;
+  const totalSellAmount = sellRecords.reduce((sum, s) => sum + s.amount, 0);
+  const realizedPct = totalInvested > 0 && totalRealizedPnl != null
+    ? totalRealizedPnl / totalInvested
+    : null;
+
   return (
     <div className="space-y-6">
       {/* Position Summary Cards */}
@@ -305,6 +314,33 @@ export function BuyTracker({ symbol, capital, n, targetRate, market = 'US', onCy
               </p>
               <p className="text-xs text-gray-400 mt-0.5">
                 목표 {fmtP(targetValue, market)}
+              </p>
+            </>
+          ) : (
+            <p className="text-lg font-bold text-gray-400">-</p>
+          )}
+        </div>
+
+        <div className="bg-white border border-gray-200 rounded-xl p-4">
+          <p className="text-xs text-gray-500 mb-1">실현손익</p>
+          {totalRealizedPnl != null ? (
+            <>
+              <p
+                className={`text-lg font-bold ${
+                  totalRealizedPnl >= 0 ? 'text-green-600' : 'text-red-600'
+                }`}
+              >
+                {totalRealizedPnl >= 0 ? '+' : ''}{fmtP(totalRealizedPnl, market)}
+              </p>
+              <p
+                className={`text-xs mt-0.5 ${
+                  totalRealizedPnl >= 0 ? 'text-green-500' : 'text-red-400'
+                }`}
+              >
+                {realizedPct != null
+                  ? `${realizedPct >= 0 ? '+' : ''}${(realizedPct * 100).toFixed(2)}%`
+                  : ''}
+                <span className="text-gray-400 ml-1">매도총액 {fmtP(totalSellAmount, market)}</span>
               </p>
             </>
           ) : (

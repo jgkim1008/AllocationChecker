@@ -59,14 +59,14 @@ export default function InfiniteBuyPage() {
   const [isCustom, setIsCustom] = useState(false);
 
   // 전략 버전
-  const [version, setVersion] = useState<StrategyVersion>('v2.2');
+  const [version, setVersion] = useState<StrategyVersion>('v3.0');
 
   const [capital, setCapital] = useState<number>(5000);
   const [capitalInput, setCapitalInput] = useState<string>('5000');
-  const [n, setN] = useState<number>(40);
-  const [nInput, setNInput] = useState<string>('40');
-  const [targetRate, setTargetRate] = useState<number>(0.10);
-  const [targetRateInput, setTargetRateInput] = useState<string>('10');
+  const [n, setN] = useState<number>(20);
+  const [nInput, setNInput] = useState<string>('20');
+  const [targetRate, setTargetRate] = useState<number>(0.15);
+  const [targetRateInput, setTargetRateInput] = useState<string>('15');
   // V2.2/V3.0에서는 variableBuy가 사용되지 않음 (버전별 규칙 적용)
   const variableBuy = false;
 
@@ -91,8 +91,9 @@ export default function InfiniteBuyPage() {
     setTargetRateInput((rate * 100).toString());
   };
 
-  // 실시간 현재가 (프리셋 버튼 표시용)
+  // 실시간 현재가 (프리셋 버튼 표시용 + 최소 투자금 계산용)
   const [presetPrices, setPresetPrices] = useState<Record<string, number>>({});
+  const [customPrice, setCustomPrice] = useState<number | null>(null);
 
   useEffect(() => {
     fetch(`/api/stocks/prices?symbols=${PRESET_SYMBOLS.join(',')}`)
@@ -110,6 +111,27 @@ export default function InfiniteBuyPage() {
 
   const activeSymbol = isCustom ? customSymbol.trim().toUpperCase() : symbol;
   const activeMarket = KR_SYMBOLS.has(activeSymbol) ? 'KR' : 'US';
+
+  // 커스텀 종목 가격 별도 조회
+  useEffect(() => {
+    if (!isCustom || !activeSymbol) { setCustomPrice(null); return; }
+    fetch(`/api/stocks/prices?symbols=${encodeURIComponent(activeSymbol)}`)
+      .then((r) => r.json())
+      .then((data) => {
+        const p = data?.prices?.[activeSymbol]?.price;
+        setCustomPrice(p && p > 0 ? p : null);
+      })
+      .catch(() => setCustomPrice(null));
+  }, [isCustom, activeSymbol]);
+
+  const activePrice = isCustom ? customPrice : (presetPrices[activeSymbol] ?? null);
+
+  function applyMinCapital() {
+    if (!activePrice || activePrice <= 0) return;
+    const minCap = Math.ceil(activePrice * n);
+    setCapital(minCap);
+    setCapitalInput(minCap.toString());
+  }
 
   // 종목 변경 시 해당 종목의 사이클 번호 불러오기
   useEffect(() => {
@@ -266,21 +288,31 @@ export default function InfiniteBuyPage() {
               총 투자금 (C)
               <span className="font-normal text-gray-400 ml-1">— 이번 사이클에 쓸 전체 금액</span>
             </label>
-            <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">{activeMarket === 'KR' ? '₩' : '$'}</span>
-              <input
-                type="text"
-                inputMode="decimal"
-                value={capitalInput}
-                onChange={(e) => setCapitalInput(e.target.value)}
-                onBlur={() => {
-                  const v = parseFloat(capitalInput);
-                  const clamped = isNaN(v) ? capital : Math.max(100, v);
-                  setCapital(clamped);
-                  setCapitalInput(clamped.toString());
-                }}
-                className="w-full text-sm border border-gray-200 rounded-lg pl-7 pr-3 py-2 bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-green-500"
-              />
+            <div className="flex gap-1.5">
+              <div className="relative flex-1">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">{activeMarket === 'KR' ? '₩' : '$'}</span>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={capitalInput}
+                  onChange={(e) => setCapitalInput(e.target.value)}
+                  onBlur={() => {
+                    const v = parseFloat(capitalInput);
+                    const clamped = isNaN(v) ? capital : Math.max(100, v);
+                    setCapital(clamped);
+                    setCapitalInput(clamped.toString());
+                  }}
+                  className="w-full text-sm border border-gray-200 rounded-lg pl-7 pr-3 py-2 bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-green-500"
+                />
+              </div>
+              <button
+                onClick={applyMinCapital}
+                disabled={!activePrice}
+                title={activePrice ? `최소 투자금 적용 (현재가 × N = ${activeMarket === 'KR' ? '₩' : '$'}${Math.ceil(activePrice * n).toLocaleString()})` : '현재가 로딩 중'}
+                className="text-xs font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 border border-gray-200 px-2.5 py-2 rounded-lg transition-colors disabled:opacity-40 whitespace-nowrap"
+              >
+                최소
+              </button>
             </div>
           </div>
 

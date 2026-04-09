@@ -115,7 +115,11 @@ export function AutoTradePanel({
   const [executionResult, setExecutionResult] = useState<{
     success: boolean;
     message: string;
-    details?: { orderId: string; side: string; error?: string }[];
+    details?: { orderId: string; side: string; error?: string; duplicate?: boolean }[];
+  } | null>(null);
+  const [todayDuplicates, setTodayDuplicates] = useState<{
+    buyExists: boolean;
+    sellExists: boolean;
   } | null>(null);
 
   // 종목 검색
@@ -208,6 +212,7 @@ export function AutoTradePanel({
       if (data.success) {
         setDailyOrders(data.data.orders);
         setQuote(data.data.quote);
+        setTodayDuplicates(data.data.todayDuplicates ?? null);
         setConfirmedOrders(new Set());
       } else {
         setError(data.error || '주문 계산에 실패했습니다.');
@@ -260,10 +265,11 @@ export function AutoTradePanel({
       }
 
       const failCount: number = data.data?.summary?.failed ?? 0;
-      const details = (data.data?.results ?? []).map((r: { order: AutoTradeOrder; success: boolean; error?: string }) => ({
+      const details = (data.data?.results ?? []).map((r: { order: AutoTradeOrder; success: boolean; error?: string; duplicate?: boolean }) => ({
         orderId: r.order.id,
         side: r.order.side,
         error: r.success ? undefined : r.error,
+        duplicate: r.duplicate,
       }));
 
       if (failCount > 0) {
@@ -485,6 +491,25 @@ export function AutoTradePanel({
           <CardContent className="flex items-center gap-2 py-4 text-destructive">
             <AlertCircle className="h-5 w-5" />
             {error}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* 오늘 이미 주문한 경우 경고 */}
+      {todayDuplicates && (todayDuplicates.buyExists || todayDuplicates.sellExists) && (
+        <Card className="border-yellow-300 bg-yellow-50">
+          <CardContent className="flex items-start gap-2 py-4 text-yellow-800">
+            <AlertCircle className="h-5 w-5 mt-0.5 text-yellow-600 shrink-0" />
+            <div className="text-sm">
+              <p className="font-semibold">오늘 이미 주문이 제출되었습니다</p>
+              <p className="text-yellow-700 mt-0.5">
+                {[
+                  todayDuplicates.buyExists && '매수',
+                  todayDuplicates.sellExists && '매도',
+                ].filter(Boolean).join(' · ')} 주문이 오늘 이미 존재합니다.
+                동일 주문을 다시 실행하면 중복 주문이 차단됩니다.
+              </p>
+            </div>
           </CardContent>
         </Card>
       )}
@@ -711,8 +736,13 @@ export function AutoTradePanel({
                     : 'border-red-200 bg-red-50 text-red-800'
                 }`}>
                   <p className="font-medium">{executionResult.success ? '✅' : '❌'} {executionResult.message}</p>
-                  {executionResult.details?.filter(d => d.error).map((d, i) => (
-                    <p key={i} className="mt-1 text-xs">
+                  {executionResult.details?.filter(d => d.duplicate).map((d, i) => (
+                    <p key={`dup-${i}`} className="mt-1 text-xs text-yellow-700">
+                      ⚠️ {d.side === 'buy' ? '매수' : '매도'} 중복 차단: 오늘 이미 주문 존재
+                    </p>
+                  ))}
+                  {executionResult.details?.filter(d => d.error && !d.duplicate).map((d, i) => (
+                    <p key={`err-${i}`} className="mt-1 text-xs">
                       {d.side === 'buy' ? '매수' : '매도'} 실패: {d.error}
                     </p>
                   ))}

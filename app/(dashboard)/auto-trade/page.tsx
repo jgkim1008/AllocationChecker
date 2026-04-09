@@ -1,8 +1,8 @@
 import { Metadata } from 'next';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { BrokerConnect, AutoTradePanel, OrderHistory, BalancePanel } from '@/components/auto-trade';
+import { BrokerConnect, AutoTradePanel, OrderHistory, BalancePanel, PositionSync } from '@/components/auto-trade';
 import { PremiumGate } from '@/components/PremiumGate';
-import { Bot, Link, History, TrendingUp, Construction, Wallet } from 'lucide-react';
+import { Bot, Link, History, TrendingUp, Construction, Wallet, GitCompare } from 'lucide-react';
 
 export const metadata: Metadata = {
   title: '자동매매 - AllocationChecker',
@@ -48,7 +48,7 @@ export default function AutoTradePage() {
       </div>
 
       <Tabs defaultValue="trade" className="space-y-4">
-        <TabsList className="grid w-full grid-cols-4 lg:w-[520px]">
+        <TabsList className="grid w-full grid-cols-5 lg:w-[650px]">
           <TabsTrigger value="trade" className="flex items-center gap-2">
             <TrendingUp className="h-4 w-4" />
             매매
@@ -56,6 +56,10 @@ export default function AutoTradePage() {
           <TabsTrigger value="balance" className="flex items-center gap-2">
             <Wallet className="h-4 w-4" />
             잔고
+          </TabsTrigger>
+          <TabsTrigger value="sync" className="flex items-center gap-2">
+            <GitCompare className="h-4 w-4" />
+            싱크
           </TabsTrigger>
           <TabsTrigger value="history" className="flex items-center gap-2">
             <History className="h-4 w-4" />
@@ -73,6 +77,10 @@ export default function AutoTradePage() {
 
         <TabsContent value="balance">
           <BalancePanel />
+        </TabsContent>
+
+        <TabsContent value="sync">
+          <PositionSync />
         </TabsContent>
 
         <TabsContent value="history">
