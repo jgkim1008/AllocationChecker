@@ -25,14 +25,14 @@ export async function GET(request: NextRequest) {
     const symbol = searchParams.get('symbol')?.toUpperCase();
     if (!symbol) return NextResponse.json({ success: false, error: 'symbol이 필요합니다.' }, { status: 400 });
 
-    // 1. 증권사 잔고 조회
+    // 1. 증권사 포지션 조회
     const clientResult = await getBrokerClient(user.id, brokerType);
     if (!clientResult.success || !clientResult.client) {
       return NextResponse.json({ success: false, error: clientResult.error || '브로커에 연결되지 않았습니다.' }, { status: 400 });
     }
 
-    const balanceResult = await clientResult.client.getBalance();
-    const brokerPosition = balanceResult.data?.positions?.find(
+    const positionsResult = await clientResult.client.getPositions();
+    const brokerPosition = positionsResult.data?.find(
       (p) => p.symbol.toUpperCase() === symbol
     ) ?? null;
 

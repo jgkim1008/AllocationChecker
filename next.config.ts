@@ -6,6 +6,7 @@ const nextConfig: NextConfig = {
     '@fullcalendar/core',
     '@fullcalendar/daygrid',
     '@fullcalendar/interaction',
+    'otplib',
   ],
 };
 
