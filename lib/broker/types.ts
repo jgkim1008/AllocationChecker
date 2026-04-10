@@ -111,7 +111,6 @@ export interface KISCredentials {
   appKey: string;
   appSecret: string;
   accountNumber: string;      // XXXXXXXX-XX 형식
-  isVirtual: boolean;         // 모의투자 여부
 }
 
 // API 인증 정보 (키움)

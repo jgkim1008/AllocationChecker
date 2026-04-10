@@ -183,6 +183,25 @@ export class KISQuote {
   }
 
   /**
+   * 해외주식 거래소 코드 감지 (주문용: NASDAQ/NYSE/AMEX)
+   * 시세 API는 NAS/NYS/AMS, 주문 API는 NASD/NYSE/AMEX 사용
+   */
+  async getExchangeForSymbol(symbol: string): Promise<keyof typeof KIS_EXCHANGE_CODE> {
+    const priceToOrderExchange: Record<string, keyof typeof KIS_EXCHANGE_CODE> = {
+      NAS: 'NASDAQ',
+      NYS: 'NYSE',
+      AMS: 'AMEX',
+    };
+    for (const excd of ['NAS', 'NYS', 'AMS']) {
+      const result = await this.getOverseasQuoteByCode(symbol, excd);
+      if (result.success) {
+        return priceToOrderExchange[excd];
+      }
+    }
+    return 'NASDAQ'; // fallback
+  }
+
+  /**
    * 시세 조회 (자동 시장 판별)
    */
   async getQuote(symbol: string): Promise<BrokerResponse<Quote>> {

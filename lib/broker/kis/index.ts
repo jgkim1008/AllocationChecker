@@ -120,6 +120,10 @@ export class KISClient implements IBroker {
         error: { code: 'NOT_CONNECTED', message: '연결되지 않았습니다.' },
       };
     }
+    if (request.market === 'overseas') {
+      const exchange = await this.quote.getExchangeForSymbol(request.symbol);
+      return this.order.createOverseasOrder(request, exchange);
+    }
     return this.order.createOrder(request);
   }
 

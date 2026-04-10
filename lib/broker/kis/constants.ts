@@ -74,13 +74,13 @@ export const KIS_DOMESTIC_ORDER_TYPE = {
   SELL_OVERNIGHT: '07',
 } as const;
 
-// 거래구분 코드 (해외)
+// 거래구분 코드 (해외 - 미국)
 export const KIS_OVERSEAS_ORDER_TYPE = {
-  LIMIT: '00',            // 지정가
-  MARKET: '01',           // 시장가 (나스닥 불가)
-  LOC: '32',              // LOC (장마감 지정가)
-  MOC: '34',              // MOC (장마감 시장가)
-  EXTENDED_LIMIT: '05',   // 장전/장후 지정가
+  LIMIT: '00',    // 지정가
+  LOO: '32',      // LOO 장개시지정가 (Limit-On-Open)
+  MOC: '33',      // MOC 장마감시장가 (Market-On-Close, 매도 전용)
+  LOC: '34',      // LOC 장마감지정가 (Limit-On-Close)
+  MOO: '31',      // MOO 장개시시장가 (Market-On-Open, 매도 전용)
 } as const;
 
 // 해외 거래소 코드
@@ -123,9 +123,9 @@ export const KIS_TR_ID = {
     PRICE: 'HHDFS00000300',
     DAILY_PRICE: 'HHDFS76240000',
     BALANCE: 'TTTS3012R',
-    BUY: 'TTTS0308U',     // 미국 매수
-    SELL: 'TTTS0307U',    // 미국 매도
-    CANCEL: 'TTTS0309U',  // 미국 정정취소
+    BUY: 'TTTT1002U',     // 미국 매수 (NASD/NYSE/AMEX)
+    SELL: 'TTTT1006U',    // 미국 매도 (NASD/NYSE/AMEX)
+    CANCEL: 'TTTT1004U',  // 미국 정정취소
     ORDERS: 'TTTS3035R',
   },
   // 해외주식 - 모의
@@ -133,9 +133,9 @@ export const KIS_TR_ID = {
     PRICE: 'HHDFS00000300',
     DAILY_PRICE: 'HHDFS76240000',
     BALANCE: 'VTTS3012R',
-    BUY: 'VTTS0308U',
-    SELL: 'VTTS0307U',
-    CANCEL: 'VTTS0309U',
+    BUY: 'VTTT1002U',
+    SELL: 'VTTT1006U',
+    CANCEL: 'VTTT1004U',
     ORDERS: 'VTTS3035R',
   },
 } as const;

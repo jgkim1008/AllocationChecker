@@ -93,13 +93,7 @@ export class KISOrder {
   async createDomesticOrder(request: OrderRequest): Promise<BrokerResponse<Order>> {
     const [accountNo, accountProduct] = this.auth.getAccountParts();
     const isBuy = request.side === 'buy';
-    const trId = this.auth.isVirtual()
-      ? isBuy
-        ? KIS_TR_ID.DOMESTIC_VIRTUAL.BUY
-        : KIS_TR_ID.DOMESTIC_VIRTUAL.SELL
-      : isBuy
-        ? KIS_TR_ID.DOMESTIC.BUY
-        : KIS_TR_ID.DOMESTIC.SELL;
+    const trId = isBuy ? KIS_TR_ID.DOMESTIC.BUY : KIS_TR_ID.DOMESTIC.SELL;
 
     // 주문 유형 코드 결정
     let orderTypeCode: string;
@@ -186,21 +180,15 @@ export class KISOrder {
   ): Promise<BrokerResponse<Order>> {
     const [accountNo, accountProduct] = this.auth.getAccountParts();
     const isBuy = request.side === 'buy';
-    const trId = this.auth.isVirtual()
-      ? isBuy
-        ? KIS_TR_ID.OVERSEAS_VIRTUAL.BUY
-        : KIS_TR_ID.OVERSEAS_VIRTUAL.SELL
-      : isBuy
-        ? KIS_TR_ID.OVERSEAS.BUY
-        : KIS_TR_ID.OVERSEAS.SELL;
+    const trId = isBuy ? KIS_TR_ID.OVERSEAS.BUY : KIS_TR_ID.OVERSEAS.SELL;
 
     const exchangeCode = KIS_EXCHANGE_CODE[exchange];
-
-    // 주문 유형 코드 결정
+    // 주문 유형 코드 결정 (미국 주식 전용 TR ID 기준)
+    // MOC('33'), MOO('31')는 매도 전용 / LOC('34'), LOO('32')는 매수/매도 모두 가능
     let orderTypeCode: string;
     switch (request.orderType) {
-      case 'market':
-        orderTypeCode = KIS_OVERSEAS_ORDER_TYPE.MARKET;
+      case 'moc':
+        orderTypeCode = isBuy ? KIS_OVERSEAS_ORDER_TYPE.LOC : KIS_OVERSEAS_ORDER_TYPE.MOC;
         break;
       case 'loc':
         orderTypeCode = KIS_OVERSEAS_ORDER_TYPE.LOC;
@@ -226,7 +214,7 @@ export class KISOrder {
             PDNO: request.symbol,
             ORD_DVSN: orderTypeCode,
             ORD_QTY: request.quantity.toString(),
-            OVRS_ORD_UNPR: request.orderType === 'market' ? '0' : (request.price?.toFixed(2) || '0'),
+            OVRS_ORD_UNPR: orderTypeCode === KIS_OVERSEAS_ORDER_TYPE.MOC ? '0' : (request.price?.toFixed(2) || '0'),
             ORD_SVR_DVSN_CD: '0',
           }),
         }
@@ -293,9 +281,7 @@ export class KISOrder {
     quantity: number
   ): Promise<BrokerResponse<void>> {
     const [accountNo, accountProduct] = this.auth.getAccountParts();
-    const trId = this.auth.isVirtual()
-      ? KIS_TR_ID.DOMESTIC_VIRTUAL.CANCEL
-      : KIS_TR_ID.DOMESTIC.CANCEL;
+    const trId = KIS_TR_ID.DOMESTIC.CANCEL;
 
     try {
       const response = await fetch(
@@ -354,9 +340,7 @@ export class KISOrder {
     exchange: keyof typeof KIS_EXCHANGE_CODE = 'NASDAQ'
   ): Promise<BrokerResponse<void>> {
     const [accountNo, accountProduct] = this.auth.getAccountParts();
-    const trId = this.auth.isVirtual()
-      ? KIS_TR_ID.OVERSEAS_VIRTUAL.CANCEL
-      : KIS_TR_ID.OVERSEAS.CANCEL;
+    const trId = KIS_TR_ID.OVERSEAS.CANCEL;
 
     const exchangeCode = KIS_EXCHANGE_CODE[exchange];
 
@@ -411,9 +395,7 @@ export class KISOrder {
    */
   async getDomesticOrders(): Promise<BrokerResponse<Order[]>> {
     const [accountNo, accountProduct] = this.auth.getAccountParts();
-    const trId = this.auth.isVirtual()
-      ? KIS_TR_ID.DOMESTIC_VIRTUAL.ORDERS
-      : KIS_TR_ID.DOMESTIC.ORDERS;
+    const trId = KIS_TR_ID.DOMESTIC.ORDERS;
 
     try {
       const url = new URL(`${this.auth.getBaseUrl()}${KIS_ENDPOINTS.DOMESTIC.ORDERS}`);
@@ -488,9 +470,7 @@ export class KISOrder {
    */
   async getOverseasOrders(): Promise<BrokerResponse<Order[]>> {
     const [accountNo, accountProduct] = this.auth.getAccountParts();
-    const trId = this.auth.isVirtual()
-      ? KIS_TR_ID.OVERSEAS_VIRTUAL.ORDERS
-      : KIS_TR_ID.OVERSEAS.ORDERS;
+    const trId = KIS_TR_ID.OVERSEAS.ORDERS;
 
     try {
       const url = new URL(`${this.auth.getBaseUrl()}${KIS_ENDPOINTS.OVERSEAS.ORDERS}`);

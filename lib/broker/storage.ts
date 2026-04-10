@@ -5,7 +5,7 @@
  * - DB 저장: AES-256-GCM 암호화하여 Supabase에 영구 저장 (TOTP 2FA 필요)
  *
  * 로컬 개발 편의: .env.local에 KIS_APP_KEY / KIS_APP_SECRET /
- *   KIS_ACCOUNT_NUMBER / KIS_IS_VIRTUAL 이 모두 있으면 'dev-user:kis' 로 자동 등록합니다.
+ *   KIS_ACCOUNT_NUMBER 이 모두 있으면 'dev-user:kis' 로 자동 등록합니다.
  */
 
 import type { BrokerType, KISCredentials, KiwoomCredentials, TokenInfo } from './types';
@@ -41,7 +41,6 @@ export function getEnvKISCredentials(): KISCredentials | null {
     appKey,
     appSecret,
     accountNumber,
-    isVirtual: process.env.KIS_IS_VIRTUAL !== 'false',
   };
 }
 

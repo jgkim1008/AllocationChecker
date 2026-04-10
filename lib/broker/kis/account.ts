@@ -66,9 +66,7 @@ export class KISAccount {
    */
   async getDomesticBalance(): Promise<BrokerResponse<{ balance: Balance; positions: Position[] }>> {
     const [accountNo, accountProduct] = this.auth.getAccountParts();
-    const trId = this.auth.isVirtual()
-      ? KIS_TR_ID.DOMESTIC_VIRTUAL.BALANCE
-      : KIS_TR_ID.DOMESTIC.BALANCE;
+    const trId = KIS_TR_ID.DOMESTIC.BALANCE;
 
     try {
       const url = new URL(`${this.auth.getBaseUrl()}${KIS_ENDPOINTS.DOMESTIC.BALANCE}`);
@@ -162,9 +160,7 @@ export class KISAccount {
     exchangeCode: string
   ): Promise<BrokerResponse<{ balance: Balance; positions: Position[] }>> {
     const [accountNo, accountProduct] = this.auth.getAccountParts();
-    const trId = this.auth.isVirtual()
-      ? KIS_TR_ID.OVERSEAS_VIRTUAL.BALANCE
-      : KIS_TR_ID.OVERSEAS.BALANCE;
+    const trId = KIS_TR_ID.OVERSEAS.BALANCE;
 
     try {
       const url = new URL(`${this.auth.getBaseUrl()}${KIS_ENDPOINTS.OVERSEAS.BALANCE}`);

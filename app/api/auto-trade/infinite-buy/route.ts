@@ -156,6 +156,16 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
+      // 매도 주문 시 보유 수량 확인 (잔고 없으면 스킵)
+      if (order.side === 'sell') {
+        const positionsResult = await clientResult.client.getPositions();
+        const pos = positionsResult.data?.find(p => p.symbol.toUpperCase() === order.symbol.toUpperCase());
+        if (!pos || pos.quantity <= 0) {
+          results.push({ order: { ...order, status: 'skipped' }, success: false, error: '보유 잔고 없음 - 매도 스킵' });
+          continue;
+        }
+      }
+
       // 중복 주문 차단
       const key = `${order.symbol.toUpperCase()}:${order.side}`;
       if (submittedToday.has(key)) {

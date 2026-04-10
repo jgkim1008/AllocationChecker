@@ -22,9 +22,7 @@ export class KISAuth {
 
   constructor(credentials: KISCredentials) {
     this.credentials = credentials;
-    this.baseUrl = credentials.isVirtual
-      ? KIS_API_BASE_URL.VIRTUAL
-      : KIS_API_BASE_URL.REAL;
+    this.baseUrl = KIS_API_BASE_URL.REAL;
   }
 
   /**
@@ -171,13 +169,6 @@ export class KISAuth {
       throw new Error('계좌번호 형식이 올바르지 않습니다. (XXXXXXXX-XX)');
     }
     return [parts[0], parts[1]];
-  }
-
-  /**
-   * 모의투자 여부
-   */
-  isVirtual(): boolean {
-    return this.credentials.isVirtual;
   }
 
   /**

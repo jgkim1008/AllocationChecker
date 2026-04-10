@@ -123,7 +123,7 @@ export function BrokerConnect({ onConnect, onDisconnect }: BrokerConnectProps) {
     setSuccess(null);
 
     try {
-      const credentials = { appKey, appSecret, accountNumber, isVirtual: false };
+      const credentials = { appKey, appSecret, accountNumber };
 
       const response = await fetch('/api/broker/auth', {
         method: 'POST',
@@ -208,7 +208,7 @@ export function BrokerConnect({ onConnect, onDisconnect }: BrokerConnectProps) {
     setSuccess(null);
 
     try {
-      const credentials = { appKey, appSecret, accountNumber, isVirtual: false };
+      const credentials = { appKey, appSecret, accountNumber };
 
       const response = await fetch('/api/broker/credentials', {
         method: 'POST',
@@ -353,24 +353,46 @@ export function BrokerConnect({ onConnect, onDisconnect }: BrokerConnectProps) {
         <CardContent className="py-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Shield className={`h-4 w-4 ${isTotpEnabled ? 'text-green-500' : 'text-muted-foreground'}`} />
-              <span className="text-sm">
-                2단계 인증 (2FA): {isTotpEnabled ? '활성화됨' : '비활성화'}
-              </span>
-            </div>
-            {sessionState.hasValidSession && (
-              <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                <Clock className="h-3 w-3" />
-                <span>세션 {sessionState.remainingMinutes}분 남음</span>
+              <Shield className={`h-4 w-4 ${
+                !isTotpEnabled ? 'text-muted-foreground'
+                : sessionState.hasValidSession ? 'text-green-500'
+                : 'text-yellow-500'
+              }`} />
+              <div>
+                <span className="text-sm font-medium">2단계 인증 (2FA)</span>
+                <span className={`ml-2 text-xs px-2 py-0.5 rounded-full ${
+                  !isTotpEnabled
+                    ? 'bg-gray-100 text-gray-500'
+                    : sessionState.hasValidSession
+                      ? 'bg-green-100 text-green-700'
+                      : 'bg-yellow-100 text-yellow-700'
+                }`}>
+                  {!isTotpEnabled
+                    ? '미설정'
+                    : sessionState.hasValidSession
+                      ? `인증됨 · ${sessionState.remainingMinutes}분 남음`
+                      : '인증 필요'}
+                </span>
               </div>
-            )}
+            </div>
             {!isTotpEnabled && (
+              <Button variant="outline" size="sm" onClick={() => setShowTotpSetup(true)}>
+                설정하기
+              </Button>
+            )}
+            {isTotpEnabled && !sessionState.hasValidSession && (
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setShowTotpSetup(true)}
+                onClick={() => { setTotpVerifyAction('load'); setShowTotpVerify(true); }}
               >
-                설정하기
+                <Shield className="mr-1 h-4 w-4" />
+                인증하기
+              </Button>
+            )}
+            {isTotpEnabled && sessionState.hasValidSession && (
+              <Button variant="ghost" size="sm" onClick={() => setShowTotpSetup(true)} className="text-xs text-muted-foreground">
+                2FA 재설정
               </Button>
             )}
           </div>
@@ -415,29 +437,6 @@ export function BrokerConnect({ onConnect, onDisconnect }: BrokerConnectProps) {
         </Card>
       )}
 
-      {/* 저장된 API Key가 있지만 세션이 없을 때 */}
-      {isTotpEnabled && !sessionState.hasValidSession && (
-        <Card>
-          <CardContent className="py-4">
-            <div className="flex items-center justify-between">
-              <div className="text-sm text-muted-foreground">
-                저장된 API Key를 불러오려면 2FA 인증이 필요합니다.
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setTotpVerifyAction('load');
-                  setShowTotpVerify(true);
-                }}
-              >
-                <Shield className="mr-1 h-4 w-4" />
-                인증하기
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
 
       {/* 연결된 브로커 목록 */}
       {connectedBrokers.length > 0 && (
