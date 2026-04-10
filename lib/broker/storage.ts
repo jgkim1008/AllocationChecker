@@ -1,14 +1,16 @@
 /**
  * 브로커 인증 정보 저장/조회
  *
- * ⚠️  현재는 서버 메모리에만 저장합니다 (DB 저장 없음).
- *     서버 재시작 시 초기화되며, credentials는 어디에도 기록되지 않습니다.
+ * - 메모리 캐시: 서버 런타임 중 빠른 접근 (핫리로드 시에도 유지)
+ * - DB 저장: AES-256-GCM 암호화하여 Supabase에 영구 저장 (TOTP 2FA 필요)
  *
  * 로컬 개발 편의: .env.local에 KIS_APP_KEY / KIS_APP_SECRET /
  *   KIS_ACCOUNT_NUMBER / KIS_IS_VIRTUAL 이 모두 있으면 'dev-user:kis' 로 자동 등록합니다.
  */
 
 import type { BrokerType, KISCredentials, KiwoomCredentials, TokenInfo } from './types';
+import { createClient } from '@/lib/supabase/server';
+import { encryptCredentials, decryptCredentials } from '@/lib/crypto/encryption';
 
 // global에 저장 → Next.js 핫리로드 후에도 유지 (서버 재시작 시엔 초기화)
 declare global {
@@ -122,4 +124,151 @@ export function getCachedToken(userId: string, brokerType: BrokerType): TokenInf
  */
 export function clearCachedToken(userId: string, brokerType: BrokerType): void {
   tokenCache.delete(cacheKey(userId, brokerType));
+}
+
+// ============================================================
+// DB 저장 함수 (암호화 + TOTP 인증 필요)
+// ============================================================
+
+/**
+ * 브로커 자격증명을 DB에 암호화하여 저장
+ * 주의: TOTP 세션 검증은 API 레이어에서 수행
+ */
+export async function saveBrokerCredentialsToDB(
+  userId: string,
+  brokerType: BrokerType,
+  credentials: KISCredentials | KiwoomCredentials
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const supabase = await createClient();
+    const encryptedData = encryptCredentials(credentials);
+
+    const { error } = await supabase
+      .from('broker_credentials')
+      .upsert({
+        user_id: userId,
+        broker_type: brokerType,
+        encrypted_credentials: encryptedData.encrypted_credentials,
+        encryption_iv: encryptedData.encryption_iv,
+        encryption_tag: encryptedData.encryption_tag,
+        updated_at: new Date().toISOString(),
+      }, {
+        onConflict: 'user_id,broker_type',
+      });
+
+    if (error) {
+      console.error('DB 저장 오류:', error);
+      return { success: false, error: '자격증명 저장에 실패했습니다.' };
+    }
+
+    // 메모리 캐시에도 저장
+    credentialsCache.set(cacheKey(userId, brokerType), credentials);
+
+    return { success: true };
+  } catch (error) {
+    console.error('자격증명 DB 저장 오류:', error);
+    return { success: false, error: '서버 오류가 발생했습니다.' };
+  }
+}
+
+/**
+ * DB에서 브로커 자격증명 조회 및 복호화
+ * 주의: TOTP 세션 검증은 API 레이어에서 수행
+ */
+export async function getBrokerCredentialsFromDB(
+  userId: string,
+  brokerType: BrokerType
+): Promise<{ success: boolean; data?: KISCredentials | KiwoomCredentials; error?: string }> {
+  try {
+    const supabase = await createClient();
+
+    const { data, error } = await supabase
+      .from('broker_credentials')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('broker_type', brokerType)
+      .single();
+
+    if (error || !data) {
+      return { success: false, error: '저장된 자격증명이 없습니다.' };
+    }
+
+    const credentials = decryptCredentials<KISCredentials | KiwoomCredentials>(
+      data.encrypted_credentials,
+      data.encryption_iv,
+      data.encryption_tag
+    );
+
+    // 메모리 캐시에도 저장
+    credentialsCache.set(cacheKey(userId, brokerType), credentials);
+
+    return { success: true, data: credentials };
+  } catch (error) {
+    console.error('자격증명 DB 조회 오류:', error);
+    return { success: false, error: '복호화에 실패했습니다.' };
+  }
+}
+
+/**
+ * DB에서 브로커 자격증명 삭제
+ */
+export async function deleteBrokerCredentialsFromDB(
+  userId: string,
+  brokerType: BrokerType
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const supabase = await createClient();
+
+    const { error } = await supabase
+      .from('broker_credentials')
+      .delete()
+      .eq('user_id', userId)
+      .eq('broker_type', brokerType);
+
+    if (error) {
+      console.error('DB 삭제 오류:', error);
+      return { success: false, error: '삭제에 실패했습니다.' };
+    }
+
+    // 메모리 캐시에서도 삭제
+    credentialsCache.delete(cacheKey(userId, brokerType));
+    tokenCache.delete(cacheKey(userId, brokerType));
+
+    return { success: true };
+  } catch (error) {
+    console.error('자격증명 DB 삭제 오류:', error);
+    return { success: false, error: '서버 오류가 발생했습니다.' };
+  }
+}
+
+/**
+ * DB에 저장된 브로커 목록 조회 (자격증명 내용 제외)
+ */
+export async function getSavedBrokersFromDB(
+  userId: string
+): Promise<{ success: boolean; data?: { brokerType: BrokerType; savedAt: string }[]; error?: string }> {
+  try {
+    const supabase = await createClient();
+
+    const { data, error } = await supabase
+      .from('broker_credentials')
+      .select('broker_type, created_at')
+      .eq('user_id', userId);
+
+    if (error) {
+      console.error('DB 조회 오류:', error);
+      return { success: false, error: '조회에 실패했습니다.' };
+    }
+
+    return {
+      success: true,
+      data: (data || []).map(row => ({
+        brokerType: row.broker_type as BrokerType,
+        savedAt: row.created_at,
+      })),
+    };
+  } catch (error) {
+    console.error('저장된 브로커 목록 조회 오류:', error);
+    return { success: false, error: '서버 오류가 발생했습니다.' };
+  }
 }

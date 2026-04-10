@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   Card,
   CardHeader,
@@ -19,13 +19,36 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Loader2, CheckCircle, XCircle, Link, Unlink } from 'lucide-react';
+import {
+  Loader2,
+  CheckCircle,
+  XCircle,
+  Link,
+  Unlink,
+  Save,
+  Download,
+  Shield,
+  Clock,
+} from 'lucide-react';
+import { TOTPSetupDialog } from './TOTPSetupDialog';
+import { TOTPVerifyDialog } from './TOTPVerifyDialog';
 
 type BrokerType = 'kis' | 'kiwoom';
 
 interface BrokerConnectProps {
   onConnect?: (brokerType: BrokerType) => void;
   onDisconnect?: (brokerType: BrokerType) => void;
+}
+
+interface SavedBroker {
+  brokerType: BrokerType;
+  savedAt: string;
+}
+
+interface SessionState {
+  hasValidSession: boolean;
+  expiresAt?: string;
+  remainingMinutes?: number;
 }
 
 export function BrokerConnect({ onConnect, onDisconnect }: BrokerConnectProps) {
@@ -36,29 +59,63 @@ export function BrokerConnect({ onConnect, onDisconnect }: BrokerConnectProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [isCheckingStatus, setIsCheckingStatus] = useState(true);
   const [connectedBrokers, setConnectedBrokers] = useState<BrokerType[]>([]);
+  const [savedBrokers, setSavedBrokers] = useState<SavedBroker[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  // 연결 상태 확인
-  useEffect(() => {
-    checkConnectionStatus();
-  }, []);
+  // 2FA 관련 상태
+  const [isTotpEnabled, setIsTotpEnabled] = useState(false);
+  const [showTotpSetup, setShowTotpSetup] = useState(false);
+  const [showTotpVerify, setShowTotpVerify] = useState(false);
+  const [totpVerifyAction, setTotpVerifyAction] = useState<'save' | 'load' | null>(null);
+  const [sessionState, setSessionState] = useState<SessionState>({ hasValidSession: false });
 
-  const checkConnectionStatus = async () => {
+  // 연결 상태 및 2FA 상태 확인
+  const checkStatus = useCallback(async () => {
     setIsCheckingStatus(true);
     try {
-      const response = await fetch('/api/broker/auth');
-      const data = await response.json();
+      const [authRes, totpStatusRes, sessionRes] = await Promise.all([
+        fetch('/api/broker/auth'),
+        fetch('/api/broker/totp/setup'),
+        fetch('/api/broker/totp/verify'),
+      ]);
 
-      if (data.success) {
-        setConnectedBrokers(data.data.connectedBrokers || []);
+      const [authData, totpStatusData, sessionData] = await Promise.all([
+        authRes.json(),
+        totpStatusRes.json(),
+        sessionRes.json(),
+      ]);
+
+      if (authData.success) {
+        setConnectedBrokers(authData.data.connectedBrokers || []);
+      }
+
+      if (totpStatusData.success) {
+        setIsTotpEnabled(totpStatusData.data.isEnabled);
+      }
+
+      if (sessionData.success) {
+        setSessionState(sessionData.data);
+      }
+
+      // 세션이 유효하면 저장된 브로커 목록도 조회
+      if (sessionData.success && sessionData.data.hasValidSession) {
+        const savedRes = await fetch('/api/broker/credentials');
+        const savedData = await savedRes.json();
+        if (savedData.success) {
+          setSavedBrokers(savedData.data.savedBrokers || []);
+        }
       }
     } catch (err) {
-      console.error('연결 상태 확인 실패:', err);
+      console.error('상태 확인 실패:', err);
     } finally {
       setIsCheckingStatus(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    checkStatus();
+  }, [checkStatus]);
 
   const handleConnect = async () => {
     setIsLoading(true);
@@ -88,7 +145,7 @@ export function BrokerConnect({ onConnect, onDisconnect }: BrokerConnectProps) {
       } else {
         setError(data.error || '연결에 실패했습니다.');
       }
-    } catch (err) {
+    } catch {
       setError('서버 오류가 발생했습니다.');
     } finally {
       setIsLoading(false);
@@ -114,14 +171,156 @@ export function BrokerConnect({ onConnect, onDisconnect }: BrokerConnectProps) {
       } else {
         setError(data.error || '연결 해제에 실패했습니다.');
       }
-    } catch (err) {
+    } catch {
       setError('서버 오류가 발생했습니다.');
     } finally {
       setIsLoading(false);
     }
   };
 
+  // API Key 저장 (2FA 필요)
+  const handleSave = async () => {
+    if (!appKey || !appSecret || !accountNumber) {
+      setError('모든 필드를 입력해주세요.');
+      return;
+    }
+
+    // 2FA 미설정 시 설정 다이얼로그 표시
+    if (!isTotpEnabled) {
+      setShowTotpSetup(true);
+      return;
+    }
+
+    // 세션이 없으면 인증 필요
+    if (!sessionState.hasValidSession) {
+      setTotpVerifyAction('save');
+      setShowTotpVerify(true);
+      return;
+    }
+
+    // 실제 저장 수행
+    await performSave();
+  };
+
+  const performSave = async () => {
+    setIsLoading(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const credentials = { appKey, appSecret, accountNumber, isVirtual: false };
+
+      const response = await fetch('/api/broker/credentials', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ brokerType, credentials }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setSuccess('API Key가 안전하게 저장되었습니다.');
+        setSavedBrokers(prev => {
+          const filtered = prev.filter(b => b.brokerType !== brokerType);
+          return [...filtered, { brokerType, savedAt: new Date().toISOString() }];
+        });
+      } else if (data.requiresTotpSetup) {
+        setShowTotpSetup(true);
+      } else if (data.requiresTotpVerify) {
+        setTotpVerifyAction('save');
+        setShowTotpVerify(true);
+      } else {
+        setError(data.error || '저장에 실패했습니다.');
+      }
+    } catch {
+      setError('서버 오류가 발생했습니다.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // API Key 불러오기 (2FA 필요)
+  const handleLoad = async (type: BrokerType) => {
+    if (!isTotpEnabled) {
+      setError('2FA 설정이 필요합니다.');
+      setShowTotpSetup(true);
+      return;
+    }
+
+    if (!sessionState.hasValidSession) {
+      setBrokerType(type);
+      setTotpVerifyAction('load');
+      setShowTotpVerify(true);
+      return;
+    }
+
+    await performLoad(type);
+  };
+
+  const performLoad = async (type: BrokerType) => {
+    setIsLoading(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const response = await fetch(`/api/broker/credentials?brokerType=${type}`);
+      const data = await response.json();
+
+      if (data.success) {
+        const creds = data.data.credentials;
+        setBrokerType(type);
+        setAppKey(creds.appKey);
+        setAppSecret(creds.appSecret);
+        setAccountNumber(creds.accountNumber);
+        setSuccess('API Key를 불러왔습니다. 연결하기를 눌러 브로커에 연결하세요.');
+      } else if (data.requiresTotpVerify) {
+        setBrokerType(type);
+        setTotpVerifyAction('load');
+        setShowTotpVerify(true);
+      } else {
+        setError(data.error || '불러오기에 실패했습니다.');
+      }
+    } catch {
+      setError('서버 오류가 발생했습니다.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // TOTP 설정 완료 후
+  const handleTotpSetupSuccess = () => {
+    setIsTotpEnabled(true);
+    setSessionState({ hasValidSession: false });
+    setSuccess('2FA 설정이 완료되었습니다. 이제 API Key를 저장할 수 있습니다.');
+    checkStatus();
+  };
+
+  // TOTP 인증 성공 후
+  const handleTotpVerifySuccess = async (expiresAt: string) => {
+    setSessionState({
+      hasValidSession: true,
+      expiresAt,
+      remainingMinutes: 120,
+    });
+
+    if (totpVerifyAction === 'save') {
+      await performSave();
+    } else if (totpVerifyAction === 'load') {
+      await performLoad(brokerType);
+    }
+
+    setTotpVerifyAction(null);
+
+    // 저장된 브로커 목록 갱신
+    const savedRes = await fetch('/api/broker/credentials');
+    const savedData = await savedRes.json();
+    if (savedData.success) {
+      setSavedBrokers(savedData.data.savedBrokers || []);
+    }
+  };
+
   const isConnected = (type: BrokerType) => connectedBrokers.includes(type);
+  const isSaved = (type: BrokerType) => savedBrokers.some(b => b.brokerType === type);
 
   const brokerInfo = {
     kis: {
@@ -149,6 +348,97 @@ export function BrokerConnect({ onConnect, onDisconnect }: BrokerConnectProps) {
 
   return (
     <div className="space-y-4">
+      {/* 2FA 상태 표시 */}
+      <Card>
+        <CardContent className="py-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Shield className={`h-4 w-4 ${isTotpEnabled ? 'text-green-500' : 'text-muted-foreground'}`} />
+              <span className="text-sm">
+                2단계 인증 (2FA): {isTotpEnabled ? '활성화됨' : '비활성화'}
+              </span>
+            </div>
+            {sessionState.hasValidSession && (
+              <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                <Clock className="h-3 w-3" />
+                <span>세션 {sessionState.remainingMinutes}분 남음</span>
+              </div>
+            )}
+            {!isTotpEnabled && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowTotpSetup(true)}
+              >
+                설정하기
+              </Button>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* 저장된 API Key 목록 */}
+      {savedBrokers.length > 0 && sessionState.hasValidSession && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Save className="h-4 w-4" />
+              저장된 API Key
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {savedBrokers.map(saved => (
+                <div
+                  key={saved.brokerType}
+                  className="flex items-center justify-between rounded-lg border p-3"
+                >
+                  <div>
+                    <p className="font-medium">{brokerInfo[saved.brokerType].name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      저장일: {new Date(saved.savedAt).toLocaleDateString('ko-KR')}
+                    </p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleLoad(saved.brokerType)}
+                    disabled={isLoading}
+                  >
+                    <Download className="mr-1 h-4 w-4" />
+                    불러오기
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* 저장된 API Key가 있지만 세션이 없을 때 */}
+      {isTotpEnabled && !sessionState.hasValidSession && (
+        <Card>
+          <CardContent className="py-4">
+            <div className="flex items-center justify-between">
+              <div className="text-sm text-muted-foreground">
+                저장된 API Key를 불러오려면 2FA 인증이 필요합니다.
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setTotpVerifyAction('load');
+                  setShowTotpVerify(true);
+                }}
+              >
+                <Shield className="mr-1 h-4 w-4" />
+                인증하기
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* 연결된 브로커 목록 */}
       {connectedBrokers.length > 0 && (
         <Card>
@@ -195,7 +485,7 @@ export function BrokerConnect({ onConnect, onDisconnect }: BrokerConnectProps) {
             증권사 연결
           </CardTitle>
           <CardDescription>
-            API 키를 입력하여 증권사에 연결합니다. 모의투자 모드로 먼저 테스트해보세요.
+            API 키를 입력하여 증권사에 연결합니다. 저장하면 서버 재시작 후에도 유지됩니다.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -210,10 +500,10 @@ export function BrokerConnect({ onConnect, onDisconnect }: BrokerConnectProps) {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="kis">
-                  한국투자증권 (KIS) {isConnected('kis') && '✓'}
+                  한국투자증권 (KIS) {isConnected('kis') && '✓'} {isSaved('kis') && '💾'}
                 </SelectItem>
                 <SelectItem value="kiwoom">
-                  키움증권 {isConnected('kiwoom') && '✓'}
+                  키움증권 {isConnected('kiwoom') && '✓'} {isSaved('kiwoom') && '💾'}
                 </SelectItem>
               </SelectContent>
             </Select>
@@ -275,11 +565,24 @@ export function BrokerConnect({ onConnect, onDisconnect }: BrokerConnectProps) {
             </div>
           )}
         </CardContent>
-        <CardFooter>
+        <CardFooter className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={handleSave}
+            disabled={isLoading || !appKey || !appSecret || !accountNumber}
+            className="flex-1"
+          >
+            {isLoading ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Save className="mr-2 h-4 w-4" />
+            )}
+            저장하기
+          </Button>
           <Button
             onClick={handleConnect}
             disabled={isLoading || !appKey || !appSecret || !accountNumber}
-            className="w-full"
+            className="flex-1"
           >
             {isLoading ? (
               <>
@@ -295,6 +598,26 @@ export function BrokerConnect({ onConnect, onDisconnect }: BrokerConnectProps) {
           </Button>
         </CardFooter>
       </Card>
+
+      {/* TOTP 설정 다이얼로그 */}
+      <TOTPSetupDialog
+        open={showTotpSetup}
+        onOpenChange={setShowTotpSetup}
+        onSuccess={handleTotpSetupSuccess}
+      />
+
+      {/* TOTP 인증 다이얼로그 */}
+      <TOTPVerifyDialog
+        open={showTotpVerify}
+        onOpenChange={setShowTotpVerify}
+        onSuccess={handleTotpVerifySuccess}
+        title={totpVerifyAction === 'save' ? 'API Key 저장 인증' : 'API Key 불러오기 인증'}
+        description={
+          totpVerifyAction === 'save'
+            ? 'API Key를 저장하려면 2FA 인증이 필요합니다.'
+            : '저장된 API Key를 불러오려면 2FA 인증이 필요합니다.'
+        }
+      />
     </div>
   );
 }
