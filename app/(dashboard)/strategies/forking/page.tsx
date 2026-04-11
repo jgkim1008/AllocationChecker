@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   ArrowLeft, RefreshCw, TrendingUp, TrendingDown,
   CheckCircle, XCircle, Activity,
@@ -83,13 +84,14 @@ function SignalBadge({ signal }: { signal: ForkingStock['signal'] }) {
   );
 }
 
-function StockRow({ stock }: { stock: ForkingStock }) {
+function StockRow({ stock, onClick }: { stock: ForkingStock; onClick: () => void }) {
   const isForking = stock.signal !== 'SELL';
   const isFullFork = stock.signal === 'FULL_FORK';
 
   return (
     <tr
-      className={`border-b transition-colors ${
+      onClick={onClick}
+      className={`border-b transition-colors cursor-pointer ${
         isFullFork
           ? 'bg-green-50/60 hover:bg-green-100/60'
           : isForking
@@ -186,6 +188,7 @@ function StockRow({ stock }: { stock: ForkingStock }) {
 }
 
 export default function ForkingPage() {
+  const router = useRouter();
   const [stocks, setStocks] = useState<ForkingStock[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -385,7 +388,11 @@ export default function ForkingPage() {
                   <thead>{TABLE_HEADERS}</thead>
                   <tbody>
                     {sortedIndices.map(stock => (
-                      <StockRow key={stock.symbol} stock={stock} />
+                      <StockRow
+                        key={stock.symbol}
+                        stock={stock}
+                        onClick={() => router.push(`/strategies/forking/${encodeURIComponent(stock.symbol)}?market=${stock.market}&name=${encodeURIComponent(stock.name)}`)}
+                      />
                     ))}
                   </tbody>
                 </table>
@@ -405,7 +412,11 @@ export default function ForkingPage() {
                   <thead>{TABLE_HEADERS}</thead>
                   <tbody>
                     {sortedStocks.map(stock => (
-                      <StockRow key={stock.symbol} stock={stock} />
+                      <StockRow
+                        key={stock.symbol}
+                        stock={stock}
+                        onClick={() => router.push(`/strategies/forking/${encodeURIComponent(stock.symbol)}?market=${stock.market}&name=${encodeURIComponent(stock.name)}`)}
+                      />
                     ))}
                   </tbody>
                 </table>
