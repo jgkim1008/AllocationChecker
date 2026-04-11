@@ -7,6 +7,16 @@ import { PremiumGate } from '@/components/PremiumGate';
 
 const STRATEGIES = [
   {
+    id: 'forking',
+    title: '월봉 포킹 전략',
+    description: '월봉 기준 5/10/20 이동평균선의 정배열 이탈·진입을 감지합니다. 5MA > 10MA > 20MA 포킹 형성 시 매수 신호, 이탈 시 매도 신호를 제공합니다.',
+    icon: TrendingUp,
+    href: '/strategies/forking',
+    color: 'bg-violet-50 text-violet-600',
+    tag: '신규',
+    tagColor: 'bg-violet-100 text-violet-700',
+  },
+  {
     id: 'chart-pattern',
     title: '차트 패턴',
     description: 'TradingView 차트 패턴 체계를 기준으로 헤드 앤 숄더, 더블 탑, 트라이앵글, 컵 앤 핸들, 플래그/페넌트 등을 실시간 감지합니다. 패턴별 싱크로율과 매수/매도 신호를 한 눈에 확인하고 상세 차트로 패턴을 시각화합니다.',
