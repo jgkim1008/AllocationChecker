@@ -5,7 +5,7 @@ import { useParams, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowLeft, RefreshCw, TrendingUp, TrendingDown,
-  AlertTriangle, CheckCircle, XCircle,
+  AlertTriangle, CheckCircle, XCircle, Target, Ban,
 } from 'lucide-react';
 import { createChart, ColorType, CrosshairMode, CandlestickSeries, LineSeries, createSeriesMarkers } from 'lightweight-charts';
 
@@ -22,6 +22,10 @@ interface ChartData extends MonthlyCandle {
   signal: 'HOLD' | 'SELL' | null;
   isUp: boolean;
   deathCandle: boolean;
+  maSlope: number | null;
+  maSlopeDirection: 'UP' | 'DOWN' | 'FLAT' | null;
+  nearMA: boolean;
+  sidewaysWarning: boolean;
 }
 
 function formatPrice(price: number, market: string): string {
@@ -251,10 +255,25 @@ export default function MonthlyMADetailPage() {
       const ma10 = calcMA(closes, 10, i);
       const signal = ma10 ? (c.close >= ma10 ? 'HOLD' : 'SELL') : null;
 
+      // 저승사자 캔들 (개선된 정의): SELL + 고가가 10MA 터치 후 음봉 마감
       const body = Math.abs(c.close - c.open);
       const bodyPct = (body / c.open) * 100;
       const isBearish = c.close < c.open;
-      const deathCandle = signal === 'SELL' && isBearish && bodyPct >= 3;
+      const deathCandle = signal === 'SELL' && ma10 !== null && c.high >= ma10 && isBearish && bodyPct >= 3;
+
+      // MA 방향 (3개월 전 대비)
+      const ma10_3mAgo = i >= 3 ? calcMA(closes, 10, i - 3) : null;
+      const maSlope = ma10 && ma10_3mAgo
+        ? Math.round(((ma10 - ma10_3mAgo) / ma10_3mAgo) * 10000) / 100
+        : null;
+      const maSlopeDirection: 'UP' | 'DOWN' | 'FLAT' | null = maSlope !== null
+        ? (maSlope > 1.5 ? 'UP' : maSlope < -1.5 ? 'DOWN' : 'FLAT')
+        : null;
+
+      // 눌림목 + 횡보 주의
+      const maDeviation = ma10 ? ((c.close - ma10) / ma10) * 100 : 0;
+      const nearMA = signal === 'HOLD' && maDeviation >= 0 && maDeviation <= 3;
+      const sidewaysWarning = maSlope !== null ? Math.abs(maSlope) < 1.5 : false;
 
       return {
         ...c,
@@ -262,6 +281,10 @@ export default function MonthlyMADetailPage() {
         signal,
         isUp: c.close >= c.open,
         deathCandle,
+        maSlope,
+        maSlopeDirection,
+        nearMA,
+        sidewaysWarning,
       };
     });
   }, [candles]);
@@ -306,7 +329,7 @@ export default function MonthlyMADetailPage() {
         {/* 헤더 */}
         <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-6 mb-8">
           <div className="space-y-2">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <span className={`text-xs font-bold px-2 py-1 rounded ${
                 market === 'US' ? 'bg-blue-50 text-blue-600' : 'bg-emerald-50 text-emerald-600'
               }`}>{market}</span>
@@ -318,6 +341,27 @@ export default function MonthlyMADetailPage() {
                 }`}>
                   {currentData.signal === 'HOLD' ? <CheckCircle className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
                   {currentData.signal === 'HOLD' ? '보유' : '매도'}
+                </span>
+              )}
+              {currentData?.maSlopeDirection && (
+                <span className={`text-xs font-black px-2 py-1 rounded-lg flex items-center gap-1 ${
+                  currentData.maSlopeDirection === 'UP' ? 'bg-green-50 text-green-600' :
+                  currentData.maSlopeDirection === 'DOWN' ? 'bg-red-50 text-red-500' : 'bg-gray-100 text-gray-500'
+                }`}>
+                  {currentData.maSlopeDirection === 'UP' ? '↑ 이평 우상향' :
+                   currentData.maSlopeDirection === 'DOWN' ? '↓ 이평 우하향' : '→ 이평 횡보'}
+                </span>
+              )}
+              {currentData?.nearMA && (
+                <span className="text-xs font-black px-2 py-1 rounded-lg bg-blue-100 text-blue-700 flex items-center gap-1">
+                  <Target className="h-3 w-3" />
+                  눌림목 접근
+                </span>
+              )}
+              {currentData?.sidewaysWarning && currentData.maSlopeDirection !== 'UP' && (
+                <span className="text-xs font-black px-2 py-1 rounded-lg bg-orange-100 text-orange-700 flex items-center gap-1">
+                  <AlertTriangle className="h-3 w-3" />
+                  횡보 주의
                 </span>
               )}
               {currentData?.deathCandle && (
@@ -358,7 +402,7 @@ export default function MonthlyMADetailPage() {
 
         {/* 현재 상태 카드 */}
         {!loading && currentData && (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
             <div className="bg-white rounded-xl border border-gray-200 p-4">
               <p className="text-xs text-gray-400 mb-1">현재가</p>
               <p className="text-xl font-black text-gray-900">{formatPrice(currentData.close, market)}</p>
@@ -379,6 +423,33 @@ export default function MonthlyMADetailPage() {
                   {(((currentData.close - currentData.ma10) / currentData.ma10) * 100).toFixed(1)}%
                 </div>
               )}
+            </div>
+            <div className={`rounded-xl border p-4 ${
+              currentData.maSlopeDirection === 'UP' ? 'bg-green-50 border-green-100' :
+              currentData.maSlopeDirection === 'DOWN' ? 'bg-red-50 border-red-100' : 'bg-orange-50 border-orange-100'
+            }`}>
+              <p className="text-xs text-gray-400 mb-1">이평선 방향</p>
+              <p className={`text-xl font-black ${
+                currentData.maSlopeDirection === 'UP' ? 'text-green-600' :
+                currentData.maSlopeDirection === 'DOWN' ? 'text-red-600' : 'text-orange-600'
+              }`}>
+                {currentData.maSlopeDirection === 'UP' ? '↑ 우상향' :
+                 currentData.maSlopeDirection === 'DOWN' ? '↓ 우하향' : '→ 횡보'}
+              </p>
+              {currentData.maSlope !== null && (
+                <p className="text-[10px] text-gray-400 mt-0.5">3개월 변화 {currentData.maSlope > 0 ? '+' : ''}{currentData.maSlope.toFixed(2)}%</p>
+              )}
+            </div>
+            <div className={`rounded-xl border p-4 ${
+              currentData.nearMA ? 'bg-blue-50 border-blue-100' : 'bg-white border-gray-200'
+            }`}>
+              <p className="text-xs text-gray-400 mb-1">눌림목 여부</p>
+              <p className={`text-xl font-black ${currentData.nearMA ? 'text-blue-600' : 'text-gray-400'}`}>
+                {currentData.nearMA ? '접근 중' : '-'}
+              </p>
+              <p className="text-[10px] text-gray-400 mt-0.5">
+                {currentData.nearMA ? '10MA 0~3% 위 — 최적 매수 구간' : 'HOLD + MA 3% 이내 시 표시'}
+              </p>
             </div>
             <div className="bg-white rounded-xl border border-gray-200 p-4">
               <p className="text-xs text-gray-400 mb-1">기준월</p>
@@ -454,30 +525,102 @@ export default function MonthlyMADetailPage() {
         )}
 
         {/* 전략 설명 */}
-        <div className="mt-6 bg-indigo-50 border border-indigo-100 rounded-2xl p-5">
-          <h3 className="font-black text-indigo-900 text-sm mb-3">전략 규칙</h3>
+        <div className="mt-6 bg-indigo-50 border border-indigo-100 rounded-2xl p-5 space-y-4">
+          <h3 className="font-black text-indigo-900 text-sm">전략 규칙 — 월봉 10이평 매매법</h3>
+
+          {/* 핵심 진입/청산 규칙 */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
             <div className="bg-white rounded-xl p-3 flex gap-2">
               <CheckCircle className="h-4 w-4 text-green-600 shrink-0 mt-0.5" />
               <div>
                 <p className="font-black text-green-700 mb-0.5">매수 / 보유</p>
-                <p className="text-gray-500 leading-relaxed">월봉 종가 ≥ 10개월 이동평균선</p>
+                <p className="text-gray-500 leading-relaxed">월봉 종가 ≥ 10MA — "10이평선 위에서는 살고, 밟거나 내려오면 죽는다"</p>
               </div>
             </div>
             <div className="bg-white rounded-xl p-3 flex gap-2">
               <XCircle className="h-4 w-4 text-red-600 shrink-0 mt-0.5" />
               <div>
                 <p className="font-black text-red-700 mb-0.5">전량 매도</p>
-                <p className="text-gray-500 leading-relaxed">월봉 종가 {'<'} 10MA (월말 종가 기준)</p>
+                <p className="text-gray-500 leading-relaxed">월봉 종가 {'<'} 10MA — 월 마감 종가 기준. 월중 일시 이탈은 노이즈</p>
               </div>
             </div>
             <div className="bg-white rounded-xl p-3 flex gap-2">
               <AlertTriangle className="h-4 w-4 text-red-800 shrink-0 mt-0.5" />
               <div>
                 <p className="font-black text-red-900 mb-0.5">저승사자 캔들</p>
-                <p className="text-gray-500 leading-relaxed">이탈 + 음봉 몸통 ≥ 3% → 즉시 전량 매도</p>
+                <p className="text-gray-500 leading-relaxed">SELL + 고가가 10MA 터치 후 음봉(몸통 ≥3%) 마감 — 지지→저항 전환 확인, 재매수 절대 금지</p>
               </div>
             </div>
+          </div>
+
+          {/* 신뢰도 향상 필터 */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+            <div className="bg-white rounded-xl p-3 flex gap-2">
+              <TrendingUp className="h-4 w-4 text-indigo-600 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-black text-indigo-700 mb-0.5">이평선 방향 필터 (핵심)</p>
+                <p className="text-gray-500 leading-relaxed">10MA가 <strong>우상향(↑)</strong>일 때만 신호 신뢰도 높음. 우하향(↓) 중 선 위 돌파는 거짓 신호(휩쏘). 현재 이평 방향은 상단 배지 확인</p>
+              </div>
+            </div>
+            <div className="bg-white rounded-xl p-3 flex gap-2">
+              <Target className="h-4 w-4 text-blue-600 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-black text-blue-700 mb-0.5">눌림목 매수 (최적 진입)</p>
+                <p className="text-gray-500 leading-relaxed">10MA 돌파 후 다시 10MA 0~3% 근처로 조정 시 <strong>음봉+저거래량으로 지지</strong>하는 달이 최적 타이밍. 초기 돌파 직후 진입보다 리스크 낮음</p>
+              </div>
+            </div>
+            <div className="bg-white rounded-xl p-3 flex gap-2">
+              <Ban className="h-4 w-4 text-orange-600 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-black text-orange-700 mb-0.5">⚠ 사용 금지 조건</p>
+                <p className="text-gray-500 leading-relaxed">이평 횡보(→) / 우하향(↓) / 지수 자체 하락기 / 거래량 극소 종목. 박스권에서 이평 전략은 잦은 매매로 손실 누적</p>
+              </div>
+            </div>
+          </div>
+
+          {/* 분할매수 & 리스크 관리 */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+            <div className="bg-white rounded-xl p-3">
+              <p className="font-black text-gray-800 mb-1.5">분할매수 원칙</p>
+              <ul className="text-gray-500 space-y-0.5 leading-relaxed">
+                <li>• 최초 진입: 계획 물량의 25~50%만 매수</li>
+                <li>• 지지 확인 후 나머지 추가 매수 (최대 3회)</li>
+                <li>• 물타기는 지지/저항 원리 확신 시에만</li>
+              </ul>
+            </div>
+            <div className="bg-white rounded-xl p-3">
+              <p className="font-black text-gray-800 mb-1.5">리스크 관리</p>
+              <ul className="text-gray-500 space-y-0.5 leading-relaxed">
+                <li>• 손절선 = 10MA 하방 이탈 월봉 종가</li>
+                <li>• 거래당 계좌 리스크 1~2% 이내</li>
+                <li>• 재료(모멘텀) 없는 기술적 돌파만은 신뢰도 낮음</li>
+              </ul>
+            </div>
+          </div>
+
+          {/* 백테스트 데이터 */}
+          <div className="bg-white rounded-xl p-3 text-xs border border-indigo-100">
+            <p className="font-black text-indigo-800 mb-1.5">백테스트 근거 — Meb Faber (S&P 500, 1901–2012)</p>
+            <div className="grid grid-cols-3 gap-3 text-center mb-2">
+              <div>
+                <p className="text-lg font-black text-indigo-600">−50%</p>
+                <p className="text-gray-400">전략 MDD</p>
+                <p className="text-[10px] text-gray-300">vs 단순보유 −83%</p>
+              </div>
+              <div>
+                <p className="text-lg font-black text-green-600">10.2%</p>
+                <p className="text-gray-400">연평균 수익률</p>
+                <p className="text-[10px] text-gray-300">vs 단순보유 9.3%</p>
+              </div>
+              <div>
+                <p className="text-lg font-black text-gray-700">25%</p>
+                <p className="text-gray-400">신호 승률</p>
+                <p className="text-[10px] text-gray-300">수익:손실 = 4:1 비율</p>
+              </div>
+            </div>
+            <p className="text-[10px] text-gray-400 leading-relaxed">
+              전략의 핵심 강점은 수익률 향상보다 <strong>하락폭(MDD) 축소</strong>. 승률 25%지만 이기는 거래 평균 +26.5%, 지는 거래 평균 −6% → 기대값 양수. ETF·지수 상품 적용 시 가장 안정적.
+            </p>
           </div>
         </div>
 

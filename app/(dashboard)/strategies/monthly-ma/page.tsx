@@ -5,7 +5,7 @@ import Link from 'next/link';
 import {
   ArrowLeft, RefreshCw, TrendingUp, TrendingDown,
   AlertTriangle, CheckCircle, XCircle, Activity, ChevronRight,
-  ChevronUp, ChevronDown,
+  ChevronUp, ChevronDown, Target, Ban,
 } from 'lucide-react';
 import { PremiumGate } from '@/components/PremiumGate';
 import type { MonthlyMAStock } from '@/app/api/strategies/monthly-ma/scan/route';
@@ -78,11 +78,19 @@ function StockRow({ stock }: { stock: MonthlyMAStock }) {
     }`}>
       {/* 신호 */}
       <td className="px-3 py-3">
-        <div className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg font-black text-xs ${
-          isHold ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-        }`}>
-          {isHold ? <CheckCircle className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
-          {isHold ? '보유' : '매도'}
+        <div className="flex flex-col gap-1">
+          <div className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg font-black text-xs w-fit ${
+            isHold ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+          }`}>
+            {isHold ? <CheckCircle className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
+            {isHold ? '보유' : '매도'}
+          </div>
+          {stock.nearMA && (
+            <div className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded font-black text-[9px] bg-blue-100 text-blue-700 w-fit">
+              <Target className="h-2.5 w-2.5" />
+              눌림목
+            </div>
+          )}
         </div>
       </td>
 
@@ -112,13 +120,23 @@ function StockRow({ stock }: { stock: MonthlyMAStock }) {
         <span className="font-bold text-gray-900 text-xs">{formatPrice(stock.currentPrice, stock.market)}</span>
       </td>
 
-      {/* MA 대비 */}
+      {/* MA 대비 + 이평 방향 */}
       <td className="px-3 py-3 text-right">
         <div className={`inline-flex items-center gap-0.5 font-black text-xs ${
           aboveMA ? 'text-green-600' : 'text-red-600'
         }`}>
           {aboveMA ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
           {aboveMA ? '+' : ''}{stock.maDeviation.toFixed(1)}%
+        </div>
+        <div className={`text-[9px] font-bold mt-0.5 ${
+          stock.maSlopeDirection === 'UP' ? 'text-green-500' :
+          stock.maSlopeDirection === 'DOWN' ? 'text-red-500' : 'text-gray-400'
+        }`}>
+          {stock.maSlopeDirection === 'UP' ? '↑ 우상향' :
+           stock.maSlopeDirection === 'DOWN' ? '↓ 우하향' : '→ 횡보'}
+          {stock.sidewaysWarning && stock.maSlopeDirection !== 'UP' && (
+            <span className="ml-0.5 text-orange-500">⚠</span>
+          )}
         </div>
       </td>
 
@@ -245,6 +263,8 @@ export default function MonthlyMAPage() {
   const sellCount = stockList.filter(s => s.signal === 'SELL').length;
   const deathCount = stockList.filter(s => s.deathCandle).length;
   const changedCount = stockList.filter(s => s.signalChanged).length;
+  const nearMACount = stockList.filter(s => s.nearMA).length;
+  const sidewaysCount = stockList.filter(s => s.sidewaysWarning && s.signal === 'HOLD').length;
 
   return (
     <div className="min-h-screen bg-gray-50/50">
@@ -298,10 +318,12 @@ export default function MonthlyMAPage() {
 
           {/* 요약 통계 */}
           {!loading && stocks.length > 0 && (
-            <div className="grid grid-cols-4 gap-3 mb-6">
+            <div className="grid grid-cols-3 sm:grid-cols-6 gap-3 mb-6">
               {[
                 { label: '보유', value: holdCount, color: 'text-green-600', bg: 'bg-green-50 border-green-100' },
                 { label: '매도', value: sellCount, color: 'text-red-600',   bg: 'bg-red-50 border-red-100' },
+                { label: '눌림목', value: nearMACount, color: nearMACount > 0 ? 'text-blue-600' : 'text-gray-300', bg: nearMACount > 0 ? 'bg-blue-50 border-blue-100' : 'bg-white border-gray-100' },
+                { label: '횡보주의', value: sidewaysCount, color: sidewaysCount > 0 ? 'text-orange-600' : 'text-gray-300', bg: sidewaysCount > 0 ? 'bg-orange-50 border-orange-100' : 'bg-white border-gray-100' },
                 { label: '신호전환', value: changedCount, color: changedCount > 0 ? 'text-orange-600' : 'text-gray-300', bg: 'bg-white border-gray-100' },
                 { label: '저승사자', value: deathCount,  color: deathCount > 0  ? 'text-red-800'   : 'text-gray-300', bg: deathCount > 0 ? 'bg-red-50 border-red-200' : 'bg-white border-gray-100' },
               ].map(s => (
@@ -412,30 +434,82 @@ export default function MonthlyMAPage() {
           )}
 
           {/* 전략 설명 */}
-          <div className="mt-6 bg-indigo-50 border border-indigo-100 rounded-2xl p-5">
-            <h3 className="font-black text-indigo-900 text-sm mb-3">전략 규칙</h3>
+          <div className="mt-6 bg-indigo-50 border border-indigo-100 rounded-2xl p-5 space-y-4">
+            <h3 className="font-black text-indigo-900 text-sm">전략 규칙 — 월봉 10이평 매매법</h3>
+
+            {/* 핵심 규칙 */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
               <div className="bg-white rounded-xl p-3 flex gap-2">
                 <CheckCircle className="h-4 w-4 text-green-600 shrink-0 mt-0.5" />
                 <div>
                   <p className="font-black text-green-700 mb-0.5">매수 / 보유</p>
-                  <p className="text-gray-500 leading-relaxed">월봉 종가 ≥ 10개월 이동평균선</p>
+                  <p className="text-gray-500 leading-relaxed">월봉 종가 ≥ 10MA — 10이평선 위에서는 보유 유지</p>
                 </div>
               </div>
               <div className="bg-white rounded-xl p-3 flex gap-2">
                 <XCircle className="h-4 w-4 text-red-600 shrink-0 mt-0.5" />
                 <div>
                   <p className="font-black text-red-700 mb-0.5">전량 매도</p>
-                  <p className="text-gray-500 leading-relaxed">월봉 종가 {'<'} 10MA (월말 종가 기준)</p>
+                  <p className="text-gray-500 leading-relaxed">월봉 종가 {'<'} 10MA — 월말 종가 기준, 이탈 시 전량 청산</p>
                 </div>
               </div>
               <div className="bg-white rounded-xl p-3 flex gap-2">
                 <AlertTriangle className="h-4 w-4 text-red-800 shrink-0 mt-0.5" />
                 <div>
                   <p className="font-black text-red-900 mb-0.5">저승사자 캔들</p>
-                  <p className="text-gray-500 leading-relaxed">이탈 + 음봉 몸통 ≥ 3% → 즉시 전량 매도</p>
+                  <p className="text-gray-500 leading-relaxed">SELL + 고가가 10MA 터치 후 음봉(몸통 ≥3%) 마감 → 지지→저항 전환, 재매수 절대 금지</p>
                 </div>
               </div>
+            </div>
+
+            {/* 신뢰도 필터 */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+              <div className="bg-white rounded-xl p-3 flex gap-2">
+                <TrendingUp className="h-4 w-4 text-indigo-600 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-black text-indigo-700 mb-0.5">이평선 방향 필터 <span className="text-green-600">↑ 우상향</span></p>
+                  <p className="text-gray-500 leading-relaxed">10MA가 우상향 중일 때만 신호 신뢰도 높음. 우하향 중 이평 위 돌파는 거짓 신호(휩쏘) 가능성 높음</p>
+                </div>
+              </div>
+              <div className="bg-white rounded-xl p-3 flex gap-2">
+                <Target className="h-4 w-4 text-blue-600 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-black text-blue-700 mb-0.5">눌림목 매수 (최적 진입)</p>
+                  <p className="text-gray-500 leading-relaxed">10MA 돌파 후 다시 10MA 근처(0~3%)로 조정 시 음봉+저거래량으로 지지하는 달이 최적 매수 타이밍</p>
+                </div>
+              </div>
+              <div className="bg-white rounded-xl p-3 flex gap-2">
+                <Ban className="h-4 w-4 text-orange-600 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-black text-orange-700 mb-0.5">⚠ 사용하지 말아야 할 때</p>
+                  <p className="text-gray-500 leading-relaxed">이평 횡보(→)·우하향(↓) 종목, 지수 자체 하락기, 거래량 극소 종목에서는 잦은 손실 누적</p>
+                </div>
+              </div>
+            </div>
+
+            {/* 백테스트 데이터 */}
+            <div className="bg-white rounded-xl p-3 text-xs border border-indigo-100">
+              <p className="font-black text-indigo-800 mb-1.5">백테스트 근거 — Meb Faber (S&P 500, 1901–2012)</p>
+              <div className="grid grid-cols-3 gap-3 text-center">
+                <div>
+                  <p className="text-base font-black text-indigo-600">−50%</p>
+                  <p className="text-gray-400">전략 MDD</p>
+                  <p className="text-[10px] text-gray-300">vs 단순보유 −83%</p>
+                </div>
+                <div>
+                  <p className="text-base font-black text-green-600">10.2%</p>
+                  <p className="text-gray-400">연평균 수익률</p>
+                  <p className="text-[10px] text-gray-300">vs 단순보유 9.3%</p>
+                </div>
+                <div>
+                  <p className="text-base font-black text-gray-700">25%</p>
+                  <p className="text-gray-400">신호 승률</p>
+                  <p className="text-[10px] text-gray-300">수익:손실 = 4:1 비율</p>
+                </div>
+              </div>
+              <p className="text-[10px] text-gray-400 mt-2 leading-relaxed">
+                전략의 핵심 강점은 수익률 향상보다 <strong>하락폭(MDD) 축소</strong>에 있음. ETF·지수 상품에 적용 시 가장 안정적.
+              </p>
             </div>
           </div>
 

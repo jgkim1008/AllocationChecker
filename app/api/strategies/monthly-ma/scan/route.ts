@@ -13,14 +13,18 @@ export interface MonthlyMAStock {
   market: 'US' | 'KR';
   currentPrice: number;
   ma10: number;
-  maDeviation: number;           // % 차이 (+: 위, -: 아래)
+  maDeviation: number;                    // % 차이 (+: 위, -: 아래)
+  maSlope: number;                        // 3개월 이평 변화율 (%)
+  maSlopeDirection: 'UP' | 'DOWN' | 'FLAT'; // 이평선 방향
   signal: 'HOLD' | 'SELL';
-  signalChanged: boolean;        // 이번 달에 신호 전환 여부
-  deathCandle: boolean;          // 저승사자 캔들 여부
-  consecutiveMonths: number;     // 연속 신호 유지 기간 (개월)
-  lastSignalDate: string | null; // 마지막 신호 전환일
-  returnSinceSignal: number | null; // 전환 이후 수익률 (%)
-  fromYearHigh: number;          // 52주(12개월) 고점 대비 (%)
+  signalChanged: boolean;                 // 이번 달에 신호 전환 여부
+  deathCandle: boolean;                   // 저승사자 캔들 여부
+  nearMA: boolean;                        // 눌림목 접근 (HOLD + 0~3% 이내)
+  sidewaysWarning: boolean;               // 횡보 주의 (이평 무방향)
+  consecutiveMonths: number;              // 연속 신호 유지 기간 (개월)
+  lastSignalDate: string | null;          // 마지막 신호 전환일
+  returnSinceSignal: number | null;       // 전환 이후 수익률 (%)
+  fromYearHigh: number;                   // 52주(12개월) 고점 대비 (%)
   monthlyCandles: { date: string; open: number; high: number; low: number; close: number }[];
 }
 
@@ -205,14 +209,28 @@ function analyzeStock(
   const prevSignal: 'HOLD' | 'SELL' = prevClose >= ma10Prev ? 'HOLD' : 'SELL';
   const signalChanged = signal !== prevSignal;
 
-  // 저승사자 캔들
+  // 저승사자 캔들 (개선된 정의): SELL + 고가가 MA에 닿았다가 음봉 마감 (지지→저항 전환)
   const lastCandle = candles[lastIdx];
   const body = Math.abs(lastCandle.close - lastCandle.open);
   const bodyPct = (body / lastCandle.open) * 100;
   const isBearish = lastCandle.close < lastCandle.open;
-  const deathCandle = signal === 'SELL' && isBearish && bodyPct >= 3;
+  const deathCandle = signal === 'SELL' && lastCandle.high >= ma10 && isBearish && bodyPct >= 3;
 
   const maDeviation = ((currentClose - ma10) / ma10) * 100;
+
+  // MA 방향: 3개월 전 대비 이평 변화율
+  const ma10_3mAgo = calcMA(closes, 10, lastIdx - 3);
+  const maSlope = ma10_3mAgo
+    ? Math.round(((ma10 - ma10_3mAgo) / ma10_3mAgo) * 10000) / 100
+    : 0;
+  const maSlopeDirection: 'UP' | 'DOWN' | 'FLAT' =
+    maSlope > 1.5 ? 'UP' : maSlope < -1.5 ? 'DOWN' : 'FLAT';
+
+  // 눌림목 접근: HOLD + 현재가 10MA 0~3% 위 (최적 매수 구간)
+  const nearMA = signal === 'HOLD' && maDeviation >= 0 && maDeviation <= 3;
+
+  // 횡보 주의: 3개월 MA 변화율 ±1.5% 이내
+  const sidewaysWarning = Math.abs(maSlope) < 1.5;
 
   // 연속 신호 유지 기간 & 마지막 전환일 & 전환 이후 수익률
   let consecutiveMonths = 1;
@@ -253,9 +271,13 @@ function analyzeStock(
     currentPrice: Math.round(currentClose * 100) / 100,
     ma10: Math.round(ma10 * 100) / 100,
     maDeviation: Math.round(maDeviation * 100) / 100,
+    maSlope,
+    maSlopeDirection,
     signal,
     signalChanged,
     deathCandle,
+    nearMA,
+    sidewaysWarning,
     consecutiveMonths,
     lastSignalDate,
     returnSinceSignal,
