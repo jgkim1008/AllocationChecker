@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { encrypt, decrypt } from '@/lib/crypto/encryption';
 import { generateTOTPSecret, generateQRCodeDataUrl, verifyTOTPToken } from '@/lib/crypto/totp';
+import { disconnectAllBrokers } from '@/lib/broker/session';
 
 /**
  * POST: 새 TOTP 시크릿 생성 및 QR 코드 반환
@@ -238,6 +239,9 @@ export async function DELETE(request: NextRequest) {
       .from('credential_access_sessions')
       .delete()
       .eq('user_id', user.id);
+
+    // 2FA 비활성화 시 모든 브로커 연결 해제
+    await disconnectAllBrokers(user.id);
 
     return NextResponse.json({
       success: true,
