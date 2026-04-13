@@ -539,7 +539,7 @@ export function AutoTradePanel({
                     <TrendingDown className="mr-1 h-4 w-4" />
                   )}
                   {quote.change >= 0 ? '+' : ''}
-                  {quote.changeRate.toFixed(2)}%
+                  {(quote.changeRate ?? 0).toFixed(2)}%
                 </p>
               </div>
             </div>
