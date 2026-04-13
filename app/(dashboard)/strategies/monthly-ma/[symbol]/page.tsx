@@ -8,7 +8,7 @@ import {
   AlertTriangle, CheckCircle, XCircle, Target, Ban,
 } from 'lucide-react';
 import { PullbackHoverCard } from '@/components/strategies/PullbackHoverCard';
-import { createChart, ColorType, CrosshairMode, CandlestickSeries, HistogramSeries, LineSeries, createSeriesMarkers, IChartApi } from 'lightweight-charts';
+import { createChart, ColorType, CrosshairMode, CandlestickSeries, LineSeries, createSeriesMarkers, IChartApi } from 'lightweight-charts';
 
 interface MonthlyCandle {
   date: string;
@@ -49,176 +49,8 @@ function calcMA(values: number[], period: number, endIdx: number): number | null
   return slice.reduce((a, b) => a + b, 0) / period;
 }
 
-// 눌림목 분석 데이터 타입
-interface PullbackCandle {
-  date: string;
-  open: number;
-  high: number;
-  low: number;
-  close: number;
-  volume: number;
-}
 
-interface PullbackAnalysis {
-  timeframe: 'monthly' | 'daily';
-  referenceCandle: {
-    date: string;
-    high: number;
-    low: number;
-    changePercent: number;
-  } | null;
-  zones: {
-    safeZone: { min: number; max: number };
-    watchZone: { min: number; max: number };
-    costZone: { min: number; max: number };
-    dangerZone: { min: number; max: number };
-  } | null;
-  currentPrice: number;
-  currentZone: 'safe' | 'watch' | 'cost' | 'danger' | 'above' | 'below' | null;
-  pullbackPercent: number | null;
-  recentCandles: PullbackCandle[];
-  volumeTrend: 'increasing' | 'decreasing' | 'stable';
-  pullbackScore: number;
-  signals: string[];
-}
-
-interface PullbackData {
-  monthly: PullbackAnalysis;
-  daily: PullbackAnalysis;
-}
-
-// 팝업 내 차트 컴포넌트
-function PopupChart({ analysis }: { analysis: PullbackAnalysis }) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const { recentCandles, zones, timeframe, referenceCandle } = analysis;
-
-  useEffect(() => {
-    if (!containerRef.current || recentCandles.length < 3) return;
-    const el = containerRef.current;
-    let chart: ReturnType<typeof createChart> | null = null;
-
-    const buildChart = (width: number) => {
-      if (chart) { chart.remove(); chart = null; }
-      const sorted = [...recentCandles].sort((a, b) => a.date.localeCompare(b.date));
-      const toTime = (d: string) => timeframe === 'monthly' ? `${d}-01` : d;
-
-      chart = createChart(el, {
-        width,
-        height: 280,
-        layout: {
-          background: { type: ColorType.Solid, color: '#ffffff' },
-          textColor: '#6b7280',
-          fontFamily: 'Inter, system-ui, sans-serif',
-          fontSize: 10,
-        },
-        grid: { vertLines: { color: '#f3f4f6' }, horzLines: { color: '#f3f4f6' } },
-        crosshair: { mode: CrosshairMode.Normal },
-        rightPriceScale: { borderColor: '#e5e7eb', scaleMargins: { top: 0.08, bottom: 0.22 } },
-        timeScale: { borderColor: '#e5e7eb', timeVisible: timeframe === 'daily', secondsVisible: false },
-      });
-
-      const candleSeries = chart.addSeries(CandlestickSeries, {
-        upColor: '#ef4444', downColor: '#3b82f6',
-        borderUpColor: '#ef4444', borderDownColor: '#3b82f6',
-        wickUpColor: '#ef4444', wickDownColor: '#3b82f6',
-      });
-      candleSeries.setData(sorted.map(c => ({
-        time: toTime(c.date), open: c.open, high: c.high, low: c.low, close: c.close,
-      })));
-
-      // 10MA (월봉) / 20MA (일봉)
-      const maPeriod = timeframe === 'monthly' ? 10 : 20;
-      if (sorted.length >= maPeriod) {
-        const maData = sorted.slice(maPeriod - 1).map((_, idx) => {
-          const i = idx + maPeriod - 1;
-          const sum = sorted.slice(i - maPeriod + 1, i + 1).reduce((s, c) => s + c.close, 0);
-          return { time: toTime(sorted[i].date), value: sum / maPeriod };
-        });
-        const maSeries = chart.addSeries(LineSeries, {
-          color: '#f97316', lineWidth: 2, priceLineVisible: false, lastValueVisible: true,
-          title: timeframe === 'monthly' ? '10MA' : '20MA',
-        });
-        maSeries.setData(maData);
-      }
-
-      // 4분할 구간선
-      if (zones) {
-        [
-          { price: zones.safeZone.min,   color: '#16a34a', w: 2 as const, s: 0 as const, label: '저가' },
-          { price: zones.safeZone.max,   color: '#22c55e', w: 1 as const, s: 2 as const, label: '25%' },
-          { price: zones.watchZone.max,  color: '#3b82f6', w: 1 as const, s: 2 as const, label: '50%' },
-          { price: zones.costZone.max,   color: '#eab308', w: 1 as const, s: 2 as const, label: '75%' },
-          { price: zones.dangerZone.max, color: '#ef4444', w: 2 as const, s: 0 as const, label: '고가' },
-        ].forEach(({ price, color, w, s, label }) =>
-          candleSeries.createPriceLine({ price, color, lineWidth: w, lineStyle: s, axisLabelVisible: s === 0, title: label })
-        );
-      }
-
-      // 현재가선
-      candleSeries.createPriceLine({
-        price: sorted[sorted.length - 1].close,
-        color: '#1f2937', lineWidth: 1, lineStyle: 1, axisLabelVisible: true, title: '현재',
-      });
-
-      // 기준봉 마커
-      if (referenceCandle) {
-        createSeriesMarkers(candleSeries, [{
-          time: toTime(referenceCandle.date),
-          position: 'aboveBar', shape: 'arrowDown',
-          color: '#6366f1', text: '기준봉', size: 2,
-        }]);
-      }
-
-      // 거래량
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const volSeries = (chart as any).addSeries(HistogramSeries, {
-        color: '#d1d5db', priceFormat: { type: 'volume' }, priceScaleId: 'vol',
-      });
-      chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
-      volSeries.setData(sorted.map((c: PullbackCandle) => ({
-        time: toTime(c.date), value: c.volume,
-        color: c.close >= c.open ? '#fca5a5' : '#93c5fd',
-      })));
-
-      chart.timeScale().fitContent();
-    };
-
-    const ro = new ResizeObserver(entries => {
-      const w = entries[0]?.contentRect.width;
-      if (w && w > 0) {
-        if (!chart) buildChart(w);
-        else chart.applyOptions({ width: w });
-      }
-    });
-    ro.observe(el);
-
-    return () => { ro.disconnect(); chart?.remove(); };
-  }, [recentCandles, zones, timeframe, referenceCandle]);
-
-  if (recentCandles.length < 3) return null;
-  return <div ref={containerRef} className="w-full rounded-lg overflow-hidden bg-white" />;
-}
-
-function getZoneLabel(zone: string | null): { label: string; color: string; bgColor: string } {
-  switch (zone) {
-    case 'safe': return { label: '절대자리 0~25%', color: 'text-green-700', bgColor: 'bg-green-100' };
-    case 'watch': return { label: '매입원가 25~50%', color: 'text-blue-700', bgColor: 'bg-blue-100' };
-    case 'cost': return { label: '안전지대 50~75%', color: 'text-yellow-700', bgColor: 'bg-yellow-100' };
-    case 'danger': return { label: '위험지대 75~100%', color: 'text-red-700', bgColor: 'bg-red-100' };
-    case 'above': return { label: '고가 돌파', color: 'text-purple-700', bgColor: 'bg-purple-100' };
-    case 'below': return { label: '저가 이탈', color: 'text-gray-700', bgColor: 'bg-gray-200' };
-    default: return { label: '-', color: 'text-gray-500', bgColor: 'bg-gray-100' };
-  }
-}
-
-function getScoreColor(score: number): string {
-  if (score >= 70) return 'text-green-600';
-  if (score >= 50) return 'text-blue-600';
-  if (score >= 30) return 'text-yellow-600';
-  return 'text-red-600';
-}
-
-// 차트 + 클릭 팝업 컴포넌트
+// 차트 + 마커 클릭 시 4분할 구간 직접 표시
 function MonthlyChartWithPopup({
   candles,
   market,
@@ -230,34 +62,46 @@ function MonthlyChartWithPopup({
 }) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const [selectedSignal, setSelectedSignal] = useState<SignalMarker | null>(null);
-  const [pullbackData, setPullbackData] = useState<PullbackData | null>(null);
-  const [activeTab, setActiveTab] = useState<'monthly' | 'daily'>('monthly');
-  const [loadingPullback, setLoadingPullback] = useState(false);
   const markersRef = useRef<SignalMarker[]>([]);
   const chartRef = useRef<IChartApi | null>(null);
-  // 마커 클릭 시 해당 날짜 기준봉으로 눌림목 데이터 fetch
-  useEffect(() => {
-    if (!selectedSignal) return;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const candleSeriesRef = useRef<any>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const zoneLinesRef = useRef<any[]>([]);
+  const sortedDataRef = useRef<MonthlyCandle[]>([]);
 
-    const fetchPullbackData = async () => {
-      setLoadingPullback(true);
-      setPullbackData(null);
-      try {
-        const url = `/api/strategies/monthly-ma/pullback/${encodeURIComponent(symbol)}?market=${market}&refDate=${selectedSignal.date}`;
-        const res = await fetch(url);
-        if (res.ok) {
-          const data = await res.json();
-          setPullbackData({ monthly: data.monthly, daily: data.daily });
-        }
-      } catch (e) {
-        console.error('Failed to fetch pullback data:', e);
-      } finally {
-        setLoadingPullback(false);
-      }
-    };
+  const clearZones = useCallback(() => {
+    zoneLinesRef.current.forEach(l => candleSeriesRef.current?.removePriceLine(l));
+    zoneLinesRef.current = [];
+    setSelectedSignal(null);
+  }, []);
 
-    fetchPullbackData();
-  }, [selectedSignal, symbol, market]);
+  const drawZones = useCallback((marker: SignalMarker) => {
+    const refCandle = sortedDataRef.current.find(c => c.date === marker.date);
+    if (!refCandle || !candleSeriesRef.current) return;
+
+    zoneLinesRef.current.forEach(l => candleSeriesRef.current.removePriceLine(l));
+    zoneLinesRef.current = [];
+
+    const { low, high } = refCandle;
+    const range = high - low;
+
+    [
+      { price: low,               color: '#16a34a', title: '저가(기준)', w: 2, s: 0 },
+      { price: low + range * .25, color: '#22c55e', title: '절대자리 25%', w: 1, s: 2 },
+      { price: low + range * .50, color: '#3b82f6', title: '매입원가 50%', w: 1, s: 2 },
+      { price: low + range * .75, color: '#eab308', title: '안전지대 75%', w: 1, s: 2 },
+      { price: high,              color: '#ef4444', title: '고가(기준)', w: 2, s: 0 },
+    ].forEach(z => {
+      zoneLinesRef.current.push(candleSeriesRef.current.createPriceLine({
+        price: z.price, color: z.color,
+        lineWidth: z.w, lineStyle: z.s,
+        axisLabelVisible: true, title: z.title,
+      }));
+    });
+
+    setSelectedSignal(marker);
+  }, []);
 
   useEffect(() => {
     if (!chartContainerRef.current || candles.length < 10) return;
@@ -265,6 +109,8 @@ function MonthlyChartWithPopup({
     const sortedData = [...candles]
       .sort((a, b) => a.date.localeCompare(b.date))
       .filter((item, index, arr) => index === 0 || item.date !== arr[index - 1].date);
+
+    sortedDataRef.current = sortedData;
 
     const chart = createChart(chartContainerRef.current, {
       width: chartContainerRef.current.clientWidth,
@@ -298,15 +144,12 @@ function MonthlyChartWithPopup({
       wickUpColor: '#ef4444',
       wickDownColor: '#3b82f6',
     });
+    candleSeriesRef.current = candleSeries;
 
-    const candleData = sortedData.map(h => ({
+    candleSeries.setData(sortedData.map(h => ({
       time: `${h.date}-01` as string,
-      open: h.open,
-      high: h.high,
-      low: h.low,
-      close: h.close,
-    }));
-    candleSeries.setData(candleData);
+      open: h.open, high: h.high, low: h.low, close: h.close,
+    })));
 
     const calcMAData = (data: typeof sortedData, period: number) => {
       const result: { time: string; value: number }[] = [];
@@ -406,18 +249,13 @@ function MonthlyChartWithPopup({
       });
     }
 
-    // 클릭 이벤트 - 마커 클릭 감지
+    // 클릭 이벤트 - 마커 클릭 시 4분할 구간 차트에 그리기
     chart.subscribeClick((param) => {
-      if (!param.time) {
-        return;
-      }
-
+      if (!param.time) { clearZones(); return; }
       const timeStr = param.time as string;
       const matched = signalMarkers.find(m => m.time === timeStr);
-
-      if (matched) {
-        setSelectedSignal(matched);
-      }
+      if (matched) drawZones(matched);
+      else clearZones();
     });
 
     const handleResize = () => {
@@ -432,192 +270,66 @@ function MonthlyChartWithPopup({
     return () => {
       window.removeEventListener('resize', handleResize);
       chart.remove();
+      candleSeriesRef.current = null;
+      zoneLinesRef.current = [];
     };
-  }, [candles, market]);
+  }, [candles, market, clearZones, drawZones]);
+
+  // 현재가 기준 구간 계산 (info bar용)
+  const zoneInfoBar = useMemo(() => {
+    if (!selectedSignal) return null;
+    const refCandle = sortedDataRef.current.find(c => c.date === selectedSignal.date);
+    if (!refCandle) return null;
+    const sorted = [...candles].sort((a, b) => a.date.localeCompare(b.date));
+    const currentPrice = sorted[sorted.length - 1]?.close ?? 0;
+    const { low, high } = refCandle;
+    const range = high - low;
+    let zone = '-';
+    let pct = 0;
+    if (currentPrice > high) { zone = '고가 돌파'; pct = 0; }
+    else if (currentPrice < low) { zone = '저가 이탈'; pct = 100; }
+    else {
+      pct = range > 0 ? ((high - currentPrice) / range) * 100 : 0;
+      if (pct <= 25) zone = '위험지대';
+      else if (pct <= 50) zone = '안전지대';
+      else if (pct <= 75) zone = '매입원가';
+      else zone = '절대자리';
+    }
+    return { zone, pct, refCandle, currentPrice };
+  }, [selectedSignal, candles]);
 
   if (candles.length < 10) return null;
 
-  const activeAnalysis = pullbackData ? (activeTab === 'monthly' ? pullbackData.monthly : pullbackData.daily) : null;
-  const zoneInfo = activeAnalysis?.currentZone ? getZoneLabel(activeAnalysis.currentZone) : null;
-
   return (
-    <div className="relative">
+    <div>
       <div ref={chartContainerRef} className="w-full" />
 
-      {/* 클릭 시 팝업 모달 */}
-      {selectedSignal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setSelectedSignal(null)}>
-          <div className="w-[400px] bg-white rounded-2xl shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
-            {/* 헤더 */}
-            <div className={`px-5 py-4 ${selectedSignal.signal === 'BUY' ? 'bg-green-600' : 'bg-red-600'} text-white`}>
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-black text-lg">{selectedSignal.date}</p>
-                  <p className="text-sm opacity-90">
-                    {selectedSignal.signal === 'BUY' ? '매수 신호' : '매도 신호'} · {formatPrice(selectedSignal.price, market)}
-                  </p>
-                </div>
-                <button
-                  onClick={() => setSelectedSignal(null)}
-                  className="p-2 hover:bg-white/20 rounded-lg transition-colors"
-                >
-                  <XCircle className="h-6 w-6" />
-                </button>
-              </div>
-            </div>
-
-            {/* 탭 */}
-            <div className="flex border-b border-gray-200">
-              <button
-                onClick={() => setActiveTab('monthly')}
-                className={`flex-1 px-4 py-3 text-sm font-bold transition-colors ${
-                  activeTab === 'monthly' ? 'bg-indigo-50 text-indigo-700 border-b-2 border-indigo-600' : 'text-gray-500 hover:bg-gray-50'
-                }`}
-              >
-                월봉 분석
-              </button>
-              <button
-                onClick={() => setActiveTab('daily')}
-                className={`flex-1 px-4 py-3 text-sm font-bold transition-colors ${
-                  activeTab === 'daily' ? 'bg-indigo-50 text-indigo-700 border-b-2 border-indigo-600' : 'text-gray-500 hover:bg-gray-50'
-                }`}
-              >
-                일봉 분석
-              </button>
-            </div>
-
-            {/* 분석 내용 */}
-            <div className="p-5 space-y-4">
-              {loadingPullback ? (
-                <div className="py-8 text-center">
-                  <RefreshCw className="h-8 w-8 text-gray-400 animate-spin mx-auto" />
-                  <p className="text-sm text-gray-400 mt-2">분석 중...</p>
-                </div>
-              ) : activeAnalysis ? (
-                <>
-                  {/* 차트 */}
-                  {activeAnalysis.recentCandles?.length > 0 && (
-                    <PopupChart analysis={activeAnalysis} />
-                  )}
-
-                  {/* 점수 + 구간 */}
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                      <div className="text-center">
-                        <p className={`text-4xl font-black ${getScoreColor(activeAnalysis.pullbackScore)}`}>
-                          {activeAnalysis.pullbackScore}
-                        </p>
-                        <p className="text-xs text-gray-400">눌림목 점수</p>
-                      </div>
-                      {zoneInfo && (
-                        <div className={`px-3 py-2 rounded-lg ${zoneInfo.bgColor}`}>
-                          <p className={`text-sm font-black ${zoneInfo.color}`}>{zoneInfo.label}</p>
-                        </div>
-                      )}
-                    </div>
-                    {activeAnalysis.pullbackPercent !== null && (
-                      <div className="text-right">
-                        <p className="text-2xl font-black text-gray-700">{activeAnalysis.pullbackPercent.toFixed(1)}%</p>
-                        <p className="text-xs text-gray-400">되돌림</p>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* 4분할 바 */}
-                  {activeAnalysis.zones && (
-                    <div className="space-y-1">
-                      <p className="text-xs font-bold text-gray-500">장대양봉 4분할 구간</p>
-                      <div className="flex h-6 rounded-lg overflow-hidden text-[9px] font-bold">
-                        <div className="flex-1 bg-green-100 text-green-700 flex items-center justify-center border-r border-white">절대 0~25%</div>
-                        <div className="flex-1 bg-blue-100 text-blue-700 flex items-center justify-center border-r border-white">매입 25~50%</div>
-                        <div className="flex-1 bg-yellow-100 text-yellow-700 flex items-center justify-center border-r border-white">안전 50~75%</div>
-                        <div className="flex-1 bg-red-100 text-red-700 flex items-center justify-center">위험 75~100%</div>
-                      </div>
-                      {activeAnalysis.pullbackPercent !== null && activeAnalysis.pullbackPercent >= 0 && activeAnalysis.pullbackPercent <= 100 && (
-                        <div className="relative h-2">
-                          <div
-                            className="absolute top-0 w-0 h-0 border-l-[6px] border-r-[6px] border-b-[8px] border-l-transparent border-r-transparent border-b-gray-800"
-                            style={{ left: `${100 - activeAnalysis.pullbackPercent}%`, transform: 'translateX(-50%)' }}
-                          />
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* 기준 장대양봉 */}
-                  {activeAnalysis.referenceCandle && (
-                    <div className="bg-gray-50 rounded-xl p-4">
-                      <p className="font-bold text-gray-700 mb-2">기준 장대양봉: {activeAnalysis.referenceCandle.date}</p>
-                      <div className="grid grid-cols-3 gap-3 text-center text-sm">
-                        <div>
-                          <p className="text-gray-400 text-xs">상승률</p>
-                          <p className="font-bold text-green-600">+{activeAnalysis.referenceCandle.changePercent.toFixed(1)}%</p>
-                        </div>
-                        <div>
-                          <p className="text-gray-400 text-xs">고가</p>
-                          <p className="font-bold text-gray-700">{formatPrice(activeAnalysis.referenceCandle.high, market)}</p>
-                        </div>
-                        <div>
-                          <p className="text-gray-400 text-xs">저가</p>
-                          <p className="font-bold text-gray-700">{formatPrice(activeAnalysis.referenceCandle.low, market)}</p>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* 거래량 + 신호 */}
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2 text-sm">
-                      <span className="text-gray-400">거래량 추이:</span>
-                      <span className={`font-bold ${
-                        activeAnalysis.volumeTrend === 'decreasing' ? 'text-green-600' :
-                        activeAnalysis.volumeTrend === 'increasing' ? 'text-red-600' : 'text-gray-500'
-                      }`}>
-                        {activeAnalysis.volumeTrend === 'decreasing' ? '감소 (호재)' :
-                         activeAnalysis.volumeTrend === 'increasing' ? '증가 (주의)' : '안정'}
-                      </span>
-                    </div>
-
-                    {activeAnalysis.signals.length > 0 && (
-                      <div className="space-y-1">
-                        {activeAnalysis.signals.map((signal, i) => (
-                          <p key={i} className="text-xs text-gray-600 flex items-center gap-2">
-                            {signal.includes('위험') || signal.includes('주의') || signal.includes('이탈') ? (
-                              <AlertTriangle className="h-3 w-3 text-orange-500 shrink-0" />
-                            ) : (
-                              <CheckCircle className="h-3 w-3 text-green-500 shrink-0" />
-                            )}
-                            {signal}
-                          </p>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </>
-              ) : (
-                <p className="text-sm text-gray-400 text-center py-4">분석 데이터 없음</p>
-              )}
-            </div>
-
-            {/* 푸터 */}
-            <div className="px-5 py-3 bg-gray-50 border-t border-gray-100">
-              <p className="text-[10px] text-gray-400 text-center">
-                {activeTab === 'monthly' ? '월봉 기준 (24개월 내 장대양봉)' : '일봉 기준 (60일 내 장대양봉)'}
-              </p>
-            </div>
-          </div>
+      {/* 선택된 구간 정보 바 */}
+      {selectedSignal && zoneInfoBar && (
+        <div className="mt-2 flex items-center flex-wrap gap-x-3 gap-y-1 px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 text-xs">
+          <span className={`font-black px-2 py-0.5 rounded ${
+            selectedSignal.signal === 'BUY' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+          }`}>
+            {selectedSignal.date} {selectedSignal.signal === 'BUY' ? '▲ 매수' : '▼ 매도'}
+          </span>
+          <span className="text-gray-500">
+            고가 {formatPrice(zoneInfoBar.refCandle.high, market)} · 저가 {formatPrice(zoneInfoBar.refCandle.low, market)}
+          </span>
+          <span className="font-bold text-gray-800">현재 구간: {zoneInfoBar.zone}</span>
+          <span className="text-gray-400">되돌림 {zoneInfoBar.pct.toFixed(1)}%</span>
+          <button onClick={clearZones} className="ml-auto text-gray-400 hover:text-gray-600 text-sm">✕</button>
         </div>
       )}
 
-      {/* 마커 안내 */}
-      {markersRef.current.length > 0 && (
+      {/* 마커 버튼 (미선택 시) */}
+      {markersRef.current.length > 0 && !selectedSignal && (
         <div className="mt-3 space-y-2">
-          <p className="text-xs text-gray-500">차트의 매수/매도 마커를 <strong>클릭</strong>하면 눌림목 분석을 볼 수 있습니다.</p>
+          <p className="text-xs text-gray-500">차트의 <strong>매수/매도 마커</strong>를 클릭하면 4분할 구간이 표시됩니다.</p>
           <div className="flex flex-wrap gap-2 text-xs">
             {markersRef.current.slice(-5).reverse().map((m, i) => (
               <button
                 key={i}
-                onClick={() => setSelectedSignal(m)}
+                onClick={() => drawZones(m)}
                 className={`px-3 py-1 rounded-lg font-bold transition-colors ${
                   m.signal === 'BUY'
                     ? 'bg-green-100 text-green-700 hover:bg-green-200'
