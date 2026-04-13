@@ -49,6 +49,49 @@ function calcMA(values: number[], period: number, endIdx: number): number | null
   return slice.reduce((a, b) => a + b, 0) / period;
 }
 
+// 월 날짜 문자열에 N개월 더하기 ("2024-03" → "2024-06")
+function shiftMonths(ym: string, n: number): string {
+  const [y, m] = ym.split('-').map(Number);
+  const d = new Date(y, m - 1 + n, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+// 피벗 고점 탐지: lookback 범위 내 최고 high
+// { idx, date, high(꼬리), bodyTop(몸통 상단) }
+function findPivotHighs(data: MonthlyCandle[], lookback: number) {
+  const pivots: { idx: number; date: string; high: number; bodyTop: number }[] = [];
+  for (let i = lookback; i < data.length - lookback; i++) {
+    const window = data.slice(i - lookback, i + lookback + 1);
+    if (window.every((c, j) => j === lookback || c.high <= data[i].high)) {
+      pivots.push({
+        idx: i,
+        date: data[i].date,
+        high: data[i].high,                                   // 꼬리 (시작점)
+        bodyTop: Math.max(data[i].open, data[i].close),      // 몸통 상단 (끝점)
+      });
+    }
+  }
+  return pivots;
+}
+
+// 피벗 저점 탐지: lookback 범위 내 최저 low
+// { idx, date, low(꼬리), bodyBottom(몸통 하단) }
+function findPivotLows(data: MonthlyCandle[], lookback: number) {
+  const pivots: { idx: number; date: string; low: number; bodyBottom: number }[] = [];
+  for (let i = lookback; i < data.length - lookback; i++) {
+    const window = data.slice(i - lookback, i + lookback + 1);
+    if (window.every((c, j) => j === lookback || c.low >= data[i].low)) {
+      pivots.push({
+        idx: i,
+        date: data[i].date,
+        low: data[i].low,                                       // 꼬리 (시작점)
+        bodyBottom: Math.min(data[i].open, data[i].close),    // 몸통 하단 (끝점)
+      });
+    }
+  }
+  return pivots;
+}
+
 
 // 차트 + 마커 클릭 시 4분할 구간 직접 표시
 function MonthlyChartWithPopup({
@@ -248,6 +291,60 @@ function MonthlyChartWithPopup({
         title: '10MA',
       });
     }
+
+    // ─── 추세선 자동 감지 & 그리기 ───────────────────────────────────
+    // 피벗 탐지: 양쪽 3개월 윈도우, 최근 36개월 데이터만 사용
+    const recentData = sortedData.slice(Math.max(0, sortedData.length - 36));
+    const LOOKBACK = 3;
+    const EXTEND_MONTHS = 4; // 미래 N개월 연장
+
+    const pivotHighs = findPivotHighs(recentData, LOOKBACK);
+    const pivotLows  = findPivotLows(recentData,  LOOKBACK);
+    const lastDate   = sortedData[sortedData.length - 1].date;
+    const extendDate = shiftMonths(lastDate, EXTEND_MONTHS);
+
+    // 저항선 (하락): 피벗 고점1 꼬리 → 피벗 고점2 몸통 → 연장
+    if (pivotHighs.length >= 2) {
+      const p1 = pivotHighs[pivotHighs.length - 2]; // 꼬리에서 시작
+      const p2 = pivotHighs[pivotHighs.length - 1]; // 몸통으로 연결
+      const idxDiff = p2.idx - p1.idx;
+      if (idxDiff > 0) {
+        const slope = (p2.bodyTop - p1.high) / idxDiff;
+        const extendIdx = (sortedData.length - 1 - (recentData.length - 1 - p2.idx)) + EXTEND_MONTHS;
+        const extendPrice = p1.high + slope * extendIdx;
+        const resistanceSeries = chart.addSeries(LineSeries, {
+          color: '#ef4444', lineWidth: 1, lineStyle: 2,
+          priceLineVisible: false, lastValueVisible: false, title: '저항선',
+        });
+        resistanceSeries.setData([
+          { time: `${p1.date}-01` as string, value: p1.high },
+          { time: `${p2.date}-01` as string, value: p2.bodyTop },
+          { time: `${extendDate}-01` as string, value: Math.max(extendPrice, 0.01) },
+        ]);
+      }
+    }
+
+    // 지지선 (상승): 피벗 저점1 꼬리 → 피벗 저점2 몸통 → 연장
+    if (pivotLows.length >= 2) {
+      const p1 = pivotLows[pivotLows.length - 2]; // 꼬리에서 시작
+      const p2 = pivotLows[pivotLows.length - 1]; // 몸통으로 연결
+      const idxDiff = p2.idx - p1.idx;
+      if (idxDiff > 0) {
+        const slope = (p2.bodyBottom - p1.low) / idxDiff;
+        const extendIdx = (sortedData.length - 1 - (recentData.length - 1 - p2.idx)) + EXTEND_MONTHS;
+        const extendPrice = p1.low + slope * extendIdx;
+        const supportSeries = chart.addSeries(LineSeries, {
+          color: '#16a34a', lineWidth: 1, lineStyle: 2,
+          priceLineVisible: false, lastValueVisible: false, title: '지지선',
+        });
+        supportSeries.setData([
+          { time: `${p1.date}-01` as string, value: p1.low },
+          { time: `${p2.date}-01` as string, value: p2.bodyBottom },
+          { time: `${extendDate}-01` as string, value: Math.max(extendPrice, 0.01) },
+        ]);
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────
 
     // 클릭 이벤트 - 마커 클릭 시 4분할 구간 차트에 그리기
     chart.subscribeClick((param) => {
