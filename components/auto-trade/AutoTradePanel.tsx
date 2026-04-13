@@ -305,7 +305,8 @@ export function AutoTradePanel({
     await runOrders(ordersToExecute);
   };
 
-  const formatPrice = (price: number, isOverseas: boolean) => {
+  const formatPrice = (price: number | null | undefined, isOverseas: boolean) => {
+    if (price == null) return '-';
     if (isOverseas) {
       return `$${price.toFixed(2)}`;
     }
