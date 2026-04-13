@@ -218,11 +218,13 @@ export default function MonthlyMAPage() {
     }
   }, [sortKey]);
 
-  // 지수와 종목 분리
+  // 지수와 종목 분리 (^지수 + 주요 ETF)
+  const FEATURED_ETFS = new Set(['SPY', 'QQQ', 'SOXL']);
   const { indices, stockList } = useMemo(() => {
-    const indices = stocks.filter(s => s.symbol.startsWith('^'));
-    const stockList = stocks.filter(s => !s.symbol.startsWith('^'));
+    const indices = stocks.filter(s => s.symbol.startsWith('^') || FEATURED_ETFS.has(s.symbol));
+    const stockList = stocks.filter(s => !s.symbol.startsWith('^') && !FEATURED_ETFS.has(s.symbol));
     return { indices, stockList };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stocks]);
 
   // 정렬 함수
