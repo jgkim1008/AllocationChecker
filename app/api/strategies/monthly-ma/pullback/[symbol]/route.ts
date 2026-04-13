@@ -261,7 +261,7 @@ function analyzeTimeframe(
   const volumePeriodB = timeframe === 'monthly' ? 2 : 5;
   const volumeTrend = analyzeVolumeTrend(candles, volumePeriodA, volumePeriodB);
 
-  const recentCount = timeframe === 'monthly' ? 12 : 20;
+  const recentCount = timeframe === 'monthly' ? 24 : 20;
   const recentCandles = candles.slice(0, recentCount);
 
   let zones: PullbackZones | null = null;

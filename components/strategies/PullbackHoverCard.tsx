@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card';
 import { TrendingUp, Activity, AlertTriangle, CheckCircle, Loader2, Calendar, BarChart3 } from 'lucide-react';
-import { createChart, ColorType, CrosshairMode, CandlestickSeries, HistogramSeries } from 'lightweight-charts';
+import { createChart, ColorType, CrosshairMode, CandlestickSeries, HistogramSeries, LineSeries, createSeriesMarkers } from 'lightweight-charts';
 
 interface Candle {
   date: string;
@@ -85,10 +85,11 @@ function getScoreColor(score: number): string {
   return 'text-red-600';
 }
 
-function MiniChart({ candles, zones, timeframe }: {
+function MiniChart({ candles, zones, timeframe, referenceDate }: {
   candles: Candle[];
   zones: PullbackZones | null;
   timeframe: 'monthly' | 'daily';
+  referenceDate?: string | null;
 }) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
 
@@ -98,8 +99,8 @@ function MiniChart({ candles, zones, timeframe }: {
     const sortedData = [...candles].sort((a, b) => a.date.localeCompare(b.date));
 
     const chart = createChart(chartContainerRef.current, {
-      width: 340,
-      height: 160,
+      width: chartContainerRef.current.clientWidth || 356,
+      height: 220,
       layout: {
         background: { type: ColorType.Solid, color: '#ffffff' },
         textColor: '#9ca3af',
@@ -113,7 +114,7 @@ function MiniChart({ candles, zones, timeframe }: {
       crosshair: { mode: CrosshairMode.Normal },
       rightPriceScale: {
         borderColor: '#e5e7eb',
-        scaleMargins: { top: 0.1, bottom: 0.2 },
+        scaleMargins: { top: 0.08, bottom: 0.22 },
       },
       timeScale: {
         borderColor: '#e5e7eb',
@@ -141,48 +142,70 @@ function MiniChart({ candles, zones, timeframe }: {
     }));
     candleSeries.setData(candleData);
 
+    // 10MA 라인 (월봉: 10MA / 일봉: 20MA)
+    const maPeriod = timeframe === 'monthly' ? 10 : 20;
+    if (sortedData.length >= maPeriod) {
+      const maData: { time: string; value: number }[] = [];
+      for (let i = maPeriod - 1; i < sortedData.length; i++) {
+        const sum = sortedData.slice(i - maPeriod + 1, i + 1).reduce((s, c) => s + c.close, 0);
+        maData.push({
+          time: timeframe === 'monthly' ? `${sortedData[i].date}-01` : sortedData[i].date,
+          value: sum / maPeriod,
+        });
+      }
+      const maSeries = chart.addSeries(LineSeries, {
+        color: '#f97316',
+        lineWidth: 2,
+        priceLineVisible: false,
+        lastValueVisible: true,
+        title: timeframe === 'monthly' ? '10MA' : '20MA',
+      });
+      maSeries.setData(maData);
+    }
+
     // 4분할 구간 가격선
     if (zones) {
-      candleSeries.createPriceLine({
-        price: zones.safeZone.max,
-        color: '#22c55e',
-        lineWidth: 1,
-        lineStyle: 2,
-        axisLabelVisible: false,
-        title: '25%',
+      const zoneLines = [
+        { price: zones.safeZone.min,   color: '#16a34a', width: 2 as const, style: 0 as const, label: '저가' },
+        { price: zones.safeZone.max,   color: '#22c55e', width: 1 as const, style: 2 as const, label: '25%' },
+        { price: zones.watchZone.max,  color: '#3b82f6', width: 1 as const, style: 2 as const, label: '50%' },
+        { price: zones.costZone.max,   color: '#eab308', width: 1 as const, style: 2 as const, label: '75%' },
+        { price: zones.dangerZone.max, color: '#ef4444', width: 2 as const, style: 0 as const, label: '고가' },
+      ];
+      zoneLines.forEach(({ price, color, width, style, label }) => {
+        candleSeries.createPriceLine({
+          price,
+          color,
+          lineWidth: width,
+          lineStyle: style,
+          axisLabelVisible: style === 0,
+          title: label,
+        });
       });
-      candleSeries.createPriceLine({
-        price: zones.watchZone.max,
-        color: '#3b82f6',
-        lineWidth: 1,
-        lineStyle: 2,
-        axisLabelVisible: false,
-        title: '50%',
-      });
-      candleSeries.createPriceLine({
-        price: zones.costZone.max,
-        color: '#eab308',
-        lineWidth: 1,
-        lineStyle: 2,
-        axisLabelVisible: false,
-        title: '75%',
-      });
-      candleSeries.createPriceLine({
-        price: zones.dangerZone.max,
-        color: '#ef4444',
-        lineWidth: 2,
-        lineStyle: 0,
-        axisLabelVisible: true,
-        title: '고가',
-      });
-      candleSeries.createPriceLine({
-        price: zones.safeZone.min,
-        color: '#22c55e',
-        lineWidth: 2,
-        lineStyle: 0,
-        axisLabelVisible: true,
-        title: '저가',
-      });
+    }
+
+    // 현재가 라인
+    const currentPrice = sortedData[sortedData.length - 1].close;
+    candleSeries.createPriceLine({
+      price: currentPrice,
+      color: '#1f2937',
+      lineWidth: 1,
+      lineStyle: 1,
+      axisLabelVisible: true,
+      title: '현재',
+    });
+
+    // 기준 장대양봉 마커
+    if (referenceDate) {
+      const markerTime = timeframe === 'monthly' ? `${referenceDate}-01` : referenceDate;
+      createSeriesMarkers(candleSeries, [{
+        time: markerTime,
+        position: 'aboveBar',
+        shape: 'arrowDown',
+        color: '#6366f1',
+        text: '기준',
+        size: 1,
+      }]);
     }
 
     // 거래량 히스토그램
@@ -193,7 +216,7 @@ function MiniChart({ candles, zones, timeframe }: {
     });
 
     chart.priceScale('volume').applyOptions({
-      scaleMargins: { top: 0.85, bottom: 0 },
+      scaleMargins: { top: 0.82, bottom: 0 },
     });
 
     const volumeData = sortedData.map(c => ({
@@ -208,9 +231,9 @@ function MiniChart({ candles, zones, timeframe }: {
     return () => {
       chart.remove();
     };
-  }, [candles, zones, timeframe]);
+  }, [candles, zones, timeframe, referenceDate]);
 
-  return <div ref={chartContainerRef} className="rounded-lg overflow-hidden" />;
+  return <div ref={chartContainerRef} className="rounded-lg overflow-hidden w-full" />;
 }
 
 function AnalysisPanel({ analysis, market }: { analysis: TimeframePullbackAnalysis; market: 'US' | 'KR' }) {
@@ -250,6 +273,7 @@ function AnalysisPanel({ analysis, market }: { analysis: TimeframePullbackAnalys
           candles={analysis.recentCandles}
           zones={analysis.zones}
           timeframe={analysis.timeframe}
+          referenceDate={analysis.referenceCandle?.date}
         />
       )}
 
@@ -383,7 +407,7 @@ export function PullbackHoverCard({ symbol, market, children }: Props) {
         <span className="cursor-help">{children}</span>
       </HoverCardTrigger>
       <HoverCardContent
-        className="w-[380px] p-0 shadow-xl border-gray-200"
+        className="w-[420px] p-0 shadow-xl border-gray-200"
         side="right"
         align="start"
         sideOffset={8}
