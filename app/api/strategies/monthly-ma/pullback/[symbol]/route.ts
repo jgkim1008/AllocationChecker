@@ -251,11 +251,16 @@ function analyzeTimeframe(
   candles: Candle[],
   timeframe: 'monthly' | 'daily',
   searchRange: number,
-  minChangePercent: number
+  minChangePercent: number,
+  forceDate?: string  // 기준봉 날짜 강제 지정 (yyyy-mm 또는 yyyy-mm-dd)
 ): TimeframePullbackAnalysis {
   const currentPrice = candles[0]?.close || 0;
   const searchCandles = candles.slice(0, searchRange);
-  const referenceCandle = findReferenceCandle(searchCandles, minChangePercent);
+
+  // forceDate가 있으면 해당 날짜 캔들을 기준봉으로 사용
+  const referenceCandle = forceDate
+    ? (candles.find(c => c.date === forceDate || c.date.startsWith(forceDate)) ?? findReferenceCandle(searchCandles, minChangePercent))
+    : findReferenceCandle(searchCandles, minChangePercent);
 
   const volumePeriodA = timeframe === 'monthly' ? 2 : 5;
   const volumePeriodB = timeframe === 'monthly' ? 2 : 5;
@@ -317,6 +322,7 @@ export async function GET(
   const { symbol } = await params;
   const { searchParams } = new URL(req.url);
   const market = (searchParams.get('market') || 'US') as 'US' | 'KR';
+  const refDate = searchParams.get('refDate') || undefined;  // 기준봉 날짜 (yyyy-mm)
   const decodedSymbol = decodeURIComponent(symbol);
 
   try {
@@ -342,8 +348,8 @@ export async function GET(
     // 월봉 데이터 생성
     const monthlyCandles = aggregateToMonthly(dailyCandles);
 
-    // 월봉 분석 (최근 24개월 내 장대양봉, 최소 8% 상승)
-    const monthlyAnalysis = analyzeTimeframe(monthlyCandles, 'monthly', 24, 8);
+    // 월봉 분석 (refDate가 있으면 해당 월봉을 기준봉으로 사용)
+    const monthlyAnalysis = analyzeTimeframe(monthlyCandles, 'monthly', 24, 8, refDate);
 
     // 일봉 분석 (최근 60일 내 장대양봉, 최소 5% 상승)
     const dailyAnalysis = analyzeTimeframe(dailyCandles, 'daily', 60, 5);

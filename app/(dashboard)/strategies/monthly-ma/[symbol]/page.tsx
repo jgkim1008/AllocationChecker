@@ -235,17 +235,16 @@ function MonthlyChartWithPopup({
   const [loadingPullback, setLoadingPullback] = useState(false);
   const markersRef = useRef<SignalMarker[]>([]);
   const chartRef = useRef<IChartApi | null>(null);
-  const fetchedRef = useRef(false);
-
-  // 눌림목 분석 데이터 미리 로드
+  // 마커 클릭 시 해당 날짜 기준봉으로 눌림목 데이터 fetch
   useEffect(() => {
-    if (fetchedRef.current) return;
-    fetchedRef.current = true;
+    if (!selectedSignal) return;
 
     const fetchPullbackData = async () => {
       setLoadingPullback(true);
+      setPullbackData(null);
       try {
-        const res = await fetch(`/api/strategies/monthly-ma/pullback/${encodeURIComponent(symbol)}?market=${market}`);
+        const url = `/api/strategies/monthly-ma/pullback/${encodeURIComponent(symbol)}?market=${market}&refDate=${selectedSignal.date}`;
+        const res = await fetch(url);
         if (res.ok) {
           const data = await res.json();
           setPullbackData({ monthly: data.monthly, daily: data.daily });
@@ -258,7 +257,7 @@ function MonthlyChartWithPopup({
     };
 
     fetchPullbackData();
-  }, [symbol, market]);
+  }, [selectedSignal, symbol, market]);
 
   useEffect(() => {
     if (!chartContainerRef.current || candles.length < 10) return;
