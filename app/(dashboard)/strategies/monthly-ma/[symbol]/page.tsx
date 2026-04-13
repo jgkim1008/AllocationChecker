@@ -310,8 +310,9 @@ function MonthlyChartWithPopup({
       const idxDiff = p2.idx - p1.idx;
       if (idxDiff > 0) {
         const slope = (p2.bodyTop - p1.high) / idxDiff;
-        const extendIdx = (sortedData.length - 1 - (recentData.length - 1 - p2.idx)) + EXTEND_MONTHS;
-        const extendPrice = p1.high + slope * extendIdx;
+        // p2 기준으로: p2→데이터끝 거리 + EXTEND_MONTHS 만큼 연장
+        const stepsToExtend = (recentData.length - 1 - p2.idx) + EXTEND_MONTHS;
+        const extendPrice = p2.bodyTop + slope * stepsToExtend;
         const resistanceSeries = chart.addSeries(LineSeries, {
           color: '#ef4444', lineWidth: 1, lineStyle: 2,
           priceLineVisible: false, lastValueVisible: false, title: '저항선',
@@ -331,8 +332,8 @@ function MonthlyChartWithPopup({
       const idxDiff = p2.idx - p1.idx;
       if (idxDiff > 0) {
         const slope = (p2.bodyBottom - p1.low) / idxDiff;
-        const extendIdx = (sortedData.length - 1 - (recentData.length - 1 - p2.idx)) + EXTEND_MONTHS;
-        const extendPrice = p1.low + slope * extendIdx;
+        const stepsToExtend = (recentData.length - 1 - p2.idx) + EXTEND_MONTHS;
+        const extendPrice = p2.bodyBottom + slope * stepsToExtend;
         const supportSeries = chart.addSeries(LineSeries, {
           color: '#16a34a', lineWidth: 1, lineStyle: 2,
           priceLineVisible: false, lastValueVisible: false, title: '지지선',
@@ -362,6 +363,7 @@ function MonthlyChartWithPopup({
     };
     window.addEventListener('resize', handleResize);
 
+    chart.timeScale().applyOptions({ rightOffset: EXTEND_MONTHS });
     chart.timeScale().fitContent();
 
     return () => {
