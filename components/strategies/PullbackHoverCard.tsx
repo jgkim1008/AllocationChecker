@@ -96,124 +96,140 @@ function DetailChart({ candles, zones, timeframe, referenceDate }: {
   useEffect(() => {
     if (!containerRef.current || candles.length < 3) return;
 
-    const sortedData = [...candles].sort((a, b) => a.date.localeCompare(b.date));
-    const toTime = (d: string) => timeframe === 'monthly' ? `${d}-01` : d;
+    const el = containerRef.current;
+    let chart: ReturnType<typeof createChart> | null = null;
 
-    const chart = createChart(containerRef.current, {
-      width: containerRef.current.clientWidth,
-      height: 340,
-      layout: {
-        background: { type: ColorType.Solid, color: '#ffffff' },
-        textColor: '#6b7280',
-        fontFamily: 'Inter, system-ui, sans-serif',
-        fontSize: 10,
-      },
-      grid: {
-        vertLines: { color: '#f3f4f6' },
-        horzLines: { color: '#f3f4f6' },
-      },
-      crosshair: { mode: CrosshairMode.Normal },
-      rightPriceScale: {
-        borderColor: '#e5e7eb',
-        scaleMargins: { top: 0.08, bottom: 0.22 },
-      },
-      timeScale: {
-        borderColor: '#e5e7eb',
-        timeVisible: timeframe === 'daily',
-        secondsVisible: false,
-      },
-    });
+    const buildChart = (width: number) => {
+      if (chart) { chart.remove(); chart = null; }
 
-    // 캔들스틱
-    const candleSeries = chart.addSeries(CandlestickSeries, {
-      upColor: '#ef4444',
-      downColor: '#3b82f6',
-      borderUpColor: '#ef4444',
-      borderDownColor: '#3b82f6',
-      wickUpColor: '#ef4444',
-      wickDownColor: '#3b82f6',
-    });
-    candleSeries.setData(sortedData.map(c => ({
-      time: toTime(c.date), open: c.open, high: c.high, low: c.low, close: c.close,
-    })));
+      const sortedData = [...candles].sort((a, b) => a.date.localeCompare(b.date));
+      const toTime = (d: string) => timeframe === 'monthly' ? `${d}-01` : d;
 
-    // 10MA (월봉) / 20MA (일봉)
-    const maPeriod = timeframe === 'monthly' ? 10 : 20;
-    if (sortedData.length >= maPeriod) {
-      const maData = sortedData.slice(maPeriod - 1).map((_, idx) => {
-        const i = idx + maPeriod - 1;
-        const sum = sortedData.slice(i - maPeriod + 1, i + 1).reduce((s, c) => s + c.close, 0);
-        return { time: toTime(sortedData[i].date), value: sum / maPeriod };
+      chart = createChart(el, {
+        width,
+        height: 340,
+        layout: {
+          background: { type: ColorType.Solid, color: '#ffffff' },
+          textColor: '#6b7280',
+          fontFamily: 'Inter, system-ui, sans-serif',
+          fontSize: 10,
+        },
+        grid: {
+          vertLines: { color: '#f3f4f6' },
+          horzLines: { color: '#f3f4f6' },
+        },
+        crosshair: { mode: CrosshairMode.Normal },
+        rightPriceScale: {
+          borderColor: '#e5e7eb',
+          scaleMargins: { top: 0.08, bottom: 0.22 },
+        },
+        timeScale: {
+          borderColor: '#e5e7eb',
+          timeVisible: timeframe === 'daily',
+          secondsVisible: false,
+        },
       });
-      const maSeries = chart.addSeries(LineSeries, {
-        color: '#f97316',
-        lineWidth: 2,
-        priceLineVisible: false,
-        lastValueVisible: true,
-        title: timeframe === 'monthly' ? '10MA' : '20MA',
+
+      // 캔들스틱
+      const candleSeries = chart.addSeries(CandlestickSeries, {
+        upColor: '#ef4444',
+        downColor: '#3b82f6',
+        borderUpColor: '#ef4444',
+        borderDownColor: '#3b82f6',
+        wickUpColor: '#ef4444',
+        wickDownColor: '#3b82f6',
       });
-      maSeries.setData(maData);
-    }
+      candleSeries.setData(sortedData.map(c => ({
+        time: toTime(c.date), open: c.open, high: c.high, low: c.low, close: c.close,
+      })));
 
-    // 4분할 구간선
-    if (zones) {
-      [
-        { price: zones.safeZone.min,   color: '#16a34a', w: 2 as const, s: 0 as const, label: '저가(기준)' },
-        { price: zones.safeZone.max,   color: '#22c55e', w: 1 as const, s: 2 as const, label: '25%' },
-        { price: zones.watchZone.max,  color: '#3b82f6', w: 1 as const, s: 2 as const, label: '50%' },
-        { price: zones.costZone.max,   color: '#eab308', w: 1 as const, s: 2 as const, label: '75%' },
-        { price: zones.dangerZone.max, color: '#ef4444', w: 2 as const, s: 0 as const, label: '고가(기준)' },
-      ].forEach(({ price, color, w, s, label }) => {
-        candleSeries.createPriceLine({ price, color, lineWidth: w, lineStyle: s, axisLabelVisible: s === 0, title: label });
+      // 10MA (월봉) / 20MA (일봉)
+      const maPeriod = timeframe === 'monthly' ? 10 : 20;
+      if (sortedData.length >= maPeriod) {
+        const maData = sortedData.slice(maPeriod - 1).map((_, idx) => {
+          const i = idx + maPeriod - 1;
+          const sum = sortedData.slice(i - maPeriod + 1, i + 1).reduce((s, c) => s + c.close, 0);
+          return { time: toTime(sortedData[i].date), value: sum / maPeriod };
+        });
+        const maSeries = chart.addSeries(LineSeries, {
+          color: '#f97316',
+          lineWidth: 2,
+          priceLineVisible: false,
+          lastValueVisible: true,
+          title: timeframe === 'monthly' ? '10MA' : '20MA',
+        });
+        maSeries.setData(maData);
+      }
+
+      // 4분할 구간선
+      if (zones) {
+        [
+          { price: zones.safeZone.min,   color: '#16a34a', w: 2 as const, s: 0 as const, label: '저가(기준)' },
+          { price: zones.safeZone.max,   color: '#22c55e', w: 1 as const, s: 2 as const, label: '25%' },
+          { price: zones.watchZone.max,  color: '#3b82f6', w: 1 as const, s: 2 as const, label: '50%' },
+          { price: zones.costZone.max,   color: '#eab308', w: 1 as const, s: 2 as const, label: '75%' },
+          { price: zones.dangerZone.max, color: '#ef4444', w: 2 as const, s: 0 as const, label: '고가(기준)' },
+        ].forEach(({ price, color, w, s, label }) => {
+          candleSeries.createPriceLine({ price, color, lineWidth: w, lineStyle: s, axisLabelVisible: s === 0, title: label });
+        });
+      }
+
+      // 현재가선
+      const currentPrice = sortedData[sortedData.length - 1].close;
+      candleSeries.createPriceLine({
+        price: currentPrice,
+        color: '#1f2937',
+        lineWidth: 1,
+        lineStyle: 1,
+        axisLabelVisible: true,
+        title: '현재',
       });
-    }
 
-    // 현재가선
-    const currentPrice = sortedData[sortedData.length - 1].close;
-    candleSeries.createPriceLine({
-      price: currentPrice,
-      color: '#1f2937',
-      lineWidth: 1,
-      lineStyle: 1,
-      axisLabelVisible: true,
-      title: '현재',
-    });
+      // 기준 장대양봉 마커
+      if (referenceDate) {
+        createSeriesMarkers(candleSeries, [{
+          time: toTime(referenceDate),
+          position: 'aboveBar',
+          shape: 'arrowDown',
+          color: '#6366f1',
+          text: '기준봉',
+          size: 2,
+        }]);
+      }
 
-    // 기준 장대양봉 마커
-    if (referenceDate) {
-      createSeriesMarkers(candleSeries, [{
-        time: toTime(referenceDate),
-        position: 'aboveBar',
-        shape: 'arrowDown',
-        color: '#6366f1',
-        text: '기준봉',
-        size: 2,
-      }]);
-    }
+      // 거래량
+      const volSeries = chart.addSeries(HistogramSeries, {
+        color: '#d1d5db',
+        priceFormat: { type: 'volume' },
+        priceScaleId: 'vol',
+      });
+      chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
+      volSeries.setData(sortedData.map(c => ({
+        time: toTime(c.date),
+        value: c.volume,
+        color: c.close >= c.open ? '#fca5a5' : '#93c5fd',
+      })));
 
-    // 거래량
-    const volSeries = chart.addSeries(HistogramSeries, {
-      color: '#d1d5db',
-      priceFormat: { type: 'volume' },
-      priceScaleId: 'vol',
-    });
-    chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
-    volSeries.setData(sortedData.map(c => ({
-      time: toTime(c.date),
-      value: c.volume,
-      color: c.close >= c.open ? '#fca5a5' : '#93c5fd',
-    })));
-
-    chart.timeScale().fitContent();
-
-    const handleResize = () => {
-      if (containerRef.current) chart.applyOptions({ width: containerRef.current.clientWidth });
+      chart.timeScale().fitContent();
     };
-    window.addEventListener('resize', handleResize);
+
+    // ResizeObserver로 컨테이너 크기가 확정된 후 차트 초기화
+    // (Dialog 애니메이션 완료 전 clientWidth=0 문제 방지)
+    const ro = new ResizeObserver(entries => {
+      const w = entries[0]?.contentRect.width;
+      if (w && w > 0) {
+        if (!chart) {
+          buildChart(w);
+        } else {
+          chart.applyOptions({ width: w });
+        }
+      }
+    });
+    ro.observe(el);
 
     return () => {
-      window.removeEventListener('resize', handleResize);
-      chart.remove();
+      ro.disconnect();
+      chart?.remove();
     };
   }, [candles, zones, timeframe, referenceDate]);
 
