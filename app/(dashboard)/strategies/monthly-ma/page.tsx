@@ -8,6 +8,7 @@ import {
   ChevronUp, ChevronDown, Target, Ban,
 } from 'lucide-react';
 import { PremiumGate } from '@/components/PremiumGate';
+import { PullbackHoverCard } from '@/components/strategies/PullbackHoverCard';
 import type { MonthlyMAStock } from '@/app/api/strategies/monthly-ma/scan/route';
 
 type SortKey = 'signal' | 'symbol' | 'price' | 'maDeviation' | 'consecutive' | 'lastSignalDate' | 'returnSinceSignal' | 'fromYearHigh';
@@ -86,10 +87,12 @@ function StockRow({ stock }: { stock: MonthlyMAStock }) {
             {isHold ? '보유' : '매도'}
           </div>
           {stock.nearMA && (
-            <div className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded font-black text-[9px] bg-blue-100 text-blue-700 w-fit">
-              <Target className="h-2.5 w-2.5" />
-              눌림목
-            </div>
+            <PullbackHoverCard symbol={stock.symbol} market={stock.market}>
+              <div className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded font-black text-[9px] bg-blue-100 text-blue-700 w-fit hover:bg-blue-200 transition-colors cursor-help">
+                <Target className="h-2.5 w-2.5" />
+                눌림목
+              </div>
+            </PullbackHoverCard>
           )}
         </div>
       </td>
