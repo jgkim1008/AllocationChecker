@@ -93,7 +93,7 @@ export function AutoTradePanel({
 }: AutoTradePanelProps) {
   const [brokerType, setBrokerType] = useState<BrokerType>(defaultBroker);
   const [symbol, setSymbol] = useState(defaultSymbol);
-  const [strategyVersion, setStrategyVersion] = useState<StrategyVersion>('v2.2');
+  const [strategyVersion, setStrategyVersion] = useState<StrategyVersion>('v3.0');
   const [totalCapital, setTotalCapital] = useState(5000);
   const [currentT, setCurrentT] = useState(0);
   const [currentShares, setCurrentShares] = useState(0);
