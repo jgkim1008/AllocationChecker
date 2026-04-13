@@ -67,9 +67,9 @@ function formatPrice(price: number, market: 'US' | 'KR'): string {
 
 function getZoneInfo(zone: TimeframePullbackAnalysis['currentZone']) {
   switch (zone) {
-    case 'safe':   return { label: '안전지대 (0~25%)',    color: 'text-green-700',  bg: 'bg-green-100',  border: 'border-green-200' };
-    case 'watch':  return { label: '관찰지점 (25~50%)',   color: 'text-blue-700',   bg: 'bg-blue-100',   border: 'border-blue-200' };
-    case 'cost':   return { label: '매입원가 (50~75%)',   color: 'text-yellow-700', bg: 'bg-yellow-100', border: 'border-yellow-200' };
+    case 'safe':   return { label: '절대자리 (0~25%)',    color: 'text-green-700',  bg: 'bg-green-100',  border: 'border-green-200' };
+    case 'watch':  return { label: '매입원가 (25~50%)',   color: 'text-blue-700',   bg: 'bg-blue-100',   border: 'border-blue-200' };
+    case 'cost':   return { label: '안전지대 (50~75%)',   color: 'text-yellow-700', bg: 'bg-yellow-100', border: 'border-yellow-200' };
     case 'danger': return { label: '위험지대 (75~100%)',  color: 'text-red-700',    bg: 'bg-red-100',    border: 'border-red-200' };
     case 'above':  return { label: '고가 돌파',           color: 'text-purple-700', bg: 'bg-purple-100', border: 'border-purple-200' };
     case 'below':  return { label: '저가 이탈',           color: 'text-gray-700',   bg: 'bg-gray-200',   border: 'border-gray-300' };
@@ -279,9 +279,9 @@ function AnalysisContent({ analysis, market }: { analysis: TimeframePullbackAnal
           <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">{tfLabel} 장대양봉 4분할 구간</p>
           <div className="flex h-6 rounded-lg overflow-hidden text-[8px] font-bold">
             {[
-              { label: '안전 0~25%',  bg: 'bg-green-100',  text: 'text-green-700' },
-              { label: '관찰 25~50%', bg: 'bg-blue-100',   text: 'text-blue-700' },
-              { label: '매입 50~75%', bg: 'bg-yellow-100', text: 'text-yellow-700' },
+              { label: '절대 0~25%',  bg: 'bg-green-100',  text: 'text-green-700' },
+              { label: '매입 25~50%', bg: 'bg-blue-100',   text: 'text-blue-700' },
+              { label: '안전 50~75%', bg: 'bg-yellow-100', text: 'text-yellow-700' },
               { label: '위험 75~100%',bg: 'bg-red-100',    text: 'text-red-700' },
             ].map((z, i) => (
               <div key={i} className={`flex-1 ${z.bg} ${z.text} flex items-center justify-center ${i < 3 ? 'border-r border-white' : ''}`}>

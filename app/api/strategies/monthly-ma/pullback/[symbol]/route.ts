@@ -13,9 +13,9 @@ interface Candle {
 }
 
 interface PullbackZones {
-  safeZone: { min: number; max: number };      // 0~25%: 안전지대
-  watchZone: { min: number; max: number };     // 25~50%: 관찰지점
-  costZone: { min: number; max: number };      // 50~75%: 매입원가
+  safeZone: { min: number; max: number };      // 0~25%: 절대자리
+  watchZone: { min: number; max: number };     // 25~50%: 매입원가
+  costZone: { min: number; max: number };      // 50~75%: 안전지대
   dangerZone: { min: number; max: number };    // 75~100%: 위험지대
 }
 
@@ -146,15 +146,15 @@ function calculatePullbackScore(
   switch (currentZone) {
     case 'safe':
       score += 30;
-      signals.push(`[${tfLabel}] 안전지대(0~25%) - 최적 매수 구간`);
+      signals.push(`[${tfLabel}] 절대자리(0~25%) - 최적 매수 구간`);
       break;
     case 'watch':
       score += 20;
-      signals.push(`[${tfLabel}] 관찰지점(25~50%) - 매집 구간`);
+      signals.push(`[${tfLabel}] 매입원가(25~50%) - 매집 구간`);
       break;
     case 'cost':
       score += 5;
-      signals.push(`[${tfLabel}] 매입원가(50~75%) - 에너지 소화 중`);
+      signals.push(`[${tfLabel}] 안전지대(50~75%) - 에너지 소화 중`);
       break;
     case 'danger':
       score -= 15;

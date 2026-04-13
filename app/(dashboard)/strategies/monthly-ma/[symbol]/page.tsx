@@ -201,9 +201,9 @@ function PopupChart({ analysis }: { analysis: PullbackAnalysis }) {
 
 function getZoneLabel(zone: string | null): { label: string; color: string; bgColor: string } {
   switch (zone) {
-    case 'safe': return { label: '안전지대 0~25%', color: 'text-green-700', bgColor: 'bg-green-100' };
-    case 'watch': return { label: '관찰지점 25~50%', color: 'text-blue-700', bgColor: 'bg-blue-100' };
-    case 'cost': return { label: '매입원가 50~75%', color: 'text-yellow-700', bgColor: 'bg-yellow-100' };
+    case 'safe': return { label: '절대자리 0~25%', color: 'text-green-700', bgColor: 'bg-green-100' };
+    case 'watch': return { label: '매입원가 25~50%', color: 'text-blue-700', bgColor: 'bg-blue-100' };
+    case 'cost': return { label: '안전지대 50~75%', color: 'text-yellow-700', bgColor: 'bg-yellow-100' };
     case 'danger': return { label: '위험지대 75~100%', color: 'text-red-700', bgColor: 'bg-red-100' };
     case 'above': return { label: '고가 돌파', color: 'text-purple-700', bgColor: 'bg-purple-100' };
     case 'below': return { label: '저가 이탈', color: 'text-gray-700', bgColor: 'bg-gray-200' };
@@ -529,9 +529,9 @@ function MonthlyChartWithPopup({
                     <div className="space-y-1">
                       <p className="text-xs font-bold text-gray-500">장대양봉 4분할 구간</p>
                       <div className="flex h-6 rounded-lg overflow-hidden text-[9px] font-bold">
-                        <div className="flex-1 bg-green-100 text-green-700 flex items-center justify-center border-r border-white">안전 0~25%</div>
-                        <div className="flex-1 bg-blue-100 text-blue-700 flex items-center justify-center border-r border-white">관찰 25~50%</div>
-                        <div className="flex-1 bg-yellow-100 text-yellow-700 flex items-center justify-center border-r border-white">매입 50~75%</div>
+                        <div className="flex-1 bg-green-100 text-green-700 flex items-center justify-center border-r border-white">절대 0~25%</div>
+                        <div className="flex-1 bg-blue-100 text-blue-700 flex items-center justify-center border-r border-white">매입 25~50%</div>
+                        <div className="flex-1 bg-yellow-100 text-yellow-700 flex items-center justify-center border-r border-white">안전 50~75%</div>
                         <div className="flex-1 bg-red-100 text-red-700 flex items-center justify-center">위험 75~100%</div>
                       </div>
                       {activeAnalysis.pullbackPercent !== null && activeAnalysis.pullbackPercent >= 0 && activeAnalysis.pullbackPercent <= 100 && (
