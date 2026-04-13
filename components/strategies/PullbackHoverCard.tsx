@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Dialog, DialogContent, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import {
   TrendingUp, Activity, AlertTriangle, CheckCircle, Loader2,
   Calendar, BarChart3, Target,
@@ -400,7 +400,7 @@ export function PullbackHoverCard({ symbol, market, children }: Props) {
         <div className="px-5 py-3.5 border-b border-gray-100 bg-gray-50">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
-              <span className="font-black text-gray-900 text-base">{symbol}</span>
+              <DialogTitle className="font-black text-gray-900 text-base">{symbol}</DialogTitle>
               <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
                 market === 'US' ? 'bg-blue-50 text-blue-600' : 'bg-emerald-50 text-emerald-600'
               }`}>{market}</span>
