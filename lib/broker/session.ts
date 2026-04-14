@@ -8,7 +8,7 @@ import type { IBroker } from './interface';
 import type { BrokerType, KISCredentials, KiwoomCredentials, TokenInfo } from './types';
 import { KISClient } from './kis';
 import { KiwoomClient } from './kiwoom';
-import { getBrokerCredentials, getEnvKISCredentials, getCachedToken, cacheToken, clearCachedToken } from './storage';
+import { getBrokerCredentials, getBrokerCredentialsFromDB, getEnvKISCredentials, getCachedToken, cacheToken, clearCachedToken } from './storage';
 
 // 브로커 인스턴스 캐시
 const brokerCache = new Map<string, IBroker>();
@@ -36,9 +36,17 @@ export async function getBrokerClient(
     return { success: true, client };
   }
 
-  // 자격증명 조회: 메모리 저장소 → .env.local 순으로 폴백
+  // 자격증명 조회: 메모리 캐시 → DB(암호화 저장) → .env.local 순으로 폴백
   const credResult = await getBrokerCredentials(userId, brokerType);
   let credentials = credResult.data;
+
+  // 메모리에 없으면 DB에서 복호화하여 로드 (서버리스/크론 환경 대응)
+  if (!credentials) {
+    const dbResult = await getBrokerCredentialsFromDB(userId, brokerType);
+    if (dbResult.success && dbResult.data) {
+      credentials = dbResult.data;
+    }
+  }
 
   if (!credentials && brokerType === 'kis') {
     const envCreds = getEnvKISCredentials();
