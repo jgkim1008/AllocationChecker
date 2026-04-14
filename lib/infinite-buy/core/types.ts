@@ -22,6 +22,7 @@ export interface Order {
   quantity: number;    // 주문 수량
   amount: number;      // 주문 금액 (price × quantity)
   reason: string;      // 주문 사유 (예: "전반전 평단 LOC 매수")
+  isReference?: boolean; // 참고용 (수량 부족으로 실제 주문 불가)
 }
 
 // ── 일일 주문 세트 ────────────────────────────────────────────────────

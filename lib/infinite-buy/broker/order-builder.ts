@@ -18,6 +18,7 @@ export interface BrokerOrderRequest {
   price: number;
   market: MarketType;
   reason: string;
+  isReference?: boolean; // 참고용 (수량 부족으로 실제 주문 불가)
 }
 
 export interface LiveOrderSet {
@@ -71,6 +72,7 @@ export function buildLiveOrders(
     price: o.price,
     market: config.market,
     reason: o.reason,
+    isReference: o.isReference,
   });
 
   const allBuys = orders.buyOrders.map(toBrokerOrder);

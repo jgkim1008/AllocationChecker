@@ -64,9 +64,13 @@ export abstract class BaseStrategy {
       ? this.calculateSellOrders(t, avgCost, shares)
       : [];
 
+    // 수량 0인 주문은 참고용으로 표시
+    const markReference = (orders: Order[]): Order[] =>
+      orders.map(o => o.quantity <= 0 ? { ...o, isReference: true } : o);
+
     return {
-      buyOrders: buyOrders.filter(o => o.quantity > 0),
-      sellOrders: sellOrders.filter(o => o.quantity > 0),
+      buyOrders: markReference(buyOrders),
+      sellOrders: markReference(sellOrders),
       t,
       starPct,
       starPoint,

@@ -41,6 +41,7 @@ import {
   Download,
   ExternalLink,
 } from 'lucide-react';
+import { fetchTrackerPosition } from '@/lib/infinite-buy/tracker/position';
 
 type BrokerType = 'kis' | 'kiwoom';
 type StrategyVersion = 'v2.2' | 'v3.0' | 'v4.0';
@@ -56,6 +57,7 @@ interface AutoTradeOrder {
   reason: string;
   status: string;
   market: string;
+  isReference?: boolean; // 참고용 (수량 부족)
 }
 
 interface DailyOrders {
@@ -117,6 +119,8 @@ export function AutoTradePanel({
     message: string;
     details?: { orderId: string; side: string; error?: string; duplicate?: boolean }[];
   } | null>(null);
+  const [autoTradeEnabled, setAutoTradeEnabled] = useState(false);
+  const [isSavingAutoTrade, setIsSavingAutoTrade] = useState(false);
   const [todayDuplicates, setTodayDuplicates] = useState<{
     buyExists: boolean;
     sellExists: boolean;
@@ -155,28 +159,41 @@ export function AutoTradePanel({
     setTrackerLoaded(false);
   };
 
-  // 트래커에서 현재 상태 불러오기
-  const loadFromTracker = async () => {
-    if (!symbol) return;
+  // 빠른 종목 선택 + 트래커 동기화
+  const quickSelectSymbol = async (sym: string) => {
+    setSymbol(sym);
+    setSuggestions([]);
+    setShowSuggestions(false);
+    setTrackerLoaded(false);
+    // 트래커 동기화 바로 실행
+    await loadFromTracker(sym);
+  };
+
+  // 트래커에서 현재 상태 불러오기 (targetSymbol 파라미터로 특정 종목 지정 가능)
+  const loadFromTracker = async (targetSymbol?: string) => {
+    const sym = targetSymbol || symbol;
+    if (!sym) return;
     setIsLoadingTracker(true);
     try {
-      const res = await fetch(`/api/infinite-buy/records?symbol=${symbol.toUpperCase()}`);
-      const records: { capital: number; shares: number; amount: number }[] = await res.json();
+      const position = await fetchTrackerPosition(sym.toUpperCase());
 
-      if (!Array.isArray(records) || records.length === 0) {
-        alert(`트래커에 "${symbol}" 매수 기록이 없습니다.`);
+      if (!position) {
+        alert(`트래커에 "${sym}" 포지션이 없습니다. (기록 없음 또는 전량 매도 완료)`);
+        setCurrentT(0);
+        setCurrentShares(0);
+        setCurrentInvested(0);
+        setTrackerLoaded(true);
         return;
       }
 
-      const totalShares = records.reduce((sum, r) => sum + r.shares, 0);
-      const totalInvested = records.reduce((sum, r) => sum + r.amount, 0);
-      const capital = records[0].capital;
-      const t = Math.ceil((totalInvested / (capital / (strategyVersion === 'v3.0' ? 20 : 40))) * 100) / 100;
+      const divisions = strategyVersion === 'v3.0' ? 20 : 40;
+      const unitBuy = position.capital / divisions;
+      const t = Math.ceil((position.invested / unitBuy) * 100) / 100;
 
-      setTotalCapital(capital);
+      setTotalCapital(position.capital);
       setCurrentT(t);
-      setCurrentShares(Math.round(totalShares * 10000) / 10000);
-      setCurrentInvested(Math.round(totalInvested * 100) / 100);
+      setCurrentShares(Math.round(position.shares * 10000) / 10000);
+      setCurrentInvested(Math.round(position.invested * 100) / 100);
       setTrackerLoaded(true);
     } catch {
       alert('트래커 데이터를 불러오지 못했습니다.');
@@ -237,10 +254,11 @@ export function AutoTradePanel({
     });
   };
 
-  // 전체 확인
+  // 전체 확인 (참고용 주문 제외)
   const confirmAllOrders = () => {
     if (!dailyOrders) return;
-    const allOrders = [...dailyOrders.buyOrders, ...dailyOrders.sellOrders];
+    const allOrders = [...dailyOrders.buyOrders, ...dailyOrders.sellOrders]
+      .filter(o => !o.isReference);
     setConfirmedOrders(new Set(allOrders.map(o => o.id)));
   };
 
@@ -287,18 +305,21 @@ export function AutoTradePanel({
   };
 
   // 전체 확인 후 즉시 실행
+  // 전체 확인 후 즉시 실행 (참고용 주문 제외)
   const executeAllOrders = async () => {
     if (!dailyOrders) return;
-    const allOrders = [...dailyOrders.buyOrders, ...dailyOrders.sellOrders];
+    const allOrders = [...dailyOrders.buyOrders, ...dailyOrders.sellOrders]
+      .filter(o => !o.isReference);
     if (allOrders.length === 0) return;
     setConfirmedOrders(new Set(allOrders.map(o => o.id)));
     await runOrders(allOrders.map(o => ({ ...o, status: 'confirmed' })));
   };
 
-  // 확인된 주문만 실행
+  // 확인된 주문만 실행 (참고용 주문 제외)
   const executeOrders = async () => {
     if (!dailyOrders || confirmedOrders.size === 0) return;
-    const allOrders = [...dailyOrders.buyOrders, ...dailyOrders.sellOrders];
+    const allOrders = [...dailyOrders.buyOrders, ...dailyOrders.sellOrders]
+      .filter(o => !o.isReference);
     const ordersToExecute = allOrders
       .filter(o => confirmedOrders.has(o.id))
       .map(o => ({ ...o, status: 'confirmed' }));
@@ -313,25 +334,90 @@ export function AutoTradePanel({
     return `${price.toLocaleString()}원`;
   };
 
+  // 자동매매 설정 로드
+  const loadAutoTradeSettings = async () => {
+    if (!symbol) return;
+    try {
+      const res = await fetch('/api/auto-trade/settings');
+      if (res.ok) {
+        const data = await res.json();
+        const setting = data.data?.find((s: { symbol: string }) => s.symbol === symbol.toUpperCase());
+        setAutoTradeEnabled(setting?.is_enabled ?? false);
+      }
+    } catch {}
+  };
+
+  // 자동매매 설정 토글
+  const toggleAutoTrade = async () => {
+    if (!symbol) return;
+    setIsSavingAutoTrade(true);
+    try {
+      if (autoTradeEnabled) {
+        // 비활성화
+        const res = await fetch(`/api/auto-trade/settings?symbol=${symbol}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (data.success) {
+          setAutoTradeEnabled(false);
+          alert(`${symbol} 자동매매가 해제되었습니다.`);
+        } else {
+          alert(`해제 실패: ${data.error || '알 수 없는 오류'}`);
+        }
+      } else {
+        // 활성화
+        const res = await fetch('/api/auto-trade/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            symbol: symbol.toUpperCase(),
+            broker_type: brokerType,
+            strategy_version: strategyVersion,
+            total_capital: totalCapital,
+            is_enabled: true,
+          }),
+        });
+        const data = await res.json();
+        if (data.success) {
+          setAutoTradeEnabled(true);
+          alert(`${symbol} 자동매매가 등록되었습니다.\n매일 밤 21:00(서머타임) / 22:00(겨울) 프리장에 자동 실행됩니다.`);
+        } else {
+          alert(`활성화 실패: ${data.error || '알 수 없는 오류'}`);
+        }
+      }
+    } catch (err) {
+      console.error('자동매매 설정 오류:', err);
+      alert('자동매매 설정 변경에 실패했습니다.');
+    } finally {
+      setIsSavingAutoTrade(false);
+    }
+  };
+
+  // 종목 변경 시 자동매매 설정 로드
+  useEffect(() => {
+    if (symbol) {
+      loadAutoTradeSettings();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [symbol]);
+
   const isOverseas = !/^\d{6}$/.test(symbol);
 
   return (
     <div className="space-y-4">
       {/* 설정 카드 */}
-      <Card>
-        <CardHeader>
+      <Card className="border-emerald-500/30 bg-white dark:bg-white">
+        <CardHeader className="border-b border-emerald-200 bg-emerald-50">
           <div className="flex items-center justify-between">
             <div>
-              <CardTitle className="flex items-center gap-2">
+              <CardTitle className="flex items-center gap-2 text-emerald-700">
                 <TrendingUp className="h-5 w-5" />
                 무한매수법 자동매매
               </CardTitle>
-              <CardDescription>
+              <CardDescription className="text-gray-600">
                 오늘의 LOC 주문을 계산하고 확인 후 실행합니다
               </CardDescription>
             </div>
             <Link href="/infinite-buy" target="_blank">
-              <Button variant="ghost" size="sm">
+              <Button variant="ghost" size="sm" className="text-emerald-600 hover:text-emerald-700 hover:bg-emerald-100">
                 <ExternalLink className="h-3.5 w-3.5" />
                 <span className="ml-1.5">무한매수 트래커</span>
               </Button>
@@ -339,9 +425,10 @@ export function AutoTradePanel({
             <Button
               variant="outline"
               size="sm"
-              onClick={loadFromTracker}
+              onClick={() => loadFromTracker()}
               disabled={isLoadingTracker || !symbol}
               title="실시간 트래커에서 현재 회차/보유수량/투자금액을 자동으로 불러옵니다"
+              className="border-emerald-500 text-emerald-600 hover:bg-emerald-100 hover:text-emerald-700"
             >
               {isLoadingTracker
                 ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -353,14 +440,14 @@ export function AutoTradePanel({
             </Button>
           </div>
         </CardHeader>
-        <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 text-gray-900">
           <div className="space-y-2">
-            <Label>증권사</Label>
+            <Label className="text-gray-900">증권사</Label>
             <Select
               value={brokerType}
               onValueChange={(v) => setBrokerType(v as BrokerType)}
             >
-              <SelectTrigger>
+              <SelectTrigger className="text-gray-900 bg-white border-gray-300">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -371,7 +458,29 @@ export function AutoTradePanel({
           </div>
 
           <div className="space-y-2">
-            <Label>종목코드</Label>
+            <Label className="flex items-center justify-between text-gray-900">
+              <span>종목코드</span>
+              <div className="flex gap-1">
+                <Button
+                  type="button"
+                  variant={symbol === 'TQQQ' ? 'default' : 'outline'}
+                  size="sm"
+                  className={`h-6 px-2 text-xs ${symbol === 'TQQQ' ? 'bg-emerald-500 hover:bg-emerald-600 text-white' : 'border-emerald-500 text-emerald-600 hover:bg-emerald-100'}`}
+                  onClick={() => quickSelectSymbol('TQQQ')}
+                >
+                  TQQQ
+                </Button>
+                <Button
+                  type="button"
+                  variant={symbol === 'SOXL' ? 'default' : 'outline'}
+                  size="sm"
+                  className={`h-6 px-2 text-xs ${symbol === 'SOXL' ? 'bg-emerald-500 hover:bg-emerald-600 text-white' : 'border-emerald-500 text-emerald-600 hover:bg-emerald-100'}`}
+                  onClick={() => quickSelectSymbol('SOXL')}
+                >
+                  SOXL
+                </Button>
+              </div>
+            </Label>
             <div className="relative">
               <Input
                 value={symbol}
@@ -379,7 +488,7 @@ export function AutoTradePanel({
                 onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
                 onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
                 placeholder="TQQQ, SOXL, 122630"
-                className="pr-16"
+                className="pr-16 text-gray-900 bg-white border-gray-300"
                 autoComplete="off"
               />
               {symbol && (
@@ -408,12 +517,12 @@ export function AutoTradePanel({
           </div>
 
           <div className="space-y-2">
-            <Label>전략</Label>
+            <Label className="text-gray-900">전략</Label>
             <Select
               value={strategyVersion}
               onValueChange={(v) => setStrategyVersion(v as StrategyVersion)}
             >
-              <SelectTrigger>
+              <SelectTrigger className="text-gray-900 bg-white border-gray-300">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -425,51 +534,103 @@ export function AutoTradePanel({
           </div>
 
           <div className="space-y-2">
-            <Label>총 투자금 ({isOverseas ? 'USD' : 'KRW'})</Label>
-            <Input
-              type="number"
-              value={totalCapital}
-              onChange={(e) => setTotalCapital(parseFloat(e.target.value) || 0)}
-            />
+            <Label className="flex items-center justify-between text-gray-900">
+              <span>총 투자금 ({isOverseas ? 'USD' : 'KRW'})</span>
+              <span className="text-xs text-emerald-600 font-medium">
+                1회매수금: {isOverseas ? '$' : '₩'}{(totalCapital / (strategyVersion === 'v3.0' ? 20 : 40)).toFixed(2)}
+              </span>
+            </Label>
+            <div className="flex gap-2">
+              <Input
+                type="number"
+                value={totalCapital}
+                onChange={(e) => setTotalCapital(parseFloat(e.target.value) || 0)}
+                className="flex-1 text-gray-900 bg-white border-gray-300"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="px-3 text-xs whitespace-nowrap border-emerald-500 text-emerald-600 hover:bg-emerald-100"
+                onClick={async () => {
+                  // 평단가 계산 (보유 중이면 평단가, 없으면 현재가 기준)
+                  let basePrice: number;
+                  if (currentShares > 0 && currentInvested > 0) {
+                    basePrice = currentInvested / currentShares;
+                  } else {
+                    // 현재가 조회
+                    let price = quote?.currentPrice;
+                    if (!price) {
+                      try {
+                        const res = await fetch(`/api/stocks/prices?symbols=${symbol}`);
+                        const data = await res.json();
+                        price = data?.prices?.[symbol]?.price;
+                      } catch {}
+                    }
+                    if (!price || price <= 0) {
+                      alert('현재가를 조회할 수 없습니다. 먼저 주문 계산을 실행해주세요.');
+                      return;
+                    }
+                    basePrice = price;
+                  }
+
+                  // 최소 투자금 계산: 절반 금액으로 별지점 가격의 1주를 살 수 있어야 함
+                  // 별지점 = 평단가 × (1 + 별%) - T=0 기준 최대 별%
+                  const divisions = strategyVersion === 'v3.0' ? 20 : 40;
+                  const maxStarPct = symbol.toUpperCase() === 'SOXL' ? 0.20 : 0.15;
+                  const starPrice = basePrice * (1 + maxStarPct);
+                  // 절반 금액 ≥ 별지점 가격 → 1회매수금 ≥ 별지점 × 2
+                  const minUnitBuy = Math.ceil(starPrice * 2);
+                  const minCapital = minUnitBuy * divisions;
+                  setTotalCapital(minCapital);
+                }}
+                title="전반전 매수가 가능한 최소 투자금 계산 (평단가 기준)"
+              >
+                최소 투자금
+              </Button>
+            </div>
           </div>
 
           <div className="space-y-2">
-            <Label>현재 T값</Label>
+            <Label className="text-gray-900">현재 T값</Label>
             <Input
               type="number"
               value={currentT}
               onChange={(e) => setCurrentT(parseFloat(e.target.value) || 0)}
               min={0}
               step="0.01"
+              className="text-gray-900 bg-white border-gray-300"
             />
           </div>
 
           <div className="space-y-2">
-            <Label>보유 수량</Label>
+            <Label className="text-gray-900">보유 수량</Label>
             <Input
               type="number"
               value={currentShares}
               onChange={(e) => setCurrentShares(parseFloat(e.target.value) || 0)}
               min={0}
               step="0.0001"
+              className="text-gray-900 bg-white border-gray-300"
             />
           </div>
 
           <div className="space-y-2">
-            <Label>투자금액 ({isOverseas ? 'USD' : 'KRW'})</Label>
+            <Label className="text-gray-900">투자금액 ({isOverseas ? 'USD' : 'KRW'})</Label>
             <Input
               type="number"
               value={currentInvested}
               onChange={(e) => setCurrentInvested(parseFloat(e.target.value) || 0)}
               min={0}
+              className="text-gray-900 bg-white border-gray-300"
             />
           </div>
         </CardContent>
-        <CardFooter>
+        <CardFooter className="flex flex-col gap-3 border-t border-emerald-200 bg-emerald-50">
           <Button
             onClick={calculateOrders}
             disabled={isLoading || !symbol}
-            className="w-full"
+            className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-semibold"
           >
             {isLoading ? (
               <>
@@ -483,6 +644,39 @@ export function AutoTradePanel({
               </>
             )}
           </Button>
+          <div className="w-full flex items-center justify-between px-3 py-3 rounded-lg border border-emerald-300 bg-white text-gray-900">
+            <div className="text-sm">
+              <div className="flex items-center gap-2">
+                <p className="font-medium text-gray-900">자동매매 스케줄러</p>
+                {autoTradeEnabled ? (
+                  <Badge className="bg-emerald-500 text-white border-emerald-400 font-bold">ON</Badge>
+                ) : (
+                  <Badge variant="outline" className="border-gray-400 text-gray-500">OFF</Badge>
+                )}
+              </div>
+              <p className="text-xs text-gray-600 mt-0.5">
+                {autoTradeEnabled
+                  ? `${symbol} 매일 밤 21:00(서머타임) / 22:00(겨울) 자동 실행 중`
+                  : '활성화하면 매일 프리장에 자동으로 주문이 실행됩니다'
+                }
+              </p>
+            </div>
+            <Button
+              variant={autoTradeEnabled ? 'destructive' : 'default'}
+              size="sm"
+              onClick={toggleAutoTrade}
+              disabled={isSavingAutoTrade || !symbol}
+              className={autoTradeEnabled ? '' : 'bg-emerald-500 hover:bg-emerald-600 text-white'}
+            >
+              {isSavingAutoTrade ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : autoTradeEnabled ? (
+                '해제하기'
+              ) : (
+                '활성화하기'
+              )}
+            </Button>
+          </div>
         </CardFooter>
       </Card>
 
@@ -526,23 +720,51 @@ export function AutoTradePanel({
               </div>
               <div className="text-right">
                 <p className="text-2xl font-bold">
-                  {formatPrice(quote.currentPrice, isOverseas)}
+                  {quote.currentPrice > 0
+                    ? formatPrice(quote.currentPrice, isOverseas)
+                    : <span className="text-muted-foreground text-lg">장 마감</span>
+                  }
                 </p>
-                <p
-                  className={`flex items-center justify-end text-sm ${
-                    quote.change >= 0 ? 'text-green-500' : 'text-red-500'
-                  }`}
-                >
-                  {quote.change >= 0 ? (
-                    <TrendingUp className="mr-1 h-4 w-4" />
-                  ) : (
-                    <TrendingDown className="mr-1 h-4 w-4" />
-                  )}
-                  {quote.change >= 0 ? '+' : ''}
-                  {(quote.changeRate ?? 0).toFixed(2)}%
-                </p>
+                {quote.currentPrice > 0 && (
+                  <p
+                    className={`flex items-center justify-end text-sm font-medium ${
+                      quote.change >= 0 ? 'text-emerald-500' : 'text-red-500'
+                    }`}
+                  >
+                    {quote.change >= 0 ? (
+                      <TrendingUp className="mr-1 h-4 w-4" />
+                    ) : (
+                      <TrendingDown className="mr-1 h-4 w-4" />
+                    )}
+                    {quote.change >= 0 ? '+' : ''}
+                    {(quote.changeRate ?? 0).toFixed(2)}%
+                  </p>
+                )}
               </div>
             </div>
+            {/* 내 포지션 수익률 */}
+            {currentShares > 0 && currentInvested > 0 && quote.currentPrice > 0 && (
+              <div className="mt-3 pt-3 border-t">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">내 포지션</span>
+                  <span>{currentShares.toLocaleString()}주 · 평단 {formatPrice(currentInvested / currentShares, isOverseas)}</span>
+                </div>
+                <div className="flex items-center justify-between mt-1">
+                  <span className="text-muted-foreground text-sm">평가손익</span>
+                  {(() => {
+                    const evalAmount = quote.currentPrice * currentShares;
+                    const pnl = evalAmount - currentInvested;
+                    const pnlPct = (pnl / currentInvested) * 100;
+                    const isProfit = pnl >= 0;
+                    return (
+                      <span className={`font-bold ${isProfit ? 'text-emerald-500' : 'text-red-500'}`}>
+                        {isProfit ? '+' : ''}{formatPrice(pnl, isOverseas)} ({isProfit ? '+' : ''}{pnlPct.toFixed(2)}%)
+                      </span>
+                    );
+                  })()}
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
@@ -583,157 +805,213 @@ export function AutoTradePanel({
             </div>
           </CardHeader>
           <CardContent>
-            {dailyOrders.buyOrders.length === 0 &&
-            dailyOrders.sellOrders.length === 0 ? (
-              <p className="py-4 text-center text-muted-foreground">
-                오늘 실행할 주문이 없습니다.
-              </p>
-            ) : (
-              <div className="space-y-4">
-                {/* 매수 주문 */}
-                {dailyOrders.buyOrders.length > 0 && (
-                  <div>
-                    <h4 className="mb-2 font-medium text-green-600">매수 주문</h4>
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="w-12">확인</TableHead>
-                          <TableHead>사유</TableHead>
-                          <TableHead className="text-right">수량</TableHead>
-                          <TableHead className="text-right">가격</TableHead>
-                          <TableHead className="text-right">금액</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {dailyOrders.buyOrders.map((order) => (
-                          <TableRow
-                            key={order.id}
-                            className={
-                              confirmedOrders.has(order.id)
-                                ? 'bg-green-500/10'
-                                : ''
-                            }
-                          >
-                            <TableCell>
-                              <Button
-                                variant={
-                                  confirmedOrders.has(order.id)
-                                    ? 'default'
-                                    : 'outline'
-                                }
-                                size="sm"
-                                className="h-6 w-6 p-0"
-                                onClick={() => toggleConfirmOrder(order.id)}
-                              >
-                                {confirmedOrders.has(order.id) ? (
-                                  <CheckCircle className="h-4 w-4" />
-                                ) : (
-                                  ''
-                                )}
-                              </Button>
-                            </TableCell>
-                            <TableCell>
-                              <span className="text-sm">{order.reason}</span>
-                              <Badge variant="outline" className="ml-2">
-                                {order.orderType.toUpperCase()}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="text-right">
-                              {order.quantity}주
-                            </TableCell>
-                            <TableCell className="text-right">
-                              {formatPrice(order.targetPrice, isOverseas)}
-                            </TableCell>
-                            <TableCell className="text-right font-medium">
-                              {formatPrice(
-                                order.quantity * order.targetPrice,
-                                isOverseas
-                              )}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                )}
+            {(() => {
+              const executableBuys = dailyOrders.buyOrders.filter(o => !o.isReference);
+              const referenceBuys = dailyOrders.buyOrders.filter(o => o.isReference);
+              const executableSells = dailyOrders.sellOrders.filter(o => !o.isReference);
+              const hasNoExecutable = executableBuys.length === 0 && executableSells.length === 0;
 
-                {/* 매도 주문 */}
-                {dailyOrders.sellOrders.length > 0 && (
-                  <div>
-                    <h4 className="mb-2 font-medium text-red-600">매도 주문</h4>
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="w-12">확인</TableHead>
-                          <TableHead>사유</TableHead>
-                          <TableHead className="text-right">수량</TableHead>
-                          <TableHead className="text-right">가격</TableHead>
-                          <TableHead className="text-right">금액</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {dailyOrders.sellOrders.map((order) => (
-                          <TableRow
-                            key={order.id}
-                            className={
-                              confirmedOrders.has(order.id)
-                                ? 'bg-red-500/10'
-                                : ''
-                            }
-                          >
-                            <TableCell>
-                              <Button
-                                variant={
-                                  confirmedOrders.has(order.id)
-                                    ? 'destructive'
-                                    : 'outline'
-                                }
-                                size="sm"
-                                className="h-6 w-6 p-0"
-                                onClick={() => toggleConfirmOrder(order.id)}
-                              >
-                                {confirmedOrders.has(order.id) ? (
-                                  <CheckCircle className="h-4 w-4" />
-                                ) : (
-                                  ''
-                                )}
-                              </Button>
-                            </TableCell>
-                            <TableCell>
-                              <span className="text-sm">{order.reason}</span>
-                              <Badge variant="outline" className="ml-2">
-                                {order.orderType.toUpperCase()}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="text-right">
-                              {order.quantity}주
-                            </TableCell>
-                            <TableCell className="text-right">
-                              {formatPrice(order.targetPrice, isOverseas)}
-                            </TableCell>
-                            <TableCell className="text-right font-medium">
-                              {formatPrice(
-                                order.quantity * order.targetPrice,
-                                isOverseas
-                              )}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                )}
-              </div>
-            )}
+              return (
+                <>
+                  {hasNoExecutable && referenceBuys.length === 0 ? (
+                    <p className="py-4 text-center text-muted-foreground">
+                      오늘 실행할 주문이 없습니다.
+                    </p>
+                  ) : (
+                    <div className="space-y-4">
+                      {/* 참고용 매수 주문 (수량 부족) */}
+                      {referenceBuys.length > 0 && (
+                        <div className="rounded-lg border border-amber-300 overflow-hidden bg-white">
+                          <div className="bg-amber-50 px-3 py-2 border-b border-amber-200">
+                            <h4 className="font-semibold text-amber-700 flex items-center gap-1.5">
+                              <AlertCircle className="h-4 w-4" />
+                              매수 주문 (수량 부족 - 참고용)
+                            </h4>
+                            <p className="text-xs text-amber-600 mt-1">
+                              1회 매수금으로 1주를 살 수 없어 실제 주문이 불가합니다.
+                            </p>
+                          </div>
+                          <Table>
+                            <TableHeader>
+                              <TableRow className="bg-amber-50/50">
+                                <TableHead>사유</TableHead>
+                                <TableHead className="text-right">수량</TableHead>
+                                <TableHead className="text-right">가격</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {referenceBuys.map((order) => (
+                                <TableRow key={order.id} className="bg-amber-50/30">
+                                  <TableCell>
+                                    <span className="text-sm text-amber-800">{order.reason}</span>
+                                    <Badge variant="outline" className="ml-2 border-amber-400 text-amber-700">
+                                      {order.orderType.toUpperCase()}
+                                    </Badge>
+                                  </TableCell>
+                                  <TableCell className="text-right font-bold text-red-500">
+                                    0주
+                                  </TableCell>
+                                  <TableCell className="text-right text-amber-700">
+                                    {formatPrice(order.targetPrice, isOverseas)}
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      )}
+
+                      {/* 실행 가능한 매수 주문 */}
+                      {executableBuys.length > 0 && (
+                        <div className="rounded-lg border border-emerald-200 overflow-hidden bg-white">
+                          <div className="bg-emerald-50 px-3 py-2 border-b border-emerald-200">
+                            <h4 className="font-semibold text-emerald-700">매수 주문</h4>
+                          </div>
+                          <Table>
+                            <TableHeader>
+                              <TableRow className="bg-emerald-50/50">
+                                <TableHead className="w-12">확인</TableHead>
+                                <TableHead>사유</TableHead>
+                                <TableHead className="text-right">수량</TableHead>
+                                <TableHead className="text-right">가격</TableHead>
+                                <TableHead className="text-right">금액</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {executableBuys.map((order) => (
+                                <TableRow
+                                  key={order.id}
+                                  className={
+                                    confirmedOrders.has(order.id)
+                                      ? 'bg-emerald-100/50'
+                                      : 'hover:bg-emerald-50/30'
+                                  }
+                                >
+                                  <TableCell>
+                                    <Button
+                                      variant={
+                                        confirmedOrders.has(order.id)
+                                          ? 'default'
+                                          : 'outline'
+                                      }
+                                      size="sm"
+                                      className={`h-6 w-6 p-0 ${confirmedOrders.has(order.id) ? 'bg-emerald-500 hover:bg-emerald-600' : ''}`}
+                                      onClick={() => toggleConfirmOrder(order.id)}
+                                    >
+                                      {confirmedOrders.has(order.id) ? (
+                                        <CheckCircle className="h-4 w-4" />
+                                      ) : (
+                                        ''
+                                      )}
+                                    </Button>
+                                  </TableCell>
+                                  <TableCell>
+                                    <span className="text-sm">{order.reason}</span>
+                                    <Badge variant="outline" className="ml-2 border-emerald-300 text-emerald-700">
+                                      {order.orderType.toUpperCase()}
+                                    </Badge>
+                                  </TableCell>
+                                  <TableCell className="text-right font-medium text-emerald-700">
+                                    {order.quantity}주
+                                  </TableCell>
+                                  <TableCell className="text-right">
+                                    {formatPrice(order.targetPrice, isOverseas)}
+                                  </TableCell>
+                                  <TableCell className="text-right font-bold text-emerald-600">
+                                    {formatPrice(
+                                      order.quantity * order.targetPrice,
+                                      isOverseas
+                                    )}
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      )}
+
+                      {/* 매도 주문 */}
+                      {executableSells.length > 0 && (
+                        <div className="rounded-lg border border-red-200 overflow-hidden bg-white">
+                          <div className="bg-red-50 px-3 py-2 border-b border-red-200">
+                            <h4 className="font-semibold text-red-700">매도 주문</h4>
+                          </div>
+                          <Table>
+                            <TableHeader>
+                              <TableRow className="bg-red-50/50">
+                                <TableHead className="w-12">확인</TableHead>
+                                <TableHead>사유</TableHead>
+                                <TableHead className="text-right">수량</TableHead>
+                                <TableHead className="text-right">가격</TableHead>
+                                <TableHead className="text-right">금액</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {executableSells.map((order) => (
+                                <TableRow
+                                  key={order.id}
+                                  className={
+                                    confirmedOrders.has(order.id)
+                                      ? 'bg-red-100/50'
+                                      : 'hover:bg-red-50/30'
+                                  }
+                                >
+                                  <TableCell>
+                                    <Button
+                                      variant={
+                                        confirmedOrders.has(order.id)
+                                          ? 'destructive'
+                                          : 'outline'
+                                      }
+                                      size="sm"
+                                      className="h-6 w-6 p-0"
+                                      onClick={() => toggleConfirmOrder(order.id)}
+                                    >
+                                      {confirmedOrders.has(order.id) ? (
+                                        <CheckCircle className="h-4 w-4" />
+                                      ) : (
+                                        ''
+                                      )}
+                                    </Button>
+                                  </TableCell>
+                                  <TableCell>
+                                    <span className="text-sm">{order.reason}</span>
+                                    <Badge variant="outline" className="ml-2 border-red-300 text-red-700">
+                                      {order.orderType.toUpperCase()}
+                                    </Badge>
+                                  </TableCell>
+                                  <TableCell className="text-right font-medium text-red-700">
+                                    {order.quantity}주
+                                  </TableCell>
+                                  <TableCell className="text-right">
+                                    {formatPrice(order.targetPrice, isOverseas)}
+                                  </TableCell>
+                                  <TableCell className="text-right font-bold text-red-600">
+                                    {formatPrice(
+                                      order.quantity * order.targetPrice,
+                                      isOverseas
+                                    )}
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </CardContent>
-          {(dailyOrders.buyOrders.length > 0 ||
-            dailyOrders.sellOrders.length > 0) && (
+          {(dailyOrders.buyOrders.filter(o => !o.isReference).length > 0 ||
+            dailyOrders.sellOrders.filter(o => !o.isReference).length > 0) && (
             <CardFooter className="flex-col gap-2">
               {/* 실행 결과 */}
               {executionResult && (
                 <div className={`w-full rounded-lg border px-4 py-3 text-sm ${
                   executionResult.success
-                    ? 'border-green-200 bg-green-50 text-green-800'
+                    ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
                     : 'border-red-200 bg-red-50 text-red-800'
                 }`}>
                   <p className="font-medium">{executionResult.success ? '✅' : '❌'} {executionResult.message}</p>

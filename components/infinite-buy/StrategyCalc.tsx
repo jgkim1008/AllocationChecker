@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { RefreshCw, ChevronDown, ChevronUp } from 'lucide-react';
+import { fetchTrackerPosition, type TrackerPosition } from '@/lib/infinite-buy/tracker/position';
 
 type StrategyVersion = 'v2.2' | 'v3.0' | 'v4.0';
 
@@ -18,13 +19,6 @@ interface StrategyCalcProps {
 function fmtP(price: number, market: 'US' | 'KR' = 'US'): string {
   if (market === 'KR') return `₩${Math.round(price).toLocaleString('ko-KR')}`;
   return `$${price.toFixed(2)}`;
-}
-
-interface TrackerPosition {
-  shares: number;
-  invested: number;
-  avgCost: number;
-  divisionsUsed: number;
 }
 
 const DROP_RATES = [0, -0.1, -0.2, -0.3, -0.4, -0.5];
@@ -166,41 +160,6 @@ function getV3SellPrices(symbol: string, avgCost: number, t: number): {
   };
 }
 
-// API에서 포지션 데이터 가져오기 (매도 내역 반영)
-async function fetchTrackerPosition(symbol: string): Promise<TrackerPosition | null> {
-  if (!symbol) return null;
-  try {
-    const [buyRes, sellRes] = await Promise.all([
-      fetch(`/api/infinite-buy/records?symbol=${encodeURIComponent(symbol)}`),
-      fetch(`/api/infinite-buy/sell-records?symbol=${encodeURIComponent(symbol)}`),
-    ]);
-    if (!buyRes.ok) return null;
-    const records = await buyRes.json();
-    if (!records || records.length === 0) return null;
-
-    const buyShares = records.reduce((s: number, b: { shares: number }) => s + b.shares, 0);
-    const buyInvested = records.reduce((s: number, b: { amount: number }) => s + b.amount, 0);
-
-    let soldShares = 0;
-    if (sellRes.ok) {
-      const sellRecords = await sellRes.json();
-      soldShares = sellRecords.reduce((s: number, r: { shares: number }) => s + r.shares, 0);
-    }
-
-    const remainingShares = buyShares - soldShares;
-    if (remainingShares <= 0) return null; // 전량 매도 완료 → 신규 사이클
-
-    // invested/avgCost는 매수 기준 그대로 유지 (T값은 매수 횟수 기반)
-    return {
-      shares: remainingShares,
-      invested: buyInvested,
-      avgCost: buyShares > 0 ? buyInvested / buyShares : 0,
-      divisionsUsed: records.length,
-    };
-  } catch {
-    return null;
-  }
-}
 
 /**
  * 신규 시작 시나리오 시뮬레이션 (실제 전략 적용)
@@ -635,6 +594,13 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy, mark
         const buyInfo = getV3BuyPrices(symbol, position.avgCost, t, n);
         const sellInfo = getV3SellPrices(symbol, position.avgCost, t);
 
+        // 수량 계산
+        const halfUnit = unitBuy / 2;
+        const qty1 = Math.floor(halfUnit / buyInfo.price1);
+        const qty2 = buyInfo.price2 ? Math.floor(halfUnit / buyInfo.price2) : 0;
+        const qtyFull = Math.floor(unitBuy / buyInfo.price1);
+        const canBuy = isFirstHalf ? (qty1 > 0 || qty2 > 0) : qtyFull > 0;
+
         return (
           <div className="bg-gradient-to-br from-orange-50 to-amber-50 border border-orange-200 rounded-xl overflow-hidden">
             <div className="px-4 py-3 bg-orange-100/50 border-b border-orange-200">
@@ -679,44 +645,63 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy, mark
               </div>
 
               {/* 매수 주문 가이드 */}
-              <div className="bg-white rounded-xl border border-green-200 overflow-hidden">
-                <div className="px-3 py-2 bg-green-50 border-b border-green-100">
-                  <p className="text-xs font-bold text-green-800">📥 매수 주문 (LOC)</p>
-                  <p className="text-[10px] text-green-600 mt-0.5">
+              <div className={`bg-white rounded-xl border overflow-hidden ${canBuy ? 'border-green-200' : 'border-yellow-300'}`}>
+                <div className={`px-3 py-2 border-b ${canBuy ? 'bg-green-50 border-green-100' : 'bg-yellow-50 border-yellow-200'}`}>
+                  <p className={`text-xs font-bold ${canBuy ? 'text-green-800' : 'text-yellow-800'}`}>
+                    📥 매수 주문 (LOC) {!canBuy && <span className="text-red-600 ml-1">⚠️ 수량 부족</span>}
+                  </p>
+                  <p className={`text-[10px] mt-0.5 ${canBuy ? 'text-green-600' : 'text-yellow-600'}`}>
                     {isFirstHalf
                       ? '전반전: 절반 별% LOC + 절반 평단가 LOC'
                       : '후반전: 전액 별% LOC'}
                   </p>
                 </div>
                 <div className="p-3">
+                  {!canBuy && (
+                    <div className="mb-3 p-2 bg-yellow-50 border border-yellow-200 rounded-lg">
+                      <p className="text-xs text-yellow-800">
+                        💡 1회 매수금({fmtP(unitBuy, market)})으로 현재 가격의 주식 1주를 살 수 없습니다.
+                        총 투자금을 늘리거나 가격이 내려올 때까지 기다리세요.
+                      </p>
+                    </div>
+                  )}
                   {isFirstHalf ? (
                     <div className="space-y-2">
-                      <div className="flex items-center justify-between p-2 bg-green-50/50 rounded-lg">
+                      <div className={`flex items-center justify-between p-2 rounded-lg ${qty1 > 0 ? 'bg-green-50/50' : 'bg-gray-100'}`}>
                         <div>
-                          <span className="text-xs font-medium text-green-700">주문 1</span>
+                          <span className={`text-xs font-medium ${qty1 > 0 ? 'text-green-700' : 'text-gray-400'}`}>주문 1</span>
                           <span className="text-[10px] text-gray-500 ml-1.5">절반 금액 ({fmtP(unitBuy / 2, market)})</span>
+                          <span className={`text-[10px] ml-1 font-medium ${qty1 > 0 ? 'text-green-600' : 'text-red-500'}`}>
+                            → {qty1}주
+                          </span>
                         </div>
                         <div className="text-right">
-                          <p className="text-sm font-bold text-green-700">{fmtP(buyInfo.price1, market)}</p>
+                          <p className={`text-sm font-bold ${qty1 > 0 ? 'text-green-700' : 'text-gray-400'}`}>{fmtP(buyInfo.price1, market)}</p>
                           <p className="text-[10px] text-gray-400">{buyInfo.label1}</p>
                         </div>
                       </div>
-                      <div className="flex items-center justify-between p-2 bg-green-50/50 rounded-lg">
+                      <div className={`flex items-center justify-between p-2 rounded-lg ${qty2 > 0 ? 'bg-green-50/50' : 'bg-gray-100'}`}>
                         <div>
-                          <span className="text-xs font-medium text-green-700">주문 2</span>
+                          <span className={`text-xs font-medium ${qty2 > 0 ? 'text-green-700' : 'text-gray-400'}`}>주문 2</span>
                           <span className="text-[10px] text-gray-500 ml-1.5">절반 금액 ({fmtP(unitBuy / 2, market)})</span>
+                          <span className={`text-[10px] ml-1 font-medium ${qty2 > 0 ? 'text-green-600' : 'text-red-500'}`}>
+                            → {qty2}주
+                          </span>
                         </div>
                         <div className="text-right">
-                          <p className="text-sm font-bold text-green-700">{fmtP(buyInfo.price2!, market)}</p>
+                          <p className={`text-sm font-bold ${qty2 > 0 ? 'text-green-700' : 'text-gray-400'}`}>{fmtP(buyInfo.price2!, market)}</p>
                           <p className="text-[10px] text-gray-400">{buyInfo.label2}</p>
                         </div>
                       </div>
                     </div>
                   ) : (
-                    <div className="flex items-center justify-between p-2 bg-green-50/50 rounded-lg">
+                    <div className={`flex items-center justify-between p-2 rounded-lg ${qtyFull > 0 ? 'bg-green-50/50' : 'bg-gray-100'}`}>
                       <div>
-                        <span className="text-xs font-medium text-green-700">전액 주문</span>
+                        <span className={`text-xs font-medium ${qtyFull > 0 ? 'text-green-700' : 'text-gray-400'}`}>전액 주문</span>
                         <span className="text-[10px] text-gray-500 ml-1.5">{fmtP(unitBuy, market)}</span>
+                        <span className={`text-[10px] ml-1 font-medium ${qtyFull > 0 ? 'text-green-600' : 'text-red-500'}`}>
+                          → {qtyFull}주
+                        </span>
                       </div>
                       <div className="text-right">
                         <p className="text-sm font-bold text-green-700">{fmtP(buyInfo.price1, market)}</p>
