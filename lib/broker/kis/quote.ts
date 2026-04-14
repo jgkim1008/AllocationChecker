@@ -194,7 +194,8 @@ export class KISQuote {
     };
     for (const excd of ['NAS', 'NYS', 'AMS']) {
       const result = await this.getOverseasQuoteByCode(symbol, excd);
-      if (result.success) {
+      // rt_cd:'0'이어도 가격이 0이면 해당 거래소에 없는 종목으로 판단
+      if (result.success && result.data && result.data.currentPrice > 0) {
         return priceToOrderExchange[excd];
       }
     }

@@ -269,7 +269,8 @@ export class KISOrder {
     if (request.market === 'domestic') {
       return this.createDomesticOrder(request);
     }
-    return this.createOverseasOrder(request);
+    // KISClient.createOrder에서 exchange를 결정하므로 여기선 domestic만 사용됨
+    return this.createDomesticOrder(request);
   }
 
   /**
@@ -564,6 +565,36 @@ export class KISOrder {
       data: orders.sort((a, b) => b.orderTime.getTime() - a.orderTime.getTime()),
     };
   }
+}
+
+// NYSE ARCA(AMEX)에 상장된 주요 미국 ETF 목록
+// KIS에서는 NYSE Arca = 'AMEX'로 처리
+// 참고: TQQQ/SQQQ는 NASDAQ, SOXL/TECL 등 Direxion은 NYSE Arca
+const AMEX_SYMBOLS = new Set([
+  // Direxion 레버리지 ETF (NYSE Arca)
+  'SOXL', 'SOXS', 'TECL', 'TECS', 'LABU', 'LABD',
+  'DFEN', 'WANT', 'PILL', 'CURE',
+  'DRN', 'DRV', 'FAS', 'FAZ', 'TNA', 'TZA',
+  'NAIL', 'HIBL', 'HIBS', 'INDL',
+  'SPXL', 'SPXS',
+  // MicroSectors ETF (NYSE Arca)
+  'FNGU', 'FNGD',
+  // ProShares 레버리지 ETF (NYSE Arca)
+  'UPRO', 'SPXU', 'UDOW', 'SDOW', 'URTY', 'SRTY',
+  'UCO', 'SCO', 'UVXY', 'SVXY', 'VIXY',
+  // 주요 인덱스 ETF (NYSE Arca)
+  'SPY', 'IVV', 'VOO', 'GLD', 'SLV', 'USO',
+  'XLK', 'XLF', 'XLE', 'XLV', 'XLI', 'XLY', 'XLP', 'XLU', 'XLB', 'XLRE',
+  'EEM', 'EFA', 'VWO', 'AGG', 'BND', 'LQD', 'HYG', 'VNQ',
+  // NASDAQ 상장: TQQQ, SQQQ, QQQ 등 → 기본값(NASD) 사용
+]);
+
+// 알 수 없는 종목은 NASD 기본값 사용
+
+export function getExchangeForSymbol(symbol: string): keyof typeof KIS_EXCHANGE_CODE {
+  const upper = symbol.toUpperCase();
+  if (AMEX_SYMBOLS.has(upper)) return 'AMEX';
+  return 'NASDAQ';
 }
 
 // 유틸리티 함수들

@@ -10,7 +10,9 @@ interface BuyTrackerProps {
   n: number;
   targetRate: number;
   market?: 'US' | 'KR';
+  activePrice?: number | null;
   onCycleReset?: () => void;
+  onCapitalChange?: (newCapital: number) => void;
 }
 
 function fmtP(price: number, market: 'US' | 'KR' = 'US'): string {
@@ -18,10 +20,10 @@ function fmtP(price: number, market: 'US' | 'KR' = 'US'): string {
   return `$${price.toFixed(2)}`;
 }
 
-export function BuyTracker({ symbol, capital, n, targetRate, market = 'US', onCycleReset }: BuyTrackerProps) {
+export function BuyTracker({ symbol, capital, n, targetRate, market = 'US', activePrice: propActivePrice, onCycleReset, onCapitalChange }: BuyTrackerProps) {
   const {
     records, sellRecords, loading: recordsLoading,
-    addRecord, updateRecord, deleteRecord, deleteAllRecords,
+    addRecord, updateRecord, deleteRecord, deleteAllRecords, updateAllCapital,
     addSellRecord, deleteSellRecord,
   } = useInfiniteBuyRecords(symbol);
 
@@ -45,6 +47,11 @@ export function BuyTracker({ symbol, capital, n, targetRate, market = 'US', onCy
   const [sellFormAmount, setSellFormAmount] = useState('');
   const [sellInputMode, setSellInputMode] = useState<'amount' | 'shares'>('shares');
   const [addingSell, setAddingSell] = useState(false);
+
+  // 총 투자금 편집 state
+  const [editingCapital, setEditingCapital] = useState(false);
+  const [capitalEditValue, setCapitalEditValue] = useState('');
+  const [savingCapital, setSavingCapital] = useState(false);
 
   // 편집 state
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -186,6 +193,23 @@ export function BuyTracker({ symbol, capital, n, targetRate, market = 'US', onCy
     }
   }
 
+  async function handleSaveCapital() {
+    const newCapital = parseFloat(capitalEditValue);
+    if (isNaN(newCapital) || newCapital <= 0) return;
+    setSavingCapital(true);
+    try {
+      if (records.length > 0) {
+        await updateAllCapital(newCapital);
+      }
+      onCapitalChange?.(newCapital);
+      setEditingCapital(false);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : '저장 실패');
+    } finally {
+      setSavingCapital(false);
+    }
+  }
+
   async function handleReset() {
     if (!confirm(`${symbol} 무한매수 기록을 모두 삭제하시겠습니까? (새 사이클 시작)`)) return;
     await deleteAllRecords();
@@ -195,6 +219,9 @@ export function BuyTracker({ symbol, capital, n, targetRate, market = 'US', onCy
   async function handleDeleteBuy(id: string) {
     await deleteRecord(id);
   }
+
+  // 실제 적용 중인 투자금 (저장된 레코드 우선, 없으면 prop)
+  const effectiveCapital = records.length > 0 ? records[0].capital : capital;
 
   // Calculations
   const totalShares = records.reduce((s, b) => s + b.shares, 0);
@@ -244,6 +271,79 @@ export function BuyTracker({ symbol, capital, n, targetRate, market = 'US', onCy
             />
           </div>
           <p className="text-xs text-gray-400 mt-1">{progressPct.toFixed(0)}% 소진</p>
+        </div>
+
+        {/* 총 투자금 */}
+        <div className="bg-white border border-gray-200 rounded-xl p-4">
+          <div className="flex items-center justify-between mb-1">
+            <p className="text-xs text-gray-500">총 투자금</p>
+            {!editingCapital ? (
+              <button
+                onClick={() => {
+                  setCapitalEditValue(effectiveCapital.toString());
+                  setEditingCapital(true);
+                }}
+                className="text-gray-400 hover:text-gray-700"
+                title="투자금 변경"
+              >
+                <Pencil className="h-3 w-3" />
+              </button>
+            ) : (
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={handleSaveCapital}
+                  disabled={savingCapital}
+                  className="text-green-600 hover:text-green-700 disabled:opacity-40"
+                >
+                  <Check className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  onClick={() => setEditingCapital(false)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            )}
+          </div>
+          {editingCapital ? (
+            <>
+              <input
+                type="number"
+                step="1"
+                min="1"
+                autoFocus
+                value={capitalEditValue}
+                onChange={(e) => setCapitalEditValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleSaveCapital();
+                  if (e.key === 'Escape') setEditingCapital(false);
+                }}
+                className="w-full text-sm font-bold border border-green-400 rounded-lg px-2 py-1 bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-green-500"
+              />
+              {(() => {
+                const priceForMin = avgCost > 0 ? avgCost : (propActivePrice ?? currentPrice);
+                if (!priceForMin || priceForMin <= 0) return null;
+                const maxStarPct = symbol.toUpperCase() === 'SOXL' ? 0.20 : 0.15;
+                const starPrice = priceForMin * (1 + maxStarPct);
+                const minUnitBuy = Math.ceil(starPrice * 2);
+                const minCap = minUnitBuy * n;
+                return (
+                  <button
+                    onClick={() => setCapitalEditValue(minCap.toString())}
+                    className="mt-1.5 text-xs text-gray-500 hover:text-green-600 underline underline-offset-2"
+                  >
+                    최소 {fmtP(minCap, market)} 적용
+                  </button>
+                );
+              })()}
+            </>
+          ) : (
+            <p className="text-lg font-bold text-gray-900">
+              {fmtP(effectiveCapital, market)}
+            </p>
+          )}
+          <p className="text-xs text-gray-400 mt-0.5">1회 {fmtP(effectiveCapital / n, market)}</p>
         </div>
 
         <div className="bg-white border border-gray-200 rounded-xl p-4">

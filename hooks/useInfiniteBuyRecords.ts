@@ -108,6 +108,22 @@ export function useInfiniteBuyRecords(symbol: string) {
     setRecords([]);
   }, [records]);
 
+  const updateAllCapital = useCallback(
+    async (newCapital: number) => {
+      await Promise.all(
+        records.map((r) =>
+          fetch(`/api/infinite-buy/records/${r.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ capital: newCapital }),
+          })
+        )
+      );
+      await fetchRecords();
+    },
+    [records, fetchRecords]
+  );
+
   const addSellRecord = useCallback(
     async (record: { sell_date: string; price: number; shares: number; amount: number }) => {
       const res = await fetch('/api/infinite-buy/sell-records', {
@@ -144,6 +160,7 @@ export function useInfiniteBuyRecords(symbol: string) {
     updateRecord,
     deleteRecord,
     deleteAllRecords,
+    updateAllCapital,
     addSellRecord,
     deleteSellRecord,
   };

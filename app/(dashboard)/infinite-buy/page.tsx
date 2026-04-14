@@ -432,7 +432,19 @@ export default function InfiniteBuyPage() {
           <StrategyCalc symbol={activeSymbol} capital={capital} n={n} targetRate={targetRate} variableBuy={variableBuy} market={activeMarket} version={version} />
         )}
         {tab === 'tracker' && (
-          <BuyTracker symbol={activeSymbol} capital={capital} n={n} targetRate={targetRate} market={activeMarket} onCycleReset={handleCycleReset} />
+          <BuyTracker
+            symbol={activeSymbol}
+            capital={capital}
+            n={n}
+            targetRate={targetRate}
+            market={activeMarket}
+            activePrice={activePrice}
+            onCycleReset={handleCycleReset}
+            onCapitalChange={(newCapital) => {
+              setCapital(newCapital);
+              setCapitalInput(newCapital.toString());
+            }}
+          />
         )}
         {tab === 'backtest' && (
           <BacktestSim symbol={activeSymbol} capital={capital} n={n} targetRate={targetRate} variableBuy={variableBuy} market={activeMarket} version={version} />

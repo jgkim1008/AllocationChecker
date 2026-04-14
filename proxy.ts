@@ -88,7 +88,10 @@ export async function proxy(request: NextRequest) {
                       pathname.startsWith('/api/telegram-bot') ||
                       pathname.startsWith('/api/kakao-bot') ||
                       pathname.startsWith('/api/test/kakao') ||
-                      pathname.startsWith('/api/fibonacci/scan');
+                      pathname.startsWith('/api/fibonacci/scan') ||
+                      pathname.startsWith('/api/auto-trade/cron') ||
+                      pathname.startsWith('/api/auto-trade/check-fills') ||
+                      pathname.startsWith('/api/admin/');
 
   if (!user && !isAuthPage && !isPublicApi) {
     return NextResponse.redirect(new URL('/login', request.url));

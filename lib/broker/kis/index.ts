@@ -17,7 +17,7 @@ import type {
 import { KISAuth } from './auth';
 import { KISAccount } from './account';
 import { KISQuote } from './quote';
-import { KISOrder } from './order';
+import { KISOrder, getExchangeForSymbol as getExchangeStatic } from './order';
 
 export class KISClient implements IBroker {
   readonly type: BrokerType = 'kis';
@@ -121,7 +121,11 @@ export class KISClient implements IBroker {
       };
     }
     if (request.market === 'overseas') {
-      const exchange = await this.quote.getExchangeForSymbol(request.symbol);
+      // 정적 매핑 우선 (빠름), 알 수 없는 종목만 API로 탐색
+      const staticExchange = getExchangeStatic(request.symbol);
+      const exchange = staticExchange !== 'NASDAQ'
+        ? staticExchange
+        : await this.quote.getExchangeForSymbol(request.symbol);
       return this.order.createOverseasOrder(request, exchange);
     }
     return this.order.createOrder(request);
