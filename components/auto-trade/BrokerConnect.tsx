@@ -86,16 +86,30 @@ export function BrokerConnect({ onConnect, onDisconnect }: BrokerConnectProps) {
         sessionRes.json(),
       ]);
 
-      if (authData.success) {
-        setConnectedBrokers(authData.data.connectedBrokers || []);
-      }
+      const totpEnabled = totpStatusData.success ? totpStatusData.data.isEnabled : false;
+      const hasSession = sessionData.success ? sessionData.data.hasValidSession : false;
 
       if (totpStatusData.success) {
-        setIsTotpEnabled(totpStatusData.data.isEnabled);
+        setIsTotpEnabled(totpEnabled);
       }
 
       if (sessionData.success) {
         setSessionState(sessionData.data);
+      }
+
+      if (authData.success) {
+        const brokers: BrokerType[] = authData.data.connectedBrokers || [];
+        // 2FA 활성화 + 세션 없음 → 연결된 브로커 강제 해제
+        if (totpEnabled && !hasSession && brokers.length > 0) {
+          await Promise.all(
+            brokers.map(type =>
+              fetch(`/api/broker/auth?brokerType=${type}`, { method: 'DELETE' })
+            )
+          );
+          setConnectedBrokers([]);
+        } else {
+          setConnectedBrokers(brokers);
+        }
       }
 
       // 세션이 유효하면 저장된 브로커 목록도 조회
