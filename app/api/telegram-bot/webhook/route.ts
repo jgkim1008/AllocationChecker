@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { createServiceClient } from '@/lib/supabase/server';
 import { addSubscriber, removeSubscriber, isSubscribed } from '@/lib/notifications/telegram';
 
@@ -80,7 +81,7 @@ function getStartMessage(): string {
 /us - 미국 근접 종목
 /kr - 한국 근접 종목
 /ma - 월봉 10이평 신호 전환
-/subscribe - 🔔 마감 알림 구독
+/subscribe 이메일 비밀번호 - 🔔 마감 알림 구독
 /help - 도움말
 
 <b>종목 분석:</b>
@@ -99,7 +100,7 @@ function getHelpMessage(): string {
 /ma - 월봉 10이평 신호 전환 종목
 
 <b>🔔 자동 알림</b>
-/subscribe - 마감 알림 구독 (미국/한국장 마감 시 자동 알림)
+/subscribe 이메일 비밀번호 - 마감 알림 구독 (계정 인증 필요)
 /unsubscribe - 마감 알림 해제
 
 <b>🔍 종목 분석</b>
@@ -374,11 +375,40 @@ async function handleMessage(chatId: number, text: string, username?: string) {
     return;
   }
 
-  // 마감 알림 구독
-  if (lower === '/subscribe' || lower === '구독') {
+  // 마감 알림 구독 (이메일/비밀번호 인증 필요)
+  if (lower.startsWith('/subscribe') || lower === '구독') {
     const alreadySubscribed = await isSubscribed(chatId);
     if (alreadySubscribed) {
       await sendMessage(chatId, '✅ 이미 마감 알림을 구독 중입니다.\n\n해제하려면 /unsubscribe 를 입력하세요.');
+      return;
+    }
+
+    // /subscribe 만 입력한 경우 안내
+    const parts = trimmed.split(/\s+/);
+    if (parts.length < 3) {
+      await sendMessage(chatId, `🔐 <b>구독하려면 계정 인증이 필요합니다.</b>
+
+아래 형식으로 입력해주세요:
+
+<code>/subscribe 이메일 비밀번호</code>
+
+예시:
+<code>/subscribe user@example.com mypassword</code>`);
+      return;
+    }
+
+    const email = parts[1];
+    const password = parts.slice(2).join(' ');
+
+    // Supabase 계정 인증
+    const supabase = createSupabaseClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    );
+    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email, password });
+
+    if (authError || !authData.user) {
+      await sendMessage(chatId, '❌ 이메일 또는 비밀번호가 올바르지 않습니다.\n\n다시 시도해주세요.');
       return;
     }
 
