@@ -38,21 +38,21 @@ async function sendTelegramMessage(chatId: number | string, text: string) {
 async function getTrackerPosition(userId: string, symbol: string) {
   const serviceClient = await createServiceClient();
 
-  // 매수 기록 조회
+  // 매수 기록 조회 (user_id 일치 또는 user_id=null 레거시 레코드 포함)
   const { data: buyRecords } = await serviceClient
     .from('infinite_buy_records')
     .select('*')
-    .eq('user_id', userId)
-    .eq('symbol', symbol.toUpperCase());
+    .eq('symbol', symbol.toUpperCase())
+    .or(`user_id.eq.${userId},user_id.is.null`);
 
   if (!buyRecords || buyRecords.length === 0) return null;
 
-  // 매도 기록 조회
+  // 매도 기록 조회 (user_id 일치 또는 user_id=null 레거시 레코드 포함)
   const { data: sellRecords } = await serviceClient
     .from('infinite_buy_sell_records')
     .select('*')
-    .eq('user_id', userId)
-    .eq('symbol', symbol.toUpperCase());
+    .eq('symbol', symbol.toUpperCase())
+    .or(`user_id.eq.${userId},user_id.is.null`);
 
   const buyShares = buyRecords.reduce((sum, r) => sum + (r.shares || 0), 0);
   const buyInvested = buyRecords.reduce((sum, r) => sum + (r.amount || 0), 0);
