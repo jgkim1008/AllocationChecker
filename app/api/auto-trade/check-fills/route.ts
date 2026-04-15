@@ -78,7 +78,7 @@ async function checkFills(targetMarket: MarketType | null) {
     }
 
     for (const [brokerType, brokerOrders] of ordersByBroker) {
-      const clientResult = await getBrokerClient(userId, brokerType as any);
+      const clientResult = await getBrokerClient(userId, brokerType as any, { skipBlockCheck: true });
 
       if (!clientResult.success || !clientResult.client) {
         console.warn(`브로커 연결 실패: user=${userId}, broker=${brokerType}`);

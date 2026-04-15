@@ -8,10 +8,14 @@ import type { IBroker } from './interface';
 import type { BrokerType, KISCredentials, KiwoomCredentials, TokenInfo } from './types';
 import { KISClient } from './kis';
 import { KiwoomClient } from './kiwoom';
-import { getBrokerCredentials, getBrokerCredentialsFromDB, getEnvKISCredentials, getCachedToken, cacheToken, clearCachedToken } from './storage';
+import { getBrokerCredentials, getBrokerCredentialsFromDB, getEnvKISCredentials, getCachedToken, cacheToken, clearCachedToken, clearAllBrokerCaches } from './storage';
 
 // 브로커 인스턴스 캐시
 const brokerCache = new Map<string, IBroker>();
+
+// 수동 재연결 전까지 DB 자동 재연결 차단 (2FA 비활성화 후 등)
+declare global { var _brokerBlockedUsers: Set<string> | undefined; }
+const blockedUsers: Set<string> = global._brokerBlockedUsers ?? (global._brokerBlockedUsers = new Set());
 
 /**
  * 캐시 키 생성
@@ -25,7 +29,8 @@ function getCacheKey(userId: string, brokerType: BrokerType): string {
  */
 export async function getBrokerClient(
   userId: string,
-  brokerType: BrokerType
+  brokerType: BrokerType,
+  options: { skipBlockCheck?: boolean } = {}
 ): Promise<{ success: boolean; client?: IBroker; error?: string }> {
   const cacheKey = getCacheKey(userId, brokerType);
 
@@ -41,7 +46,8 @@ export async function getBrokerClient(
   let credentials = credResult.data;
 
   // 메모리에 없으면 DB에서 복호화하여 로드 (서버리스/크론 환경 대응)
-  if (!credentials) {
+  // 단, 수동 재연결 전까지 차단된 사용자는 DB 자동 재연결 금지 (크론은 예외)
+  if (!credentials && (!blockedUsers.has(userId) || options.skipBlockCheck)) {
     const dbResult = await getBrokerCredentialsFromDB(userId, brokerType);
     if (dbResult.success && dbResult.data) {
       credentials = dbResult.data;
@@ -92,6 +98,8 @@ export async function getBrokerClient(
 
   // 인스턴스 캐시
   brokerCache.set(cacheKey, client);
+  // 연결 성공 시 차단 해제
+  blockedUsers.delete(userId);
 
   return { success: true, client };
 }
@@ -114,7 +122,8 @@ export async function disconnectBroker(
 }
 
 /**
- * 사용자의 모든 브로커 연결 해제
+ * 사용자의 모든 브로커 연결 해제 + 재연결 차단
+ * 수동으로 다시 연결하기 전까지 DB 자동 재연결 금지
  */
 export async function disconnectAllBrokers(userId: string): Promise<void> {
   for (const [key, client] of brokerCache.entries()) {
@@ -123,6 +132,10 @@ export async function disconnectAllBrokers(userId: string): Promise<void> {
       brokerCache.delete(key);
     }
   }
+  // 메모리 캐시(자격증명 + 토큰) 전체 초기화
+  clearAllBrokerCaches(userId);
+  // 수동 재연결 전까지 DB 자동 재연결 차단
+  blockedUsers.add(userId);
 }
 
 /**

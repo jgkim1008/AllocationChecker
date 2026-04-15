@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { createClient } from '@/lib/supabase/server';
 import { getBrokerClient } from '@/lib/broker/session';
+import { checkBrokerAccess } from '@/lib/broker/auth-guard';
 import type { BrokerType } from '@/lib/broker/types';
 import { KISClient } from '@/lib/broker/kis';
 
@@ -24,11 +25,16 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // 브로커 접근 권한 확인 (2FA 설정 시 세션 필요)
+    const access = await checkBrokerAccess(user.id);
+    if (!access.allowed) {
+      return NextResponse.json({ success: false, error: access.error }, { status: 403 });
+    }
+
     const { searchParams } = new URL(request.url);
     const brokerType = (searchParams.get('brokerType') || 'kis') as BrokerType;
     const includeOverseas = searchParams.get('includeOverseas') === 'true';
 
-    // 브로커 클라이언트 가져오기 (메모리 없으면 .env.local 자동 폴백)
     const clientResult = await getBrokerClient(user.id, brokerType);
 
     if (!clientResult.success || !clientResult.client) {

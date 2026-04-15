@@ -115,8 +115,8 @@ export async function GET(request: NextRequest) {
       const { user_id, symbol, broker_type, strategy_version, total_capital } = setting;
 
       try {
-        // 1. 브로커 연결 확인
-        const clientResult = await getBrokerClient(user_id, broker_type);
+        // 1. 브로커 연결 확인 (크론은 2FA 차단 우회)
+        const clientResult = await getBrokerClient(user_id, broker_type, { skipBlockCheck: true });
         if (!clientResult.success || !clientResult.client) {
           results.push({
             userId: user_id,

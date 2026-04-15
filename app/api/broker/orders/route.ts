@@ -10,6 +10,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { createClient } from '@/lib/supabase/server';
 import { getBrokerClient } from '@/lib/broker/session';
+import { checkBrokerAccess } from '@/lib/broker/auth-guard';
 import type { BrokerType, OrderRequest } from '@/lib/broker/types';
 
 // GET: 주문 내역 조회
@@ -26,11 +27,16 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // 브로커 접근 권한 확인 (2FA 설정 시 세션 필요)
+    const access = await checkBrokerAccess(user.id);
+    if (!access.allowed) {
+      return NextResponse.json({ success: false, error: access.error }, { status: 403 });
+    }
+
     const { searchParams } = new URL(request.url);
     const brokerType = (searchParams.get('brokerType') || 'kis') as BrokerType;
     const orderId = searchParams.get('orderId');
 
-    // 브로커 클라이언트 가져오기
     const clientResult = await getBrokerClient(user.id, brokerType);
 
     if (!clientResult.success || !clientResult.client) {
@@ -126,7 +132,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 브로커 클라이언트 가져오기
+    // 브로커 접근 권한 확인
+    const accessPost = await checkBrokerAccess(user.id);
+    if (!accessPost.allowed) {
+      return NextResponse.json({ success: false, error: accessPost.error }, { status: 403 });
+    }
+
     const clientResult = await getBrokerClient(user.id, brokerType);
 
     if (!clientResult.success || !clientResult.client) {
@@ -174,6 +185,12 @@ export async function DELETE(request: NextRequest) {
         { success: false, error: '로그인이 필요합니다.' },
         { status: 401 }
       );
+    }
+
+    // 브로커 접근 권한 확인
+    const accessDelete = await checkBrokerAccess(user.id);
+    if (!accessDelete.allowed) {
+      return NextResponse.json({ success: false, error: accessDelete.error }, { status: 403 });
     }
 
     const { searchParams } = new URL(request.url);

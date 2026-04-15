@@ -9,7 +9,7 @@
  */
 
 import type { BrokerType, KISCredentials, KiwoomCredentials, TokenInfo } from './types';
-import { createClient } from '@/lib/supabase/server';
+import { createServiceClient } from '@/lib/supabase/server';
 import { encryptCredentials, decryptCredentials } from '@/lib/crypto/encryption';
 
 // global에 저장 → Next.js 핫리로드 후에도 유지 (서버 재시작 시엔 초기화)
@@ -96,6 +96,18 @@ export async function getConnectedBrokers(
 }
 
 /**
+ * 사용자의 모든 브로커 메모리 캐시 초기화 (자격증명 + 토큰)
+ */
+export function clearAllBrokerCaches(userId: string): void {
+  for (const key of [...credentialsCache.keys()]) {
+    if (key.startsWith(`${userId}:`)) credentialsCache.delete(key);
+  }
+  for (const key of [...tokenCache.keys()]) {
+    if (key.startsWith(`${userId}:`)) tokenCache.delete(key);
+  }
+}
+
+/**
  * 토큰 캐시 저장
  */
 export function cacheToken(userId: string, brokerType: BrokerType, token: TokenInfo): void {
@@ -139,7 +151,7 @@ export async function saveBrokerCredentialsToDB(
   credentials: KISCredentials | KiwoomCredentials
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const supabase = await createClient();
+    const supabase = await createServiceClient();
     const encryptedData = encryptCredentials(credentials);
 
     const { error } = await supabase
@@ -179,7 +191,7 @@ export async function getBrokerCredentialsFromDB(
   brokerType: BrokerType
 ): Promise<{ success: boolean; data?: KISCredentials | KiwoomCredentials; error?: string }> {
   try {
-    const supabase = await createClient();
+    const supabase = await createServiceClient();
 
     const { data, error } = await supabase
       .from('broker_credentials')
@@ -216,7 +228,7 @@ export async function deleteBrokerCredentialsFromDB(
   brokerType: BrokerType
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const supabase = await createClient();
+    const supabase = await createServiceClient();
 
     const { error } = await supabase
       .from('broker_credentials')
@@ -247,7 +259,7 @@ export async function getSavedBrokersFromDB(
   userId: string
 ): Promise<{ success: boolean; data?: { brokerType: BrokerType; savedAt: string }[]; error?: string }> {
   try {
-    const supabase = await createClient();
+    const supabase = await createServiceClient();
 
     const { data, error } = await supabase
       .from('broker_credentials')
