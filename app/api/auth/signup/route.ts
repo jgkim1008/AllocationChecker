@@ -3,10 +3,14 @@ import { createServiceClient } from '@/lib/supabase/server';
 
 export async function POST(request: NextRequest) {
   try {
-    const { username, password } = await request.json();
+    const { username, password, referralCode } = await request.json();
 
     if (!username || !password) {
       return NextResponse.json({ error: '아이디와 비밀번호를 입력하세요' }, { status: 400 });
+    }
+
+    if (referralCode !== 'rlawnsrjs100') {
+      return NextResponse.json({ error: '추천인 코드가 올바르지 않습니다' }, { status: 403 });
     }
 
     if (username.length < 3) {

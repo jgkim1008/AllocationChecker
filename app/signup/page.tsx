@@ -2,13 +2,14 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Eye, EyeOff, Lock, User, UserPlus } from 'lucide-react';
+import { Eye, EyeOff, Lock, User, UserPlus, Gift } from 'lucide-react';
 import Link from 'next/link';
 
 export default function SignupPage() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [referralCode, setReferralCode] = useState('');
   const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -28,7 +29,7 @@ export default function SignupPage() {
     const res = await fetch('/api/auth/signup', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: username.trim(), password }),
+      body: JSON.stringify({ username: username.trim(), password, referralCode }),
     });
 
     const data = await res.json();
@@ -106,11 +107,24 @@ export default function SignupPage() {
             />
           </div>
 
+          {/* Referral Code */}
+          <div className="relative">
+            <Gift className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <input
+              type="text"
+              value={referralCode}
+              onChange={(e) => setReferralCode(e.target.value)}
+              placeholder="추천인 코드 (필수)"
+              autoComplete="off"
+              className="w-full bg-white text-gray-900 rounded-xl px-4 py-3 text-sm outline-none border border-gray-200 focus:border-green-600 transition-colors pl-10 placeholder-gray-400"
+            />
+          </div>
+
           {error && <p className="text-xs text-red-500 text-center">{error}</p>}
 
           <button
             type="submit"
-            disabled={loading || !username || !password || !confirmPassword}
+            disabled={loading || !username || !password || !confirmPassword || !referralCode}
             className="w-full bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-bold py-3 rounded-xl text-sm transition-colors mt-1"
           >
             {loading ? '가입 중...' : '회원가입'}
