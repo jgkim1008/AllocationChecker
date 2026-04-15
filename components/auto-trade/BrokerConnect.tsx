@@ -337,10 +337,10 @@ export function BrokerConnect({ onConnect, onDisconnect }: BrokerConnectProps) {
 
   if (isCheckingStatus) {
     return (
-      <Card>
+      <Card className="border-emerald-500/30 bg-white">
         <CardContent className="flex items-center justify-center py-8">
-          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-          <span className="ml-2 text-muted-foreground">연결 상태 확인 중...</span>
+          <Loader2 className="h-6 w-6 animate-spin text-emerald-600" />
+          <span className="ml-2 text-emerald-600">연결 상태 확인 중...</span>
         </CardContent>
       </Card>
     );
@@ -349,8 +349,8 @@ export function BrokerConnect({ onConnect, onDisconnect }: BrokerConnectProps) {
   return (
     <div className="space-y-4">
       {/* 2FA 상태 표시 */}
-      <Card>
-        <CardContent className="py-3">
+      <Card className="border-emerald-500/30 bg-white">
+        <CardContent className="py-3 bg-emerald-50/50">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Shield className={`h-4 w-4 ${
@@ -401,9 +401,9 @@ export function BrokerConnect({ onConnect, onDisconnect }: BrokerConnectProps) {
 
       {/* 저장된 API Key 목록 */}
       {savedBrokers.length > 0 && sessionState.hasValidSession && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
+        <Card className="border-emerald-500/30 bg-white">
+          <CardHeader className="border-b border-emerald-200 bg-emerald-50">
+            <CardTitle className="flex items-center gap-2 text-base text-emerald-700">
               <Save className="h-4 w-4" />
               저장된 API Key
             </CardTitle>
@@ -440,10 +440,10 @@ export function BrokerConnect({ onConnect, onDisconnect }: BrokerConnectProps) {
 
       {/* 연결된 브로커 목록 */}
       {connectedBrokers.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <CheckCircle className="h-5 w-5 text-green-500" />
+        <Card className="border-emerald-500/30 bg-white">
+          <CardHeader className="border-b border-emerald-200 bg-emerald-50">
+            <CardTitle className="flex items-center gap-2 text-emerald-700">
+              <CheckCircle className="h-5 w-5 text-emerald-500" />
               연결된 증권사
             </CardTitle>
           </CardHeader>
@@ -477,13 +477,13 @@ export function BrokerConnect({ onConnect, onDisconnect }: BrokerConnectProps) {
       )}
 
       {/* 새 브로커 연결 */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
+      <Card className="border-emerald-500/30 bg-white">
+        <CardHeader className="border-b border-emerald-200 bg-emerald-50">
+          <CardTitle className="flex items-center gap-2 text-emerald-700">
             <Link className="h-5 w-5" />
             증권사 연결
           </CardTitle>
-          <CardDescription>
+          <CardDescription className="text-gray-600">
             API 키를 입력하여 증권사에 연결합니다. 저장하면 서버 재시작 후에도 유지됩니다.
           </CardDescription>
         </CardHeader>

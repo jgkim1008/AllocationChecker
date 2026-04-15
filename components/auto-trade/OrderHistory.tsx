@@ -145,15 +145,15 @@ export function OrderHistory({ defaultBroker = 'kis' }: OrderHistoryProps) {
   };
 
   return (
-    <Card>
-      <CardHeader>
+    <Card className="border-emerald-500/30 bg-white">
+      <CardHeader className="border-b border-emerald-200 bg-emerald-50">
         <div className="flex items-center justify-between">
           <div>
-            <CardTitle className="flex items-center gap-2">
+            <CardTitle className="flex items-center gap-2 text-emerald-700">
               <History className="h-5 w-5" />
               주문 내역
             </CardTitle>
-            <CardDescription>오늘의 주문 및 체결 내역</CardDescription>
+            <CardDescription className="text-gray-600">오늘의 주문 및 체결 내역</CardDescription>
           </div>
           <div className="flex items-center gap-2">
             <Select

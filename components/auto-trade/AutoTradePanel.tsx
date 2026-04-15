@@ -711,8 +711,8 @@ export function AutoTradePanel({
 
       {/* 시세 정보 */}
       {quote && (
-        <Card>
-          <CardContent className="py-4">
+        <Card className="border-emerald-500/30 bg-white">
+          <CardContent className="py-4 bg-emerald-50/30">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-lg font-semibold">{quote.symbolName}</p>
@@ -771,11 +771,11 @@ export function AutoTradePanel({
 
       {/* 주문 목록 */}
       {dailyOrders && (
-        <Card>
-          <CardHeader>
+        <Card className="border-emerald-500/30 bg-white">
+          <CardHeader className="border-b border-emerald-200 bg-emerald-50">
             <div className="flex items-center justify-between">
               <div>
-                <CardTitle>오늘의 주문</CardTitle>
+                <CardTitle className="text-emerald-700">오늘의 주문</CardTitle>
                 <CardDescription>
                 {dailyOrders.summary.message}
                 {dailyOrders.summary.avgCost > 0 && (

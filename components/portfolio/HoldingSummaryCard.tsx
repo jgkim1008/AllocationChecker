@@ -20,25 +20,25 @@ export function HoldingSummaryCard({ holdings }: Props) {
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-medium text-gray-500">총 보유 종목</CardTitle>
+      <Card className="border-emerald-500/30 bg-white">
+        <CardHeader className="pb-2 bg-emerald-50/50">
+          <CardTitle className="text-sm font-medium text-emerald-700">총 보유 종목</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-3xl font-bold">{holdings.length}</p>
+          <p className="text-3xl font-bold text-emerald-600">{holdings.length}</p>
           <p className="text-xs text-gray-500 mt-1">종목</p>
         </CardContent>
       </Card>
 
       {totalAnnualUSD > 0 && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-gray-500">
+        <Card className="border-emerald-500/30 bg-white">
+          <CardHeader className="pb-2 bg-emerald-50/50">
+            <CardTitle className="text-sm font-medium text-emerald-700">
               연간 예상 배당 (USD)
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold text-green-600">
+            <p className="text-3xl font-bold text-emerald-600">
               {formatCurrency(totalAnnualUSD, 'USD')}
             </p>
             <p className="text-xs text-gray-500 mt-1">
@@ -49,14 +49,14 @@ export function HoldingSummaryCard({ holdings }: Props) {
       )}
 
       {totalAnnualKRW > 0 && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-gray-500">
+        <Card className="border-emerald-500/30 bg-white">
+          <CardHeader className="pb-2 bg-emerald-50/50">
+            <CardTitle className="text-sm font-medium text-emerald-700">
               연간 예상 배당 (KRW)
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold text-blue-600">
+            <p className="text-3xl font-bold text-emerald-600">
               {formatCurrency(totalAnnualKRW, 'KRW')}
             </p>
             <p className="text-xs text-gray-500 mt-1">

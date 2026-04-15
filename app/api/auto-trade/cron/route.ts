@@ -313,12 +313,33 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // 8. 신호 전략 자동매매 실행
+    let signalTradeResults = null;
+    try {
+      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+      const signalResponse = await fetch(`${baseUrl}/api/signal-trade/execute`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${CRON_SECRET}`,
+        },
+      });
+
+      if (signalResponse.ok) {
+        const signalData = await signalResponse.json();
+        signalTradeResults = signalData.data;
+      }
+    } catch (signalError) {
+      console.error('신호 전략 실행 오류:', signalError);
+    }
+
     return NextResponse.json({
       success: true,
       message: `${results.length}개 설정 처리 완료`,
       data: {
         processed: results.length,
         results,
+        signalTrade: signalTradeResults,
       },
     });
   } catch (error) {

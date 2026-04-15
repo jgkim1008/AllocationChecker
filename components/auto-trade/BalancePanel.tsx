@@ -138,10 +138,10 @@ export function BalancePanel({ brokerType = 'kis' }: BalancePanelProps) {
   };
 
   return (
-    <Card>
-      <CardHeader className="pb-3">
+    <Card className="border-emerald-500/30 bg-white">
+      <CardHeader className="pb-3 border-b border-emerald-200 bg-emerald-50">
         <div className="flex items-center justify-between">
-          <CardTitle className="flex items-center gap-2 text-base">
+          <CardTitle className="flex items-center gap-2 text-base text-emerald-700">
             <Wallet className="h-4 w-4" />
             보유 잔고
           </CardTitle>

@@ -128,14 +128,14 @@ export function DividendGoalCard({ holdings, usdKrw, currentPrices = {} }: Props
   const fmtCurr = (v: number) => formatCurrency(v, currency);
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+    <div className="bg-white rounded-2xl border border-emerald-500/30 overflow-hidden">
       <button
         onClick={() => setExpanded((p) => !p)}
-        className="w-full px-5 py-4 flex items-center justify-between text-left hover:bg-gray-50 transition-colors"
+        className="w-full px-5 py-4 flex items-center justify-between text-left hover:bg-emerald-50/50 transition-colors bg-emerald-50/30"
       >
         <div className="flex items-center gap-2">
-          <Target className="h-4 w-4 text-green-600 shrink-0" />
-          <span className="text-sm font-bold text-gray-900">월 배당 목표</span>
+          <Target className="h-4 w-4 text-emerald-600 shrink-0" />
+          <span className="text-sm font-bold text-emerald-700">월 배당 목표</span>
         </div>
         <ChevronDown
           className={`h-4 w-4 text-gray-400 transition-transform ${expanded ? 'rotate-180' : ''}`}

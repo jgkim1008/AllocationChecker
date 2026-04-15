@@ -127,13 +127,13 @@ export function PositionSync() {
   return (
     <div className="space-y-4">
       {/* 설정 */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
+      <Card className="border-emerald-500/30 bg-white">
+        <CardHeader className="border-b border-emerald-200 bg-emerald-50">
+          <CardTitle className="flex items-center gap-2 text-base text-emerald-700">
             <RefreshCw className="h-4 w-4" />
             포지션 싱크 검증
           </CardTitle>
-          <CardDescription>
+          <CardDescription className="text-gray-600">
             증권사 실제 잔고와 DB 기록을 비교하여 불일치를 감지합니다
           </CardDescription>
         </CardHeader>
