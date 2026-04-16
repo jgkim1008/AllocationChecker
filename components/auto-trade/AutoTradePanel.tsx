@@ -268,16 +268,30 @@ export function AutoTradePanel({
   const cancelTodayOrders = async () => {
     if (!todayDuplicates?.orders?.length) return;
     setIsCancellingToday(true);
+    setError(null);
     try {
       const cancellable = todayDuplicates.orders.filter(o => o.status === 'submitted' || o.status === 'partial');
-      await Promise.all(
-        cancellable.map(o =>
-          fetch(`/api/broker/orders?brokerType=${brokerType}&orderId=${o.broker_order_id}`, { method: 'DELETE' })
-        )
+      const results = await Promise.all(
+        cancellable.map(async o => {
+          const res = await fetch(`/api/broker/orders?brokerType=${brokerType}&orderId=${o.broker_order_id}`, { method: 'DELETE' });
+          const data = await res.json();
+          return { side: o.side, success: data.success, error: data.error };
+        })
       );
+      const succeeded = results.filter(r => r.success);
+      const failed = results.filter(r => !r.success);
+      if (failed.length > 0) {
+        setError(`취소 실패 ${failed.length}건: ${failed.map(r => r.error || '오류').join(', ')}`);
+      }
+      if (succeeded.length > 0) {
+        setExecutionResult({
+          success: true,
+          message: `${succeeded.map(r => r.side === 'buy' ? '매수' : '매도').join(' · ')} 주문 취소 완료`,
+        });
+      }
       await calculateOrders();
     } catch {
-      // 일부 실패해도 주문 목록 갱신
+      setError('주문 취소 중 오류가 발생했습니다.');
       await calculateOrders();
     } finally {
       setIsCancellingToday(false);
