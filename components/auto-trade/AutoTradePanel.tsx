@@ -127,6 +127,7 @@ export function AutoTradePanel({
     orders?: { id: string; broker_order_id: string; side: string; status: string }[];
   } | null>(null);
   const [isCancellingToday, setIsCancellingToday] = useState(false);
+  const [cancelResult, setCancelResult] = useState<{ success: boolean; message: string } | null>(null);
 
   // 종목 검색
   const handleSymbolChange = (value: string) => {
@@ -268,7 +269,7 @@ export function AutoTradePanel({
   const cancelTodayOrders = async () => {
     if (!todayDuplicates?.orders?.length) return;
     setIsCancellingToday(true);
-    setError(null);
+    setCancelResult(null);
     try {
       const cancellable = todayDuplicates.orders.filter(o => o.status === 'submitted' || o.status === 'partial');
       const results = await Promise.all(
@@ -281,17 +282,13 @@ export function AutoTradePanel({
       const succeeded = results.filter(r => r.success);
       const failed = results.filter(r => !r.success);
       if (failed.length > 0) {
-        setError(`취소 실패 ${failed.length}건: ${failed.map(r => r.error || '오류').join(', ')}`);
-      }
-      if (succeeded.length > 0) {
-        setExecutionResult({
-          success: true,
-          message: `${succeeded.map(r => r.side === 'buy' ? '매수' : '매도').join(' · ')} 주문 취소 완료`,
-        });
+        setCancelResult({ success: false, message: `취소 실패 ${failed.length}건: ${failed.map(r => r.error || '오류').join(', ')}` });
+      } else {
+        setCancelResult({ success: true, message: `${succeeded.map(r => r.side === 'buy' ? '매수' : '매도').join(' · ')} 주문 취소 완료` });
       }
       await calculateOrders();
     } catch {
-      setError('주문 취소 중 오류가 발생했습니다.');
+      setCancelResult({ success: false, message: '주문 취소 중 오류가 발생했습니다.' });
       await calculateOrders();
     } finally {
       setIsCancellingToday(false);
@@ -754,6 +751,17 @@ export function AutoTradePanel({
             )}
           </CardContent>
         </Card>
+      )}
+
+      {/* 주문 취소 결과 */}
+      {cancelResult && (
+        <div className={`rounded-lg border px-4 py-3 text-sm ${
+          cancelResult.success
+            ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
+            : 'border-red-200 bg-red-50 text-red-800'
+        }`}>
+          {cancelResult.success ? '✅' : '❌'} {cancelResult.message}
+        </div>
       )}
 
       {/* 시세 정보 */}
