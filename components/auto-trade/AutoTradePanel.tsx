@@ -124,7 +124,9 @@ export function AutoTradePanel({
   const [todayDuplicates, setTodayDuplicates] = useState<{
     buyExists: boolean;
     sellExists: boolean;
+    orders?: { id: string; broker_order_id: string; side: string; status: string }[];
   } | null>(null);
+  const [isCancellingToday, setIsCancellingToday] = useState(false);
 
   // 종목 검색
   const handleSymbolChange = (value: string) => {
@@ -260,6 +262,26 @@ export function AutoTradePanel({
     const allOrders = [...dailyOrders.buyOrders, ...dailyOrders.sellOrders]
       .filter(o => !o.isReference);
     setConfirmedOrders(new Set(allOrders.map(o => o.id)));
+  };
+
+  // 오늘 주문 전체 취소
+  const cancelTodayOrders = async () => {
+    if (!todayDuplicates?.orders?.length) return;
+    setIsCancellingToday(true);
+    try {
+      const cancellable = todayDuplicates.orders.filter(o => o.status === 'submitted' || o.status === 'partial');
+      await Promise.all(
+        cancellable.map(o =>
+          fetch(`/api/broker/orders?brokerType=${brokerType}&orderId=${o.broker_order_id}`, { method: 'DELETE' })
+        )
+      );
+      await calculateOrders();
+    } catch {
+      // 일부 실패해도 주문 목록 갱신
+      await calculateOrders();
+    } finally {
+      setIsCancellingToday(false);
+    }
   };
 
   // 공통 실행 로직
@@ -693,18 +715,29 @@ export function AutoTradePanel({
       {/* 오늘 이미 주문한 경우 경고 */}
       {todayDuplicates && (todayDuplicates.buyExists || todayDuplicates.sellExists) && (
         <Card className="border-yellow-300 bg-yellow-50">
-          <CardContent className="flex items-start gap-2 py-4 text-yellow-800">
-            <AlertCircle className="h-5 w-5 mt-0.5 text-yellow-600 shrink-0" />
-            <div className="text-sm">
-              <p className="font-semibold">오늘 이미 주문이 제출되었습니다</p>
-              <p className="text-yellow-700 mt-0.5">
-                {[
-                  todayDuplicates.buyExists && '매수',
-                  todayDuplicates.sellExists && '매도',
-                ].filter(Boolean).join(' · ')} 주문이 오늘 이미 존재합니다.
-                동일 주문을 다시 실행하면 중복 주문이 차단됩니다.
-              </p>
+          <CardContent className="flex items-start justify-between gap-2 py-4 text-yellow-800">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="h-5 w-5 mt-0.5 text-yellow-600 shrink-0" />
+              <div className="text-sm">
+                <p className="font-semibold">오늘 이미 주문이 제출되었습니다</p>
+                <p className="text-yellow-700 mt-0.5">
+                  {[
+                    todayDuplicates.buyExists && '매수',
+                    todayDuplicates.sellExists && '매도',
+                  ].filter(Boolean).join(' · ')} 주문이 오늘 이미 존재합니다.
+                  동일 주문을 다시 실행하면 중복 주문이 차단됩니다.
+                </p>
+              </div>
             </div>
+            {todayDuplicates.orders?.some(o => o.status === 'submitted' || o.status === 'partial') && (
+              <button
+                onClick={cancelTodayOrders}
+                disabled={isCancellingToday}
+                className="shrink-0 text-xs px-2 py-1 rounded-lg border border-yellow-400 text-yellow-800 hover:bg-yellow-100 disabled:opacity-50 transition-colors"
+              >
+                {isCancellingToday ? '취소 중...' : '주문 취소'}
+              </button>
+            )}
           </CardContent>
         </Card>
       )}

@@ -69,7 +69,7 @@ export async function GET(request: NextRequest) {
     todayStart.setHours(0, 0, 0, 0);
     const { data: todayOrders } = await serviceSupabase
       .from('pending_orders')
-      .select('side, status, order_time, order_quantity, order_price')
+      .select('id, broker_order_id, side, status, order_time, order_quantity, order_price')
       .eq('user_id', user.id)
       .eq('symbol', symbol.toUpperCase())
       .in('status', ['submitted', 'partial', 'filled'])
