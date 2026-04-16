@@ -105,6 +105,77 @@ export async function GET(request: NextRequest) {
   }
 }
 
+// 증권사 실제 잔고로 DB 동기화 (기존 기록 삭제 후 새로 생성)
+export async function PUT(request: NextRequest) {
+  try {
+    if (process.env.NODE_ENV === 'production') return NextResponse.json({ error: '서비스 준비 중입니다.' }, { status: 503 });
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return NextResponse.json({ success: false, error: '로그인이 필요합니다.' }, { status: 401 });
+
+    const body = await request.json();
+    const { symbol, brokerType = 'kis' } = body;
+
+    if (!symbol) {
+      return NextResponse.json({ success: false, error: 'symbol이 필요합니다.' }, { status: 400 });
+    }
+
+    // 1. 증권사 포지션 조회
+    const clientResult = await getBrokerClient(user.id, brokerType as BrokerType);
+    if (!clientResult.success || !clientResult.client) {
+      return NextResponse.json({ success: false, error: clientResult.error || '브로커에 연결되지 않았습니다.' }, { status: 400 });
+    }
+
+    const positionsResult = await clientResult.client.getPositions();
+    const brokerPosition = positionsResult.data?.find(
+      (p) => p.symbol.toUpperCase() === symbol.toUpperCase()
+    );
+
+    if (!brokerPosition) {
+      return NextResponse.json({ success: false, error: '증권사에 해당 종목이 없습니다.' }, { status: 400 });
+    }
+
+    const serviceSupabase = await createServiceClient();
+
+    // 2. 기존 기록 삭제
+    await Promise.all([
+      serviceSupabase.from('infinite_buy_records').delete().eq('symbol', symbol.toUpperCase()),
+      serviceSupabase.from('infinite_sell_records').delete().eq('symbol', symbol.toUpperCase()),
+    ]);
+
+    // 3. 증권사 잔고 기준으로 새 매수 기록 생성
+    const { data, error } = await serviceSupabase
+      .from('infinite_buy_records')
+      .insert({
+        symbol: symbol.toUpperCase(),
+        buy_date: new Date().toISOString().split('T')[0],
+        price: brokerPosition.avgPrice,
+        shares: brokerPosition.quantity,
+        amount: brokerPosition.avgPrice * brokerPosition.quantity,
+        capital: 0,
+        n: 40,
+        target_rate: 0.1,
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        symbol: symbol.toUpperCase(),
+        shares: brokerPosition.quantity,
+        avgCost: brokerPosition.avgPrice,
+        message: `${symbol} 포지션이 증권사 실제 잔고로 동기화되었습니다.`,
+      },
+    });
+  } catch (error) {
+    console.error('[sync-check PUT]', error);
+    return NextResponse.json({ success: false, error: '동기화 실패' }, { status: 500 });
+  }
+}
+
 // 수동 조정: DB 매수 기록 1건 추가 (불일치 보정용)
 export async function POST(request: NextRequest) {
   try {

@@ -43,7 +43,7 @@ export default function AutoTradePage() {
           <Bot className="h-6 w-6" />
           자동매매
         </h1>
-        <p className="text-muted-foreground">
+        <p className="text-gray-600">
           증권사 API를 연동하여 자동매매 전략을 실행합니다
         </p>
       </div>
@@ -103,7 +103,7 @@ export default function AutoTradePage() {
 
       <div className="mt-8 rounded-lg border bg-muted/50 p-4">
         <h3 className="mb-2 font-semibold">사용 안내</h3>
-        <ul className="space-y-1 text-sm text-muted-foreground">
+        <ul className="space-y-1 text-sm text-gray-600">
           <li>
             1. <strong>연결</strong> 탭에서 증권사 API 키를 등록합니다. (모의투자 모드 권장)
           </li>

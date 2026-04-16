@@ -138,7 +138,7 @@ export function TOTPSetupDialog({ open, onOpenChange, onSuccess }: TOTPSetupDial
             <div className="space-y-4">
               <div className="rounded-lg bg-muted p-4">
                 <h4 className="font-medium mb-2">왜 2FA가 필요한가요?</h4>
-                <ul className="text-sm text-muted-foreground space-y-1">
+                <ul className="text-sm text-gray-600 space-y-1">
                   <li>- API Key는 실제 거래에 사용되는 민감한 정보입니다.</li>
                   <li>- 2FA를 설정하면 본인만 API Key에 접근할 수 있습니다.</li>
                   <li>- 인증 후 2시간 동안 세션이 유지됩니다.</li>
@@ -147,7 +147,7 @@ export function TOTPSetupDialog({ open, onOpenChange, onSuccess }: TOTPSetupDial
 
               <div className="rounded-lg border p-4">
                 <h4 className="font-medium mb-2">준비물</h4>
-                <p className="text-sm text-muted-foreground">
+                <p className="text-sm text-gray-600">
                   스마트폰에 <strong>Google Authenticator</strong> 앱을 설치해주세요.
                 </p>
                 <div className="mt-2 flex gap-2">
@@ -186,7 +186,7 @@ export function TOTPSetupDialog({ open, onOpenChange, onSuccess }: TOTPSetupDial
               </div>
 
               <div className="text-center">
-                <p className="text-sm text-muted-foreground mb-2">
+                <p className="text-sm text-gray-600 mb-2">
                   QR 코드를 스캔할 수 없나요? 수동으로 입력하세요:
                 </p>
                 <div className="flex items-center justify-center gap-2">
@@ -233,7 +233,7 @@ export function TOTPSetupDialog({ open, onOpenChange, onSuccess }: TOTPSetupDial
                 />
               </div>
 
-              <p className="text-sm text-muted-foreground text-center">
+              <p className="text-sm text-gray-600 text-center">
                 Google Authenticator 앱에 표시된 6자리 코드를 입력하세요.
               </p>
             </div>
@@ -247,7 +247,7 @@ export function TOTPSetupDialog({ open, onOpenChange, onSuccess }: TOTPSetupDial
               </div>
               <div>
                 <h4 className="font-medium">설정 완료!</h4>
-                <p className="text-sm text-muted-foreground mt-1">
+                <p className="text-sm text-gray-600 mt-1">
                   이제 API Key를 저장하고 불러올 때 2FA 인증이 필요합니다.
                 </p>
               </div>

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { RefreshCw, CheckCircle, AlertTriangle, AlertCircle, ChevronDown, ChevronUp, Plus } from 'lucide-react';
+import { RefreshCw, CheckCircle, AlertTriangle, AlertCircle, ChevronDown, ChevronUp, Plus, ArrowDownToLine } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -59,6 +59,9 @@ export function PositionSync() {
   const [adjusting, setAdjusting] = useState(false);
   const [adjustResult, setAdjustResult] = useState<string | null>(null);
 
+  // 증권사 기준 싱크
+  const [syncing, setSyncing] = useState(false);
+
   const checkSync = async () => {
     if (!symbol) return;
     setIsLoading(true);
@@ -79,6 +82,34 @@ export function PositionSync() {
       setError('서버 오류가 발생했습니다.');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // 증권사 실제 잔고로 DB 동기화
+  const syncToBroker = async () => {
+    if (!result?.broker.found) return;
+    if (!confirm(`${symbol} 포지션을 증권사 실제 잔고(${result.broker.shares}주, 평단 ${fmt(result.broker.avgCost)})로 동기화하시겠습니까?\n\n⚠️ 기존 매수/매도 기록이 모두 삭제됩니다.`)) return;
+
+    setSyncing(true);
+    setAdjustResult(null);
+    try {
+      const res = await fetch('/api/auto-trade/sync-check', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ symbol: symbol.toUpperCase(), brokerType }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setAdjustResult(`✅ ${data.data.message}`);
+        // 싱크 재확인
+        await checkSync();
+      } else {
+        setAdjustResult(`❌ ${data.error}`);
+      }
+    } catch {
+      setAdjustResult('❌ 서버 오류');
+    } finally {
+      setSyncing(false);
     }
   };
 
@@ -200,8 +231,8 @@ export function PositionSync() {
 
       {/* 결과 */}
       {result && (
-        <Card className={result.inSync ? 'border-green-300' : 'border-yellow-400'}>
-          <CardHeader className="pb-3">
+        <Card className={`bg-white ${result.inSync ? 'border-green-300' : 'border-yellow-400'}`}>
+          <CardHeader className="pb-3 bg-white">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 {result.inSync ? (
@@ -221,10 +252,10 @@ export function PositionSync() {
               </Button>
             </div>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-4 bg-white">
             {/* 비교 테이블 */}
-            <div className="rounded-xl border border-gray-200 overflow-hidden">
-              <table className="w-full text-sm">
+            <div className="rounded-xl border border-gray-200 overflow-hidden bg-white">
+              <table className="w-full text-sm bg-white">
                 <thead>
                   <tr className="bg-gray-50 border-b border-gray-200">
                     <th className="text-left px-4 py-2.5 text-xs font-medium text-gray-500">항목</th>
@@ -310,15 +341,31 @@ export function PositionSync() {
               )}
             </div>
 
-            {/* 불일치 원인 안내 */}
+            {/* 불일치 원인 안내 및 싱크 버튼 */}
             {!result.inSync && (
-              <div className="rounded-lg bg-yellow-50 border border-yellow-200 px-4 py-3 text-sm text-yellow-800 space-y-1">
-                <p className="font-semibold">불일치 가능 원인</p>
-                {!result.diff.sharesMatch && (
-                  <p>• 수량 차이 {Math.abs(result.diff.shares).toFixed(4)}주 — 미기록 매수/매도, 부분체결 누락 가능성</p>
-                )}
-                {!result.diff.avgCostMatch && (
-                  <p>• 평단가 차이 {Math.abs(result.diff.avgCostPct).toFixed(2)}% — 수수료 반영 여부나 환율 차이 확인 필요</p>
+              <div className="rounded-lg bg-yellow-50 border border-yellow-200 px-4 py-3 text-sm text-yellow-800 space-y-3">
+                <div className="space-y-1">
+                  <p className="font-semibold">불일치 가능 원인</p>
+                  {!result.diff.sharesMatch && (
+                    <p>• 수량 차이 {Math.abs(result.diff.shares).toFixed(4)}주 — 미기록 매수/매도, 부분체결 누락 가능성</p>
+                  )}
+                  {!result.diff.avgCostMatch && (
+                    <p>• 평단가 차이 {Math.abs(result.diff.avgCostPct).toFixed(2)}% — 수수료 반영 여부나 환율 차이 확인 필요</p>
+                  )}
+                </div>
+
+                {result.broker.found && (
+                  <Button
+                    onClick={syncToBroker}
+                    disabled={syncing}
+                    className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+                  >
+                    {syncing ? (
+                      <><RefreshCw className="h-4 w-4 mr-2 animate-spin" />동기화 중...</>
+                    ) : (
+                      <><ArrowDownToLine className="h-4 w-4 mr-2" />증권사 실제로 싱크 맞추기</>
+                    )}
+                  </Button>
                 )}
               </div>
             )}

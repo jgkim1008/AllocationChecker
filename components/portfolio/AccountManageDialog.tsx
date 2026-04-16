@@ -101,7 +101,7 @@ export function AccountManageDialog({ open, onClose, accounts, onAdd, onUpdate, 
           {/* 계좌 목록 */}
           <div className="space-y-2">
             {accounts.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-4">등록된 계좌가 없습니다.</p>
+              <p className="text-sm text-gray-600 text-center py-4">등록된 계좌가 없습니다.</p>
             ) : (
               accounts.map((account) => (
                 <div
@@ -125,7 +125,7 @@ export function AccountManageDialog({ open, onClose, accounts, onAdd, onUpdate, 
                       </SelectContent>
                     </Select>
                     <button
-                      className="text-muted-foreground hover:text-destructive transition-colors disabled:opacity-40"
+                      className="text-gray-600 hover:text-destructive transition-colors disabled:opacity-40"
                       onClick={() => handleDelete(account.id)}
                       disabled={deletingId === account.id}
                       aria-label="계좌 삭제"

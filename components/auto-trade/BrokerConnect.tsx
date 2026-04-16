@@ -368,12 +368,12 @@ export function BrokerConnect({ onConnect, onDisconnect }: BrokerConnectProps) {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Shield className={`h-4 w-4 ${
-                !isTotpEnabled ? 'text-muted-foreground'
+                !isTotpEnabled ? 'text-gray-600'
                 : sessionState.hasValidSession ? 'text-green-500'
                 : 'text-yellow-500'
               }`} />
               <div>
-                <span className="text-sm font-medium">2단계 인증 (2FA)</span>
+                <span className="text-sm font-medium text-gray-900">2단계 인증 (2FA)</span>
                 <span className={`ml-2 text-xs px-2 py-0.5 rounded-full ${
                   !isTotpEnabled
                     ? 'bg-gray-100 text-gray-500'
@@ -396,16 +396,16 @@ export function BrokerConnect({ onConnect, onDisconnect }: BrokerConnectProps) {
             )}
             {isTotpEnabled && !sessionState.hasValidSession && (
               <Button
-                variant="outline"
                 size="sm"
                 onClick={() => { setTotpVerifyAction('load'); setShowTotpVerify(true); }}
+                className="bg-emerald-600 text-white hover:bg-emerald-700"
               >
                 <Shield className="mr-1 h-4 w-4" />
                 인증하기
               </Button>
             )}
             {isTotpEnabled && sessionState.hasValidSession && (
-              <Button variant="ghost" size="sm" onClick={() => setShowTotpSetup(true)} className="text-xs text-muted-foreground">
+              <Button variant="ghost" size="sm" onClick={() => setShowTotpSetup(true)} className="text-xs text-gray-600">
                 2FA 재설정
               </Button>
             )}
@@ -430,8 +430,8 @@ export function BrokerConnect({ onConnect, onDisconnect }: BrokerConnectProps) {
                   className="flex items-center justify-between rounded-lg border p-3"
                 >
                   <div>
-                    <p className="font-medium">{brokerInfo[saved.brokerType].name}</p>
-                    <p className="text-xs text-muted-foreground">
+                    <p className="font-medium text-gray-900">{brokerInfo[saved.brokerType].name}</p>
+                    <p className="text-xs text-gray-600">
                       저장일: {new Date(saved.savedAt).toLocaleDateString('ko-KR')}
                     </p>
                   </div>
@@ -469,8 +469,8 @@ export function BrokerConnect({ onConnect, onDisconnect }: BrokerConnectProps) {
                   className="flex items-center justify-between rounded-lg border p-3"
                 >
                   <div>
-                    <p className="font-medium">{brokerInfo[type].name}</p>
-                    <p className="text-sm text-muted-foreground">
+                    <p className="font-medium text-gray-900">{brokerInfo[type].name}</p>
+                    <p className="text-sm text-gray-600">
                       {brokerInfo[type].description}
                     </p>
                   </div>
@@ -520,7 +520,7 @@ export function BrokerConnect({ onConnect, onDisconnect }: BrokerConnectProps) {
                 </SelectItem>
               </SelectContent>
             </Select>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-gray-600">
               <a
                 href={brokerInfo[brokerType].docsUrl}
                 target="_blank"

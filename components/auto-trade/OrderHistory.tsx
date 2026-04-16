@@ -184,15 +184,15 @@ export function OrderHistory({ defaultBroker = 'kis' }: OrderHistoryProps) {
       <CardContent>
         {isLoading && orders.length === 0 ? (
           <div className="flex items-center justify-center py-8">
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-            <span className="ml-2 text-muted-foreground">불러오는 중...</span>
+            <Loader2 className="h-6 w-6 animate-spin text-gray-600" />
+            <span className="ml-2 text-gray-600">불러오는 중...</span>
           </div>
         ) : error ? (
           <div className="flex items-center justify-center py-8 text-destructive">
             {error}
           </div>
         ) : orders.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
+          <div className="flex flex-col items-center justify-center py-8 text-gray-600">
             <History className="mb-2 h-8 w-8" />
             <p>오늘 주문 내역이 없습니다.</p>
           </div>
@@ -215,13 +215,13 @@ export function OrderHistory({ defaultBroker = 'kis' }: OrderHistoryProps) {
               <TableBody>
                 {orders.map((order) => (
                   <TableRow key={order.orderId}>
-                    <TableCell className="text-sm text-muted-foreground">
+                    <TableCell className="text-sm text-gray-600">
                       {formatTime(order.orderTime)}
                     </TableCell>
                     <TableCell>
                       <div>
                         <p className="font-medium">{order.symbol}</p>
-                        <p className="text-xs text-muted-foreground">
+                        <p className="text-xs text-gray-600">
                           {order.symbolName}
                         </p>
                       </div>
@@ -267,7 +267,7 @@ export function OrderHistory({ defaultBroker = 'kis' }: OrderHistoryProps) {
                       <div>
                         <p>{formatPrice(order.orderPrice, order.currency)}</p>
                         {order.filledPrice && order.filledPrice > 0 && (
-                          <p className="text-xs text-muted-foreground">
+                          <p className="text-xs text-gray-600">
                             체결: {formatPrice(order.filledPrice, order.currency)}
                           </p>
                         )}

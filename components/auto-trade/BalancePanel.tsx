@@ -53,7 +53,7 @@ function PnlText({ value, rate, currency }: { value: number; rate: number; curre
 function SummaryRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex justify-between text-sm">
-      <span className="text-muted-foreground">{label}</span>
+      <span className="text-gray-600">{label}</span>
       <span className="font-medium">{value}</span>
     </div>
   );
@@ -88,11 +88,11 @@ function MarketSection({ title, balance, positions, currency }: {
               <div className="flex items-center justify-between">
                 <div>
                   <span className="font-bold text-sm">{p.symbol}</span>
-                  <span className="ml-1.5 text-xs text-muted-foreground truncate max-w-[120px] inline-block align-bottom">{p.symbolName}</span>
+                  <span className="ml-1.5 text-xs text-gray-600 truncate max-w-[120px] inline-block align-bottom">{p.symbolName}</span>
                 </div>
                 <PnlText value={p.profitLoss} rate={p.profitLossRate} currency={p.currency} />
               </div>
-              <div className="flex items-center gap-3 text-xs text-muted-foreground">
+              <div className="flex items-center gap-3 text-xs text-gray-600">
                 <span>{p.quantity}주</span>
                 <span>평균 {fmt(p.avgPrice, p.currency)}</span>
                 <span>현재 {fmt(p.currentPrice, p.currency)}</span>
@@ -104,7 +104,7 @@ function MarketSection({ title, balance, positions, currency }: {
       )}
 
       {positions.length === 0 && (
-        <p className="text-xs text-muted-foreground text-center py-2">보유 종목 없음</p>
+        <p className="text-xs text-gray-600 text-center py-2">보유 종목 없음</p>
       )}
     </div>
   );
@@ -158,14 +158,14 @@ export function BalancePanel({ brokerType = 'kis' }: BalancePanelProps) {
         )}
 
         {!data && !loading && !error && (
-          <p className="text-sm text-muted-foreground text-center py-6">
+          <p className="text-sm text-gray-600 text-center py-6">
             잔고 조회 버튼을 눌러 현재 보유 잔고를 확인하세요.
           </p>
         )}
 
         {loading && (
           <div className="flex items-center justify-center py-8">
-            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            <Loader2 className="h-5 w-5 animate-spin text-gray-600" />
           </div>
         )}
 

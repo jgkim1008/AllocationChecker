@@ -845,6 +845,10 @@ function FundamentalChart({
     const ma120Series = chart.addSeries(LineSeries, { color: '#60a5fa', lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
     ma120Series.setData(calcMA(sortedData, 120));
 
+    // MA240 (보라색, 굵은 선)
+    const ma240Series = chart.addSeries(LineSeries, { color: '#a855f7', lineWidth: 2.5, priceLineVisible: false, lastValueVisible: false });
+    ma240Series.setData(calcMA(sortedData, 240));
+
     // 5. 거래량 차트
     const volumeSeries = chart.addSeries(HistogramSeries, {
       priceFormat: { type: 'volume' },
@@ -1558,6 +1562,10 @@ export default function AnalystAlphaDetailPage({ params }: { params: Promise<{ s
                   <div className="flex items-center gap-1.5">
                     <div className="w-4 h-0.5 bg-blue-400" />
                     <span className="text-gray-500">MA120</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-4 h-1 bg-purple-500 rounded-sm" />
+                    <span className="text-gray-900 font-medium">MA240</span>
                   </div>
                 </div>
 

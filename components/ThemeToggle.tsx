@@ -16,7 +16,7 @@ export function ThemeToggle() {
   return (
     <button
       onClick={() => setTheme(isDark ? 'light' : 'dark')}
-      className="w-full flex items-center justify-between px-3 py-2 rounded-md text-xs text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
+      className="w-full flex items-center justify-between px-3 py-2 rounded-md text-xs text-gray-600 hover:bg-accent hover:text-accent-foreground transition-colors"
     >
       <span className="flex items-center gap-2">
         {isDark ? <Moon className="h-3.5 w-3.5" /> : <Sun className="h-3.5 w-3.5" />}

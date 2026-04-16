@@ -7,9 +7,17 @@
     "app/api/auto-trade/cron/route.ts": {
       "memory": 1024,
       "maxDuration": 60
+    },
+    "app/api/auto-trade/morning-alert/route.ts": {
+      "memory": 1024,
+      "maxDuration": 60
     }
   },
   "crons": [
+    {
+      "path": "/api/auto-trade/morning-alert",
+      "schedule": "0 0 * * 1-5"
+    },
     {
       "path": "/api/auto-trade/cron",
       "schedule": "0 12 * * 1-5"

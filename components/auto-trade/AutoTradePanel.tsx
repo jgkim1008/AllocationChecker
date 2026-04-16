@@ -716,13 +716,13 @@ export function AutoTradePanel({
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-lg font-semibold">{quote.symbolName}</p>
-                <p className="text-sm text-muted-foreground">{quote.symbol}</p>
+                <p className="text-sm text-gray-600">{quote.symbol}</p>
               </div>
               <div className="text-right">
                 <p className="text-2xl font-bold">
                   {quote.currentPrice > 0
                     ? formatPrice(quote.currentPrice, isOverseas)
-                    : <span className="text-muted-foreground text-lg">장 마감</span>
+                    : <span className="text-gray-600 text-lg">장 마감</span>
                   }
                 </p>
                 {quote.currentPrice > 0 && (
@@ -746,11 +746,11 @@ export function AutoTradePanel({
             {currentShares > 0 && currentInvested > 0 && quote.currentPrice > 0 && (
               <div className="mt-3 pt-3 border-t">
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">내 포지션</span>
+                  <span className="text-gray-600">내 포지션</span>
                   <span>{currentShares.toLocaleString()}주 · 평단 {formatPrice(currentInvested / currentShares, isOverseas)}</span>
                 </div>
                 <div className="flex items-center justify-between mt-1">
-                  <span className="text-muted-foreground text-sm">평가손익</span>
+                  <span className="text-gray-600 text-sm">평가손익</span>
                   {(() => {
                     const evalAmount = quote.currentPrice * currentShares;
                     const pnl = evalAmount - currentInvested;
@@ -814,7 +814,7 @@ export function AutoTradePanel({
               return (
                 <>
                   {hasNoExecutable && referenceBuys.length === 0 ? (
-                    <p className="py-4 text-center text-muted-foreground">
+                    <p className="py-4 text-center text-gray-600">
                       오늘 실행할 주문이 없습니다.
                     </p>
                   ) : (
@@ -1027,7 +1027,7 @@ export function AutoTradePanel({
                   ))}
                 </div>
               )}
-              <p className="text-sm text-muted-foreground">
+              <p className="text-sm text-gray-600">
                 {confirmedOrders.size}건의 주문이 확인되었습니다.
                 확인된 주문만 실행됩니다.
               </p>
