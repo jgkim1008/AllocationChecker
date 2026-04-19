@@ -172,33 +172,6 @@ export default function AutoTradePageContent() {
         </TabsContent>
       </Tabs>
 
-      <div className="mt-8 rounded-lg border bg-muted/50 p-4">
-        <h3 className="mb-2 font-semibold">사용 안내</h3>
-        <ul className="space-y-1 text-sm text-gray-600">
-          <li>
-            1. <strong>연결</strong> 탭에서 증권사 API 키를 등록합니다. (모의투자 모드 권장)
-          </li>
-          <li>
-            2. <strong>매매</strong> 탭에서 종목, 전략, 투자금을 설정합니다.
-          </li>
-          <li>
-            3. &quot;오늘의 주문 계산&quot; 버튼으로 LOC 주문을 생성합니다.
-          </li>
-          <li>
-            4. 주문 내역을 확인하고 체크박스로 실행할 주문을 선택합니다.
-          </li>
-          <li>
-            5. &quot;확인된 주문 실행&quot; 버튼으로 주문을 제출합니다.
-          </li>
-        </ul>
-
-        <div className="mt-4 rounded border border-yellow-500/50 bg-yellow-500/10 p-3">
-          <p className="text-sm text-yellow-600 dark:text-yellow-400">
-            <strong>주의:</strong> 실제 투자 전 반드시 모의투자로 테스트하세요.
-            투자 손실에 대한 책임은 본인에게 있습니다.
-          </p>
-        </div>
-      </div>
     </div>
     </PremiumGate>
   );

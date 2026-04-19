@@ -309,47 +309,68 @@ export function BrokerConnect({ onConnect, onDisconnect }: BrokerConnectProps) {
   return (
     <div className="space-y-4">
       {/* 2FA 상태 */}
-      <Card className="border-emerald-500/30 bg-white">
-        <CardContent className="py-3 bg-emerald-50/50">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Shield className={`h-4 w-4 ${
-                !isTotpEnabled ? 'text-gray-400'
-                : sessionState.hasValidSession ? 'text-green-500'
-                : 'text-yellow-500'
-              }`} />
-              <div>
-                <span className="text-sm font-medium text-gray-900">2단계 인증 (2FA)</span>
-                <span className={`ml-2 text-xs px-2 py-0.5 rounded-full ${
-                  !isTotpEnabled ? 'bg-gray-100 text-gray-500'
-                  : sessionState.hasValidSession ? 'bg-green-100 text-green-700'
-                  : 'bg-yellow-100 text-yellow-700'
-                }`}>
-                  {!isTotpEnabled ? '미설정'
-                  : sessionState.hasValidSession ? `인증됨 · ${sessionState.remainingMinutes}분 남음`
-                  : '인증 필요'}
-                </span>
+      {!isTotpEnabled ? (
+        <Card className="border-orange-300 bg-orange-50">
+          <CardContent className="py-4">
+            <div className="flex items-start gap-3">
+              <Shield className="h-5 w-5 text-orange-500 mt-0.5 shrink-0" />
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-orange-800">2단계 인증(2FA) 설정이 필요합니다</p>
+                <p className="text-xs text-orange-600 mt-1">
+                  API 키 보안을 위해 Google Authenticator 등 OTP 앱으로 2FA를 먼저 설정하세요.
+                  QR 코드를 스캔하면 6자리 인증코드가 생성됩니다.
+                </p>
+              </div>
+              <Button size="sm" onClick={() => setShowTotpSetup(true)}
+                className="bg-orange-500 hover:bg-orange-600 text-white shrink-0">
+                <Shield className="mr-1 h-4 w-4" />2FA 설정하기
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card className="border-emerald-500/30 bg-white">
+          <CardContent className="py-3 bg-emerald-50/50">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Shield className={`h-4 w-4 ${sessionState.hasValidSession ? 'text-green-500' : 'text-yellow-500'}`} />
+                <div>
+                  <span className="text-sm font-medium text-gray-900">2단계 인증 (2FA)</span>
+                  <span className={`ml-2 text-xs px-2 py-0.5 rounded-full ${
+                    sessionState.hasValidSession ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
+                  }`}>
+                    {sessionState.hasValidSession ? `인증됨 · ${sessionState.remainingMinutes}분 남음` : '인증 필요'}
+                  </span>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                {!sessionState.hasValidSession && (
+                  <Button size="sm" onClick={() => { setTotpVerifyAction(null); setShowTotpVerify(true); }}
+                    className="bg-emerald-600 text-white hover:bg-emerald-700">
+                    <Shield className="mr-1 h-4 w-4" />인증하기
+                  </Button>
+                )}
+                {sessionState.hasValidSession && (
+                  <Button variant="ghost" size="sm" onClick={() => setShowTotpSetup(true)} className="text-xs text-gray-600">
+                    2FA 재설정
+                  </Button>
+                )}
               </div>
             </div>
-            <div className="flex gap-2">
-              {!isTotpEnabled && (
-                <Button variant="outline" size="sm" onClick={() => setShowTotpSetup(true)}>설정하기</Button>
-              )}
-              {isTotpEnabled && !sessionState.hasValidSession && (
-                <Button size="sm" onClick={() => { setTotpVerifyAction(null); setShowTotpVerify(true); }}
-                  className="bg-emerald-600 text-white hover:bg-emerald-700">
-                  <Shield className="mr-1 h-4 w-4" />인증하기
-                </Button>
-              )}
-              {isTotpEnabled && sessionState.hasValidSession && (
-                <Button variant="ghost" size="sm" onClick={() => setShowTotpSetup(true)} className="text-xs text-gray-600">
-                  2FA 재설정
-                </Button>
-              )}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* 사용안내 */}
+      <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-xs text-blue-800 space-y-2">
+        <p className="font-semibold text-sm">📋 사용안내</p>
+        <ol className="list-decimal list-inside space-y-1 leading-relaxed">
+          <li><span className="font-medium">2FA 설정 / 인증</span> — 처음 사용 시 "2FA 설정하기"를 눌러 OTP 앱(Google Authenticator 등)에 QR 코드를 등록하세요. 이후 매 세션마다 "인증하기"로 OTP를 입력하면 저장된 계좌 목록이 표시됩니다.</li>
+          <li><span className="font-medium">새 계좌 저장</span> — 아래 폼에 증권사 API Key · Secret · 계좌번호를 입력하고 "저장하기"를 누르세요. 별칭을 지정해 여러 계좌를 구분할 수 있습니다.</li>
+          <li><span className="font-medium">연결하기</span> — 저장된 계좌 목록에서 "연결하기"를 눌러야 실시간 API 연결이 활성화됩니다. 같은 증권사 계좌(예: 일반/ISA)를 동시에 연결할 수 있습니다.</li>
+          <li><span className="font-medium">해제</span> — 개별 계좌만 연결 해제됩니다. API Key는 DB에 유지되므로 언제든 재연결 가능합니다.</li>
+        </ol>
+      </div>
 
       {/* 에러/성공 메시지 */}
       {error && (
@@ -366,8 +387,8 @@ export function BrokerConnect({ onConnect, onDisconnect }: BrokerConnectProps) {
         </div>
       )}
 
-      {/* 저장된 계좌 목록 */}
-      {accounts.length > 0 && (
+      {/* 저장된 계좌 목록 — 2FA 세션이 없으면 숨김 */}
+      {accounts.length > 0 && sessionState.hasValidSession && (
         <Card className="border-emerald-500/30 bg-white">
           <CardHeader className="border-b border-emerald-200 bg-emerald-50 py-3">
             <CardTitle className="flex items-center gap-2 text-sm text-emerald-700">
