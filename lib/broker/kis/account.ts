@@ -66,6 +66,7 @@ export class KISAccount {
    */
   async getDomesticBalance(): Promise<BrokerResponse<{ balance: Balance; positions: Position[] }>> {
     const [accountNo, accountProduct] = this.auth.getAccountParts();
+    console.log('[KIS] getDomesticBalance CANO:', accountNo, 'ACNT_PRDT_CD:', accountProduct);
     const trId = KIS_TR_ID.DOMESTIC.BALANCE;
 
     try {

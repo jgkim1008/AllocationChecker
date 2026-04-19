@@ -9,7 +9,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { createClient } from '@/lib/supabase/server';
-import { getBrokerClient } from '@/lib/broker/session';
+import { getBrokerClient, getBrokerClientByCredentialId } from '@/lib/broker/session';
 import { checkBrokerAccess } from '@/lib/broker/auth-guard';
 import type { BrokerType, OrderRequest } from '@/lib/broker/types';
 
@@ -34,10 +34,13 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url);
+    const credentialId = searchParams.get('credentialId');
     const brokerType = (searchParams.get('brokerType') || 'kis') as BrokerType;
     const orderId = searchParams.get('orderId');
 
-    const clientResult = await getBrokerClient(user.id, brokerType);
+    const clientResult = credentialId
+      ? await getBrokerClientByCredentialId(credentialId)
+      : await getBrokerClient(user.id, brokerType);
 
     if (!clientResult.success || !clientResult.client) {
       return NextResponse.json(
@@ -105,12 +108,13 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { brokerType, order } = body as {
+    const { credentialId: postCredentialId, brokerType, order } = body as {
+      credentialId?: string;
       brokerType: BrokerType;
       order: OrderRequest;
     };
 
-    if (!brokerType || !order) {
+    if (!order) {
       return NextResponse.json(
         { success: false, error: '필수 파라미터가 누락되었습니다.' },
         { status: 400 }
@@ -138,7 +142,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: accessPost.error }, { status: 403 });
     }
 
-    const clientResult = await getBrokerClient(user.id, brokerType);
+    const clientResult = postCredentialId
+      ? await getBrokerClientByCredentialId(postCredentialId)
+      : await getBrokerClient(user.id, brokerType);
 
     if (!clientResult.success || !clientResult.client) {
       return NextResponse.json(
@@ -194,8 +200,12 @@ export async function DELETE(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url);
+    const deleteCredentialId = searchParams.get('credentialId');
     const brokerType = (searchParams.get('brokerType') || 'kis') as BrokerType;
     const orderId = searchParams.get('orderId');
+    const hintSymbol = searchParams.get('symbol');
+    const hintQuantity = searchParams.get('quantity');
+    const hintMarket = searchParams.get('market') as 'domestic' | 'overseas' | null;
 
     if (!orderId) {
       return NextResponse.json(
@@ -205,7 +215,9 @@ export async function DELETE(request: NextRequest) {
     }
 
     // 브로커 클라이언트 가져오기
-    const clientResult = await getBrokerClient(user.id, brokerType);
+    const clientResult = deleteCredentialId
+      ? await getBrokerClientByCredentialId(deleteCredentialId)
+      : await getBrokerClient(user.id, brokerType);
 
     if (!clientResult.success || !clientResult.client) {
       return NextResponse.json(
@@ -214,8 +226,12 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
+    const hint = hintSymbol && hintQuantity && hintMarket
+      ? { symbol: hintSymbol, quantity: parseFloat(hintQuantity), market: hintMarket }
+      : undefined;
+
     // 주문 취소
-    const cancelResult = await clientResult.client.cancelOrder(orderId);
+    const cancelResult = await clientResult.client.cancelOrder(orderId, hint);
 
     if (!cancelResult.success) {
       return NextResponse.json(

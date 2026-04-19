@@ -41,7 +41,11 @@ interface SyncResult {
 
 const PRESET_SYMBOLS = ['TQQQ', 'UPRO', 'SOXL', 'FNGU', 'TECL'];
 
-export function PositionSync() {
+interface PositionSyncProps {
+  credentialId?: string;
+}
+
+export function PositionSync({ credentialId }: PositionSyncProps = {}) {
   const [brokerType, setBrokerType] = useState<BrokerType>('kis');
   const [symbol, setSymbol] = useState('TQQQ');
   const [isLoading, setIsLoading] = useState(false);
@@ -69,8 +73,11 @@ export function PositionSync() {
     setResult(null);
     setAdjustResult(null);
     try {
+      const brokerParam = credentialId
+        ? `credentialId=${credentialId}`
+        : `brokerType=${brokerType}`;
       const res = await fetch(
-        `/api/auto-trade/sync-check?brokerType=${brokerType}&symbol=${encodeURIComponent(symbol.toUpperCase())}`
+        `/api/auto-trade/sync-check?${brokerParam}&symbol=${encodeURIComponent(symbol.toUpperCase())}`
       );
       const data = await res.json();
       if (data.success) {
@@ -96,7 +103,7 @@ export function PositionSync() {
       const res = await fetch('/api/auto-trade/sync-check', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ symbol: symbol.toUpperCase(), brokerType }),
+        body: JSON.stringify({ symbol: symbol.toUpperCase(), brokerType, ...(credentialId ? { credentialId } : {}) }),
       });
       const data = await res.json();
       if (data.success) {

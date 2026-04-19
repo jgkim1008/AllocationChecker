@@ -18,6 +18,7 @@ import { KISAuth } from './auth';
 import { KISAccount } from './account';
 import { KISQuote } from './quote';
 import { KISOrder, getExchangeForSymbol as getExchangeStatic } from './order';
+import { KIS_EXCHANGE_CODE } from './constants';
 
 export class KISClient implements IBroker {
   readonly type: BrokerType = 'kis';
@@ -147,7 +148,10 @@ export class KISClient implements IBroker {
     };
   }
 
-  async cancelOrder(orderId: string): Promise<BrokerResponse<void>> {
+  async cancelOrder(
+    orderId: string,
+    hint?: { symbol: string; quantity: number; market: 'domestic' | 'overseas'; exchange?: keyof typeof KIS_EXCHANGE_CODE }
+  ): Promise<BrokerResponse<void>> {
     if (!this.isConnected()) {
       return {
         success: false,
@@ -157,15 +161,20 @@ export class KISClient implements IBroker {
 
     // 주문 정보 조회 후 취소
     const ordersResult = await this.getOrders();
-    if (!ordersResult.success || !ordersResult.data) {
-      return {
-        success: false,
-        error: { code: 'ORDER_NOT_FOUND', message: '주문을 찾을 수 없습니다.' },
-      };
-    }
+    const order = ordersResult.success && ordersResult.data
+      ? ordersResult.data.find(o => o.orderId === orderId)
+      : undefined;
 
-    const order = ordersResult.data.find(o => o.orderId === orderId);
     if (!order) {
+      // getOrders()로 찾지 못한 경우 hint 메타데이터로 직접 취소 시도
+      if (hint) {
+        if (hint.market === 'overseas') {
+          const exchange = hint.exchange ?? getExchangeStatic(hint.symbol);
+          return this.order.cancelOverseasOrder(orderId, hint.symbol, hint.quantity, exchange);
+        } else {
+          return this.order.cancelDomesticOrder(orderId, hint.symbol, hint.quantity);
+        }
+      }
       return {
         success: false,
         error: { code: 'ORDER_NOT_FOUND', message: '주문을 찾을 수 없습니다.' },

@@ -161,14 +161,18 @@ export class KISAuth {
   }
 
   /**
-   * 계좌번호 분리 (XXXXXXXX-XX → [XXXXXXXX, XX])
+   * 계좌번호 분리 (XXXXXXXX-XX 또는 XXXXXXXXXX → [XXXXXXXX, XX])
    */
   getAccountParts(): [string, string] {
-    const parts = this.credentials.accountNumber.split('-');
-    if (parts.length !== 2) {
-      throw new Error('계좌번호 형식이 올바르지 않습니다. (XXXXXXXX-XX)');
+    const raw = this.credentials.accountNumber.replace(/[\s-]/g, '');
+    if (raw.length === 10 && /^\d{10}$/.test(raw)) {
+      return [raw.slice(0, 8), raw.slice(8)];
     }
-    return [parts[0], parts[1]];
+    const parts = this.credentials.accountNumber.split('-');
+    if (parts.length === 2 && /^\d{8}$/.test(parts[0]) && /^\d{2}$/.test(parts[1])) {
+      return [parts[0], parts[1]];
+    }
+    throw new Error(`계좌번호 형식이 올바르지 않습니다. 입력값: "${this.credentials.accountNumber}" (XXXXXXXX-XX 또는 XXXXXXXXXX 형식이어야 합니다)`);
   }
 
   /**

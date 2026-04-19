@@ -7,7 +7,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { createClient } from '@/lib/supabase/server';
-import { getBrokerClient } from '@/lib/broker/session';
+import { getBrokerClient, getBrokerClientByCredentialId } from '@/lib/broker/session';
 import { checkBrokerAccess } from '@/lib/broker/auth-guard';
 import type { BrokerType } from '@/lib/broker/types';
 import { KISClient } from '@/lib/broker/kis';
@@ -32,10 +32,13 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url);
+    const credentialId = searchParams.get('credentialId');
     const brokerType = (searchParams.get('brokerType') || 'kis') as BrokerType;
     const includeOverseas = searchParams.get('includeOverseas') === 'true';
 
-    const clientResult = await getBrokerClient(user.id, brokerType);
+    const clientResult = credentialId
+      ? await getBrokerClientByCredentialId(credentialId)
+      : await getBrokerClient(user.id, brokerType);
 
     if (!clientResult.success || !clientResult.client) {
       return NextResponse.json(
@@ -47,7 +50,8 @@ export async function GET(request: NextRequest) {
     const client = clientResult.client;
 
     // KIS의 경우 통합 잔고 조회 가능
-    if (brokerType === 'kis' && includeOverseas && client instanceof KISClient) {
+    const effectiveBrokerType = credentialId ? 'kis' : brokerType; // credentialId 기반은 KIS로 가정
+    if ((effectiveBrokerType === 'kis' || brokerType === 'kis') && includeOverseas && client instanceof KISClient) {
       const fullBalanceResult = await client.getFullBalance();
 
       if (!fullBalanceResult.success) {

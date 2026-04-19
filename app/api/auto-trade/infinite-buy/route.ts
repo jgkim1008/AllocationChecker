@@ -11,6 +11,7 @@ import { getBrokerClient } from '@/lib/broker/session';
 import { buildLiveOrders, type LiveStrategyConfig, type BrokerOrderRequest } from '@/lib/infinite-buy/broker/order-builder';
 import type { StrategyVersion, MarketType } from '@/lib/infinite-buy/core/types';
 import type { BrokerType } from '@/lib/broker/types';
+import { checkBrokerAccess } from '@/lib/broker/auth-guard';
 
 // GET: 오늘의 주문 계산
 export async function GET(request: NextRequest) {
@@ -36,6 +37,11 @@ export async function GET(request: NextRequest) {
 
     if (!symbol) return NextResponse.json({ success: false, error: 'symbol이 필요합니다.' }, { status: 400 });
     if (totalCapital <= 0) return NextResponse.json({ success: false, error: '유효한 투자금액이 필요합니다.' }, { status: 400 });
+
+    const access = await checkBrokerAccess(user.id);
+    if (!access.allowed) {
+      return NextResponse.json({ success: false, error: access.error }, { status: 403 });
+    }
 
     const clientResult = await getBrokerClient(user.id, brokerType);
     if (!clientResult.success || !clientResult.client) {
@@ -69,7 +75,7 @@ export async function GET(request: NextRequest) {
     todayStart.setHours(0, 0, 0, 0);
     const { data: todayOrders } = await serviceSupabase
       .from('pending_orders')
-      .select('id, broker_order_id, side, status, order_time, order_quantity, order_price')
+      .select('id, broker_order_id, side, status, order_time, order_quantity, order_price, market')
       .eq('user_id', user.id)
       .eq('symbol', symbol.toUpperCase())
       .in('status', ['submitted', 'partial', 'filled'])
@@ -126,6 +132,11 @@ export async function POST(request: NextRequest) {
 
     if (!brokerType || !orders || orders.length === 0) {
       return NextResponse.json({ success: false, error: '실행할 주문이 없습니다.' }, { status: 400 });
+    }
+
+    const accessPost = await checkBrokerAccess(user.id);
+    if (!accessPost.allowed) {
+      return NextResponse.json({ success: false, error: accessPost.error }, { status: 403 });
     }
 
     const clientResult = await getBrokerClient(user.id, brokerType);

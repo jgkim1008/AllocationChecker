@@ -90,6 +90,8 @@ export async function proxy(request: NextRequest) {
                       pathname.startsWith('/api/test/kakao') ||
                       pathname.startsWith('/api/fibonacci/scan') ||
                       pathname.startsWith('/api/auto-trade/cron') ||
+                      pathname.startsWith('/api/auto-trade/dca/cron') ||
+                      pathname.startsWith('/api/auto-trade/dca/backtest') ||
                       pathname.startsWith('/api/auto-trade/check-fills') ||
                       pathname.startsWith('/api/auto-trade/morning-alert') ||
                       pathname.startsWith('/api/admin/');

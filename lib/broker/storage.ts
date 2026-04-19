@@ -18,12 +18,18 @@ declare global {
   var _brokerCredentialsCache: Map<string, KISCredentials | KiwoomCredentials> | undefined;
   // eslint-disable-next-line no-var
   var _brokerTokenCache: Map<string, TokenInfo> | undefined;
+  // eslint-disable-next-line no-var
+  var _brokerConnectedCredentials: Map<string, { brokerType: BrokerType; userId: string }> | undefined;
 }
 
 const credentialsCache: Map<string, KISCredentials | KiwoomCredentials> =
   global._brokerCredentialsCache ?? (global._brokerCredentialsCache = new Map());
 const tokenCache: Map<string, TokenInfo> =
   global._brokerTokenCache ?? (global._brokerTokenCache = new Map());
+
+// credentialId(UUID) → { brokerType, userId } 연결 상태 추적
+const connectedCredentials: Map<string, { brokerType: BrokerType; userId: string }> =
+  global._brokerConnectedCredentials ?? (global._brokerConnectedCredentials = new Map());
 
 function cacheKey(userId: string, brokerType: BrokerType) {
   return `${userId}:${brokerType}`;
@@ -80,23 +86,70 @@ export async function deleteBrokerCredentials(
   return { success: true };
 }
 
+// ============================================================
+// credentialId 기반 연결 상태 관리
+// ============================================================
+
+export function markCredentialConnected(credentialId: string, brokerType: BrokerType, userId: string): void {
+  connectedCredentials.set(credentialId, { brokerType, userId });
+}
+
+export function markCredentialDisconnected(credentialId: string): void {
+  connectedCredentials.delete(credentialId);
+}
+
+export function getConnectedCredentialIds(userId: string): { credentialId: string; brokerType: BrokerType }[] {
+  const result: { credentialId: string; brokerType: BrokerType }[] = [];
+  for (const [credentialId, info] of connectedCredentials.entries()) {
+    if (info.userId === userId) {
+      result.push({ credentialId, brokerType: info.brokerType });
+    }
+  }
+  return result;
+}
+
+// credentialId 전용 토큰 캐시 (키: credentialId UUID)
+export function cacheTokenById(cacheKey: string, token: TokenInfo): void {
+  tokenCache.set(cacheKey, token);
+}
+
+export function getCachedTokenById(cacheKey: string): TokenInfo | null {
+  const token = tokenCache.get(cacheKey);
+  if (!token) return null;
+  const bufferTime = 5 * 60 * 1000;
+  if (token.expiresAt.getTime() - Date.now() < bufferTime) {
+    tokenCache.delete(cacheKey);
+    return null;
+  }
+  return token;
+}
+
+export function clearCachedTokenById(cacheKey: string): void {
+  tokenCache.delete(cacheKey);
+}
+
 /**
- * 연결된 브로커 목록 조회 (메모리만)
+ * 연결된 브로커 목록 조회 (레거시 호환 + credentialId 기반)
  */
 export async function getConnectedBrokers(
   userId: string
 ): Promise<{ success: boolean; data?: BrokerType[]; error?: string }> {
-  const brokers: BrokerType[] = [];
+  // credentialId 기반 연결 목록에서 unique brokerType 추출
+  const credBrokers = getConnectedCredentialIds(userId).map(c => c.brokerType);
+  // 레거시: credentialsCache userId:brokerType 키 기반
+  const legacyBrokers: BrokerType[] = [];
   for (const key of credentialsCache.keys()) {
     if (key.startsWith(`${userId}:`)) {
-      brokers.push(key.split(':')[1] as BrokerType);
+      const type = key.split(':')[1] as BrokerType;
+      if (!legacyBrokers.includes(type)) legacyBrokers.push(type);
     }
   }
-  return { success: true, data: brokers };
+  const all = [...new Set([...credBrokers, ...legacyBrokers])];
+  return { success: true, data: all };
 }
 
 /**
- * 사용자의 모든 브로커 메모리 캐시 초기화 (자격증명 + 토큰)
+ * 사용자의 모든 브로커 메모리 캐시 초기화 (자격증명 + 토큰 + credentialId 연결)
  */
 export function clearAllBrokerCaches(userId: string): void {
   for (const key of [...credentialsCache.keys()]) {
@@ -104,6 +157,13 @@ export function clearAllBrokerCaches(userId: string): void {
   }
   for (const key of [...tokenCache.keys()]) {
     if (key.startsWith(`${userId}:`)) tokenCache.delete(key);
+  }
+  // credentialId 기반 연결도 클리어
+  for (const [credentialId, info] of [...connectedCredentials.entries()]) {
+    if (info.userId === userId) {
+      connectedCredentials.delete(credentialId);
+      tokenCache.delete(credentialId);
+    }
   }
 }
 
@@ -198,7 +258,9 @@ export async function getBrokerCredentialsFromDB(
       .select('*')
       .eq('user_id', userId)
       .eq('broker_type', brokerType)
-      .single();
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
     if (error || !data) {
       return { success: false, error: '저장된 자격증명이 없습니다.' };
@@ -249,6 +311,41 @@ export async function deleteBrokerCredentialsFromDB(
   } catch (error) {
     console.error('자격증명 DB 삭제 오류:', error);
     return { success: false, error: '서버 오류가 발생했습니다.' };
+  }
+}
+
+/**
+ * DB에서 특정 credential ID로 자격증명 조회 및 복호화
+ */
+export async function getBrokerCredentialByIdFromDB(
+  credentialId: string
+): Promise<{ success: boolean; data?: { credentials: KISCredentials | KiwoomCredentials; brokerType: BrokerType; userId: string }; error?: string }> {
+  try {
+    const supabase = await createServiceClient();
+
+    const { data, error } = await supabase
+      .from('broker_credentials')
+      .select('*')
+      .eq('id', credentialId)
+      .single();
+
+    if (error || !data) {
+      return { success: false, error: '저장된 자격증명이 없습니다.' };
+    }
+
+    const credentials = decryptCredentials<KISCredentials | KiwoomCredentials>(
+      data.encrypted_credentials,
+      data.encryption_iv,
+      data.encryption_tag
+    );
+
+    // 메모리 캐시에도 저장 (credentialId 키)
+    credentialsCache.set(credentialId, credentials);
+
+    return { success: true, data: { credentials, brokerType: data.broker_type as BrokerType, userId: data.user_id } };
+  } catch (error) {
+    console.error('자격증명 DB 조회 오류:', error);
+    return { success: false, error: '복호화에 실패했습니다.' };
   }
 }
 

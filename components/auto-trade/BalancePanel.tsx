@@ -112,9 +112,10 @@ function MarketSection({ title, balance, positions, currency }: {
 
 interface BalancePanelProps {
   brokerType?: BrokerType;
+  credentialId?: string;
 }
 
-export function BalancePanel({ brokerType = 'kis' }: BalancePanelProps) {
+export function BalancePanel({ brokerType = 'kis', credentialId }: BalancePanelProps) {
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<FullBalance | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -123,7 +124,10 @@ export function BalancePanel({ brokerType = 'kis' }: BalancePanelProps) {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/broker/balance?brokerType=${brokerType}&includeOverseas=true`);
+      const params = credentialId
+        ? `credentialId=${credentialId}&includeOverseas=true`
+        : `brokerType=${brokerType}&includeOverseas=true`;
+      const res = await fetch(`/api/broker/balance?${params}`);
       const json = await res.json();
       if (json.success) {
         setData(json.data);

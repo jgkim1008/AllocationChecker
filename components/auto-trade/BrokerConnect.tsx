@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Card,
   CardHeader,
@@ -26,23 +26,22 @@ import {
   Link,
   Unlink,
   Save,
-  Download,
   Shield,
-  Clock,
+  Pencil,
+  Wifi,
+  WifiOff,
 } from 'lucide-react';
 import { TOTPSetupDialog } from './TOTPSetupDialog';
 import { TOTPVerifyDialog } from './TOTPVerifyDialog';
 
 type BrokerType = 'kis' | 'kiwoom';
 
-interface BrokerConnectProps {
-  onConnect?: (brokerType: BrokerType) => void;
-  onDisconnect?: (brokerType: BrokerType) => void;
-}
-
-interface SavedBroker {
+interface AccountEntry {
+  id: string;
   brokerType: BrokerType;
+  accountAlias: string;
   savedAt: string;
+  isConnected: boolean;
 }
 
 interface SessionState {
@@ -51,74 +50,87 @@ interface SessionState {
   remainingMinutes?: number;
 }
 
+interface BrokerConnectProps {
+  onConnect?: (credentialId: string, brokerType: BrokerType) => void;
+  onDisconnect?: (credentialId: string, brokerType: BrokerType) => void;
+}
+
+const BROKER_INFO = {
+  kis: { name: '한국투자증권', docsUrl: 'https://apiportal.koreainvestment.com' },
+  kiwoom: { name: '키움증권', docsUrl: 'https://openapi.kiwoom.com' },
+};
+
 export function BrokerConnect({ onConnect, onDisconnect }: BrokerConnectProps) {
+  const [accounts, setAccounts] = useState<AccountEntry[]>([]);
+  const [isCheckingStatus, setIsCheckingStatus] = useState(true);
+  const [actionLoading, setActionLoading] = useState<string | null>(null); // credentialId or 'save' or 'connect'
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  // 새 계좌 저장/수정 폼
   const [brokerType, setBrokerType] = useState<BrokerType>('kis');
+  const [accountAlias, setAccountAlias] = useState('');
   const [appKey, setAppKey] = useState('');
   const [appSecret, setAppSecret] = useState('');
   const [accountNumber, setAccountNumber] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [isCheckingStatus, setIsCheckingStatus] = useState(true);
-  const [connectedBrokers, setConnectedBrokers] = useState<BrokerType[]>([]);
-  const [savedBrokers, setSavedBrokers] = useState<SavedBroker[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const [editingAlias, setEditingAlias] = useState<string | null>(null); // 수정 중인 계좌 별칭
+  const formRef = useRef<HTMLDivElement>(null);
 
   // 2FA 관련 상태
   const [isTotpEnabled, setIsTotpEnabled] = useState(false);
   const [showTotpSetup, setShowTotpSetup] = useState(false);
   const [showTotpVerify, setShowTotpVerify] = useState(false);
-  const [totpVerifyAction, setTotpVerifyAction] = useState<'save' | 'load' | null>(null);
+  const [totpVerifyAction, setTotpVerifyAction] = useState<'save' | null>(null);
   const [sessionState, setSessionState] = useState<SessionState>({ hasValidSession: false });
 
-  // 연결 상태 및 2FA 상태 확인
   const checkStatus = useCallback(async () => {
     setIsCheckingStatus(true);
     try {
-      const [authRes, totpStatusRes, sessionRes] = await Promise.all([
+      const [authRes, totpStatusRes, sessionRes, credRes] = await Promise.all([
         fetch('/api/broker/auth'),
         fetch('/api/broker/totp/setup'),
         fetch('/api/broker/totp/verify'),
+        fetch('/api/broker/credentials'),
       ]);
 
-      const [authData, totpStatusData, sessionData] = await Promise.all([
+      const [authData, totpStatusData, sessionData, credData] = await Promise.all([
         authRes.json(),
         totpStatusRes.json(),
         sessionRes.json(),
+        credRes.json(),
       ]);
 
       const totpEnabled = totpStatusData.success ? totpStatusData.data.isEnabled : false;
       const hasSession = sessionData.success ? sessionData.data.hasValidSession : false;
 
-      if (totpStatusData.success) {
-        setIsTotpEnabled(totpEnabled);
-      }
+      if (totpStatusData.success) setIsTotpEnabled(totpEnabled);
+      if (sessionData.success) setSessionState(sessionData.data);
 
-      if (sessionData.success) {
-        setSessionState(sessionData.data);
-      }
+      // 연결된 credentialId 목록 (GET /api/broker/auth → { data: { connectedCredentials } })
+      const connectedIds = new Set<string>(
+        ((authData.data?.connectedCredentials ?? authData.connectedCredentials) || []).map((c: { credentialId: string }) => c.credentialId)
+      );
 
-      if (authData.success) {
-        const brokers: BrokerType[] = authData.data.connectedBrokers || [];
-        // 2FA 활성화 + 세션 없음 → 연결된 브로커 강제 해제
-        if (totpEnabled && !hasSession && brokers.length > 0) {
-          await Promise.all(
-            brokers.map(type =>
-              fetch(`/api/broker/auth?brokerType=${type}`, { method: 'DELETE' })
-            )
-          );
-          setConnectedBrokers([]);
-        } else {
-          setConnectedBrokers(brokers);
+      // 저장된 계좌 목록과 연결 상태 병합
+      const savedBrokers: { id: string; brokerType: string; accountAlias: string; savedAt: string }[] =
+        credData.success ? credData.data || [] : [];
+
+      const merged: AccountEntry[] = savedBrokers.map(b => ({
+        id: b.id,
+        brokerType: b.brokerType as BrokerType,
+        accountAlias: b.accountAlias,
+        savedAt: b.savedAt,
+        isConnected: connectedIds.has(b.id),
+      }));
+
+      // 2FA 활성화 + 세션 없으면 연결된 계좌 강제 해제
+      if (totpEnabled && !hasSession) {
+        for (const acc of merged.filter(a => a.isConnected)) {
+          await fetch(`/api/broker/auth?credentialId=${acc.id}`, { method: 'DELETE' });
         }
-      }
-
-      // 세션이 유효하면 저장된 브로커 목록도 조회
-      if (sessionData.success && sessionData.data.hasValidSession) {
-        const savedRes = await fetch('/api/broker/credentials');
-        const savedData = await savedRes.json();
-        if (savedData.success) {
-          setSavedBrokers(savedData.data.savedBrokers || []);
-        }
+        setAccounts(merged.map(a => ({ ...a, isConnected: false })));
+      } else {
+        setAccounts(merged);
       }
     } catch (err) {
       console.error('상태 확인 실패:', err);
@@ -131,113 +143,129 @@ export function BrokerConnect({ onConnect, onDisconnect }: BrokerConnectProps) {
     checkStatus();
   }, [checkStatus]);
 
-  const handleConnect = async () => {
-    setIsLoading(true);
+  // 특정 계좌 연결
+  const handleConnectById = async (account: AccountEntry) => {
+    setActionLoading(account.id);
     setError(null);
     setSuccess(null);
-
     try {
-      const credentials = { appKey, appSecret, accountNumber };
-
       const response = await fetch('/api/broker/auth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ brokerType, credentials }),
+        body: JSON.stringify({ credentialId: account.id }),
       });
-
       const data = await response.json();
-
       if (data.success) {
-        setSuccess('브로커에 연결되었습니다.');
-        setConnectedBrokers(prev => prev.includes(brokerType) ? prev : [...prev, brokerType]);
-        onConnect?.(brokerType);
-
-        // 폼 초기화
-        setAppKey('');
-        setAppSecret('');
-        setAccountNumber('');
+        setSuccess(`${BROKER_INFO[account.brokerType].name}${account.accountAlias !== 'default' ? ` (${account.accountAlias})` : ''} 연결 완료`);
+        setAccounts(prev => prev.map(a => a.id === account.id ? { ...a, isConnected: true } : a));
+        onConnect?.(account.id, account.brokerType);
       } else {
         setError(data.error || '연결에 실패했습니다.');
       }
     } catch {
       setError('서버 오류가 발생했습니다.');
     } finally {
-      setIsLoading(false);
+      setActionLoading(null);
     }
   };
 
-  const handleDisconnect = async (type: BrokerType) => {
-    setIsLoading(true);
+  // 특정 계좌 연결 해제
+  const handleDisconnectById = async (account: AccountEntry) => {
+    setActionLoading(account.id);
     setError(null);
     setSuccess(null);
-
     try {
-      const response = await fetch(`/api/broker/auth?brokerType=${type}`, {
-        method: 'DELETE',
-      });
-
+      const response = await fetch(`/api/broker/auth?credentialId=${account.id}`, { method: 'DELETE' });
       const data = await response.json();
-
       if (data.success) {
         setSuccess('연결이 해제되었습니다.');
-        setConnectedBrokers(prev => prev.filter(b => b !== type));
-        onDisconnect?.(type);
+        setAccounts(prev => prev.map(a => a.id === account.id ? { ...a, isConnected: false } : a));
+        onDisconnect?.(account.id, account.brokerType);
       } else {
         setError(data.error || '연결 해제에 실패했습니다.');
       }
     } catch {
       setError('서버 오류가 발생했습니다.');
     } finally {
-      setIsLoading(false);
+      setActionLoading(null);
     }
   };
 
-  // API Key 저장 (2FA 필요)
+  // 계좌 삭제 (DB에서 영구 삭제)
+  const handleDeleteCredential = async (account: AccountEntry) => {
+    if (!confirm(`"${account.accountAlias !== 'default' ? account.accountAlias : BROKER_INFO[account.brokerType].name}" 계좌 정보를 삭제하시겠습니까?`)) return;
+    setActionLoading(account.id);
+    setError(null);
+    try {
+      if (account.isConnected) {
+        await fetch(`/api/broker/auth?credentialId=${account.id}`, { method: 'DELETE' });
+      }
+      const response = await fetch(`/api/broker/credentials?credentialId=${account.id}`, { method: 'DELETE' });
+      const data = await response.json();
+      if (data.success) {
+        setSuccess('계좌 정보가 삭제되었습니다.');
+        setAccounts(prev => prev.filter(a => a.id !== account.id));
+      } else if (data.requiresTotpVerify) {
+        setTotpVerifyAction('save');
+        setShowTotpVerify(true);
+      } else {
+        setError(data.error || '삭제에 실패했습니다.');
+      }
+    } catch {
+      setError('서버 오류가 발생했습니다.');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // 수정 버튼 클릭 → 폼에 brokerType/alias 채우고 스크롤
+  const handleEditAccount = (account: AccountEntry) => {
+    setBrokerType(account.brokerType);
+    setAccountAlias(account.accountAlias === 'default' ? '' : account.accountAlias);
+    setAppKey('');
+    setAppSecret('');
+    setAccountNumber('');
+    setEditingAlias(account.accountAlias);
+    setError(null);
+    setSuccess(null);
+    setTimeout(() => formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+  };
+
+  // 새 계좌 저장
   const handleSave = async () => {
     if (!appKey || !appSecret || !accountNumber) {
       setError('모든 필드를 입력해주세요.');
       return;
     }
-
-    // 2FA 미설정 시 설정 다이얼로그 표시
     if (!isTotpEnabled) {
       setShowTotpSetup(true);
       return;
     }
-
-    // 세션이 없으면 인증 필요
     if (!sessionState.hasValidSession) {
       setTotpVerifyAction('save');
       setShowTotpVerify(true);
       return;
     }
-
-    // 실제 저장 수행
     await performSave();
   };
 
   const performSave = async () => {
-    setIsLoading(true);
+    setActionLoading('save');
     setError(null);
     setSuccess(null);
-
     try {
-      const credentials = { appKey, appSecret, accountNumber };
-
+      const alias = accountAlias.trim() || 'default';
       const response = await fetch('/api/broker/credentials', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ brokerType, credentials }),
+        body: JSON.stringify({ brokerType, credentials: { appKey, appSecret, accountNumber }, accountAlias: alias }),
       });
-
       const data = await response.json();
-
       if (data.success) {
-        setSuccess('API Key가 안전하게 저장되었습니다.');
-        setSavedBrokers(prev => {
-          const filtered = prev.filter(b => b.brokerType !== brokerType);
-          return [...filtered, { brokerType, savedAt: new Date().toISOString() }];
-        });
+        setSuccess(editingAlias ? '계좌 정보가 수정되었습니다.' : 'API Key가 안전하게 저장되었습니다.');
+        setAppKey(''); setAppSecret(''); setAccountNumber(''); setAccountAlias('');
+        setEditingAlias(null);
+        await checkStatus();
       } else if (data.requiresTotpSetup) {
         setShowTotpSetup(true);
       } else if (data.requiresTotpVerify) {
@@ -249,104 +277,22 @@ export function BrokerConnect({ onConnect, onDisconnect }: BrokerConnectProps) {
     } catch {
       setError('서버 오류가 발생했습니다.');
     } finally {
-      setIsLoading(false);
+      setActionLoading(null);
     }
   };
 
-  // API Key 불러오기 (2FA 필요)
-  const handleLoad = async (type: BrokerType) => {
-    if (!isTotpEnabled) {
-      setError('2FA 설정이 필요합니다.');
-      setShowTotpSetup(true);
-      return;
-    }
-
-    if (!sessionState.hasValidSession) {
-      setBrokerType(type);
-      setTotpVerifyAction('load');
-      setShowTotpVerify(true);
-      return;
-    }
-
-    await performLoad(type);
-  };
-
-  const performLoad = async (type: BrokerType) => {
-    setIsLoading(true);
-    setError(null);
-    setSuccess(null);
-
-    try {
-      const response = await fetch(`/api/broker/credentials?brokerType=${type}`);
-      const data = await response.json();
-
-      if (data.success) {
-        const creds = data.data.credentials;
-        setBrokerType(type);
-        setAppKey(creds.appKey);
-        setAppSecret(creds.appSecret);
-        setAccountNumber(creds.accountNumber);
-        setSuccess('API Key를 불러왔습니다. 연결하기를 눌러 브로커에 연결하세요.');
-      } else if (data.requiresTotpVerify) {
-        setBrokerType(type);
-        setTotpVerifyAction('load');
-        setShowTotpVerify(true);
-      } else {
-        setError(data.error || '불러오기에 실패했습니다.');
-      }
-    } catch {
-      setError('서버 오류가 발생했습니다.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // TOTP 설정 완료 후
   const handleTotpSetupSuccess = () => {
     setIsTotpEnabled(true);
     setSessionState({ hasValidSession: false });
-    setSuccess('2FA 설정이 완료되었습니다. 이제 API Key를 저장할 수 있습니다.');
+    setSuccess('2FA 설정이 완료되었습니다.');
     checkStatus();
   };
 
-  // TOTP 인증 성공 후
   const handleTotpVerifySuccess = async (expiresAt: string) => {
-    setSessionState({
-      hasValidSession: true,
-      expiresAt,
-      remainingMinutes: 120,
-    });
-
-    if (totpVerifyAction === 'save') {
-      await performSave();
-    } else if (totpVerifyAction === 'load') {
-      await performLoad(brokerType);
-    }
-
+    setSessionState({ hasValidSession: true, expiresAt, remainingMinutes: 120 });
+    if (totpVerifyAction === 'save') await performSave();
     setTotpVerifyAction(null);
-
-    // 저장된 브로커 목록 갱신
-    const savedRes = await fetch('/api/broker/credentials');
-    const savedData = await savedRes.json();
-    if (savedData.success) {
-      setSavedBrokers(savedData.data.savedBrokers || []);
-    }
-  };
-
-  const isConnected = (type: BrokerType) => connectedBrokers.includes(type);
-  const isSaved = (type: BrokerType) => savedBrokers.some(b => b.brokerType === type);
-
-  const brokerInfo = {
-    kis: {
-      name: '한국투자증권',
-      description: 'REST API 지원, 국내/해외 주식 거래 가능',
-      docsUrl: 'https://apiportal.koreainvestment.com',
-    },
-    kiwoom: {
-      name: '키움증권',
-      description: 'REST API 지원, 국내/해외 주식 거래 가능',
-      docsUrl: 'https://openapi.kiwoom.com',
-    },
+    await checkStatus();
   };
 
   if (isCheckingStatus) {
@@ -362,88 +308,148 @@ export function BrokerConnect({ onConnect, onDisconnect }: BrokerConnectProps) {
 
   return (
     <div className="space-y-4">
-      {/* 2FA 상태 표시 */}
+      {/* 2FA 상태 */}
       <Card className="border-emerald-500/30 bg-white">
         <CardContent className="py-3 bg-emerald-50/50">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Shield className={`h-4 w-4 ${
-                !isTotpEnabled ? 'text-gray-600'
+                !isTotpEnabled ? 'text-gray-400'
                 : sessionState.hasValidSession ? 'text-green-500'
                 : 'text-yellow-500'
               }`} />
               <div>
                 <span className="text-sm font-medium text-gray-900">2단계 인증 (2FA)</span>
                 <span className={`ml-2 text-xs px-2 py-0.5 rounded-full ${
-                  !isTotpEnabled
-                    ? 'bg-gray-100 text-gray-500'
-                    : sessionState.hasValidSession
-                      ? 'bg-green-100 text-green-700'
-                      : 'bg-yellow-100 text-yellow-700'
+                  !isTotpEnabled ? 'bg-gray-100 text-gray-500'
+                  : sessionState.hasValidSession ? 'bg-green-100 text-green-700'
+                  : 'bg-yellow-100 text-yellow-700'
                 }`}>
-                  {!isTotpEnabled
-                    ? '미설정'
-                    : sessionState.hasValidSession
-                      ? `인증됨 · ${sessionState.remainingMinutes}분 남음`
-                      : '인증 필요'}
+                  {!isTotpEnabled ? '미설정'
+                  : sessionState.hasValidSession ? `인증됨 · ${sessionState.remainingMinutes}분 남음`
+                  : '인증 필요'}
                 </span>
               </div>
             </div>
-            {!isTotpEnabled && (
-              <Button variant="outline" size="sm" onClick={() => setShowTotpSetup(true)}>
-                설정하기
-              </Button>
-            )}
-            {isTotpEnabled && !sessionState.hasValidSession && (
-              <Button
-                size="sm"
-                onClick={() => { setTotpVerifyAction('load'); setShowTotpVerify(true); }}
-                className="bg-emerald-600 text-white hover:bg-emerald-700"
-              >
-                <Shield className="mr-1 h-4 w-4" />
-                인증하기
-              </Button>
-            )}
-            {isTotpEnabled && sessionState.hasValidSession && (
-              <Button variant="ghost" size="sm" onClick={() => setShowTotpSetup(true)} className="text-xs text-gray-600">
-                2FA 재설정
-              </Button>
-            )}
+            <div className="flex gap-2">
+              {!isTotpEnabled && (
+                <Button variant="outline" size="sm" onClick={() => setShowTotpSetup(true)}>설정하기</Button>
+              )}
+              {isTotpEnabled && !sessionState.hasValidSession && (
+                <Button size="sm" onClick={() => { setTotpVerifyAction(null); setShowTotpVerify(true); }}
+                  className="bg-emerald-600 text-white hover:bg-emerald-700">
+                  <Shield className="mr-1 h-4 w-4" />인증하기
+                </Button>
+              )}
+              {isTotpEnabled && sessionState.hasValidSession && (
+                <Button variant="ghost" size="sm" onClick={() => setShowTotpSetup(true)} className="text-xs text-gray-600">
+                  2FA 재설정
+                </Button>
+              )}
+            </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* 저장된 API Key 목록 */}
-      {savedBrokers.length > 0 && sessionState.hasValidSession && (
+      {/* 에러/성공 메시지 */}
+      {error && (
+        <div className="flex items-center gap-2 rounded-lg bg-destructive/10 p-3 text-destructive text-sm">
+          <XCircle className="h-4 w-4 shrink-0" />
+          <span>{error}</span>
+          <button onClick={() => setError(null)} className="ml-auto">✕</button>
+        </div>
+      )}
+      {success && (
+        <div className="flex items-center gap-2 rounded-lg bg-green-500/10 p-3 text-green-600 text-sm">
+          <CheckCircle className="h-4 w-4 shrink-0" />
+          <span>{success}</span>
+        </div>
+      )}
+
+      {/* 저장된 계좌 목록 */}
+      {accounts.length > 0 && (
         <Card className="border-emerald-500/30 bg-white">
-          <CardHeader className="border-b border-emerald-200 bg-emerald-50">
-            <CardTitle className="flex items-center gap-2 text-base text-emerald-700">
+          <CardHeader className="border-b border-emerald-200 bg-emerald-50 py-3">
+            <CardTitle className="flex items-center gap-2 text-sm text-emerald-700">
               <Save className="h-4 w-4" />
-              저장된 API Key
+              저장된 계좌 ({accounts.length}개)
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              {savedBrokers.map(saved => (
-                <div
-                  key={saved.brokerType}
-                  className="flex items-center justify-between rounded-lg border p-3"
-                >
-                  <div>
-                    <p className="font-medium text-gray-900">{brokerInfo[saved.brokerType].name}</p>
-                    <p className="text-xs text-gray-600">
-                      저장일: {new Date(saved.savedAt).toLocaleDateString('ko-KR')}
-                    </p>
+          <CardContent className="p-0">
+            <div className="divide-y">
+              {accounts.map(account => (
+                <div key={account.id} className="flex items-center justify-between px-4 py-3">
+                  <div className="flex items-center gap-3">
+                    {account.isConnected ? (
+                      <Wifi className="h-4 w-4 text-emerald-500 shrink-0" />
+                    ) : (
+                      <WifiOff className="h-4 w-4 text-gray-300 shrink-0" />
+                    )}
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-gray-900">
+                          {BROKER_INFO[account.brokerType].name}
+                        </span>
+                        {account.accountAlias !== 'default' && (
+                          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700">
+                            {account.accountAlias}
+                          </span>
+                        )}
+                        {account.isConnected && (
+                          <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-700">
+                            연결됨
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-gray-400">
+                        저장일: {new Date(account.savedAt).toLocaleDateString('ko-KR')}
+                      </p>
+                    </div>
                   </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleLoad(saved.brokerType)}
-                    disabled={isLoading}
-                  >
-                    <Download className="mr-1 h-4 w-4" />
-                    불러오기
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    {account.isConnected ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleDisconnectById(account)}
+                        disabled={actionLoading === account.id}
+                        className="h-7 text-xs"
+                      >
+                        {actionLoading === account.id ? <Loader2 className="h-3 w-3 animate-spin" /> : (
+                          <><Unlink className="mr-1 h-3 w-3" />해제</>
+                        )}
+                      </Button>
+                    ) : (
+                      <Button
+                        size="sm"
+                        onClick={() => handleConnectById(account)}
+                        disabled={actionLoading === account.id}
+                        className="h-7 text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
+                      >
+                        {actionLoading === account.id ? <Loader2 className="h-3 w-3 animate-spin" /> : (
+                          <><Link className="mr-1 h-3 w-3" />연결하기</>
+                        )}
+                      </Button>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleEditAccount(account)}
+                      disabled={!!actionLoading}
+                      className="h-7 text-xs text-blue-500 hover:text-blue-700"
+                    >
+                      <Pencil className="mr-1 h-3 w-3" />수정
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleDeleteCredential(account)}
+                      disabled={actionLoading === account.id}
+                      className="h-7 text-xs text-red-400 hover:text-red-600"
+                    >
+                      삭제
+                    </Button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -451,185 +457,100 @@ export function BrokerConnect({ onConnect, onDisconnect }: BrokerConnectProps) {
         </Card>
       )}
 
-
-      {/* 연결된 브로커 목록 */}
-      {connectedBrokers.length > 0 && (
-        <Card className="border-emerald-500/30 bg-white">
-          <CardHeader className="border-b border-emerald-200 bg-emerald-50">
-            <CardTitle className="flex items-center gap-2 text-emerald-700">
-              <CheckCircle className="h-5 w-5 text-emerald-500" />
-              연결된 증권사
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {connectedBrokers.map(type => (
-                <div
-                  key={type}
-                  className="flex items-center justify-between rounded-lg border p-3"
-                >
-                  <div>
-                    <p className="font-medium text-gray-900">{brokerInfo[type].name}</p>
-                    <p className="text-sm text-gray-600">
-                      {brokerInfo[type].description}
-                    </p>
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleDisconnect(type)}
-                    disabled={isLoading}
-                  >
-                    <Unlink className="mr-1 h-4 w-4" />
-                    연결 해제
-                  </Button>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* 새 브로커 연결 */}
-      <Card className="border-emerald-500/30 bg-white">
+      {/* 새 계좌 저장 / 수정 폼 */}
+      <Card className="border-emerald-500/30 bg-white" ref={formRef}>
         <CardHeader className="border-b border-emerald-200 bg-emerald-50">
-          <CardTitle className="flex items-center gap-2 text-emerald-700">
-            <Link className="h-5 w-5" />
-            증권사 연결
+          <CardTitle className="flex items-center gap-2 text-sm text-emerald-700">
+            <Save className="h-4 w-4" />
+            {editingAlias ? `계좌 수정 — ${editingAlias === 'default' ? BROKER_INFO[brokerType].name : editingAlias}` : '새 계좌 저장'}
           </CardTitle>
-          <CardDescription className="text-gray-600">
-            API 키를 입력하여 증권사에 연결합니다. 저장하면 서버 재시작 후에도 유지됩니다.
+          <CardDescription className="text-gray-600 text-xs">
+            {editingAlias
+              ? 'App Key · App Secret · 계좌번호를 다시 입력하면 기존 정보를 덮어씁니다.'
+              : 'API Key를 암호화하여 저장합니다. 저장 후 "연결하기"를 눌러 연결하세요.'}
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label>증권사 선택</Label>
-            <Select
-              value={brokerType}
-              onValueChange={(v) => setBrokerType(v as BrokerType)}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="kis">
-                  한국투자증권 (KIS) {isConnected('kis') && '✓'} {isSaved('kis') && '💾'}
-                </SelectItem>
-                <SelectItem value="kiwoom">
-                  키움증권 {isConnected('kiwoom') && '✓'} {isSaved('kiwoom') && '💾'}
-                </SelectItem>
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-gray-600">
-              <a
-                href={brokerInfo[brokerType].docsUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-blue-500 hover:underline"
-              >
-                API 발급 안내 →
-              </a>
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="appKey">App Key</Label>
-            <Input
-              id="appKey"
-              type="password"
-              value={appKey}
-              onChange={(e) => setAppKey(e.target.value)}
-              placeholder="API 포털에서 발급받은 App Key"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="appSecret">App Secret</Label>
-            <Input
-              id="appSecret"
-              type="password"
-              value={appSecret}
-              onChange={(e) => setAppSecret(e.target.value)}
-              placeholder="API 포털에서 발급받은 App Secret"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="accountNumber">계좌번호</Label>
-            <Input
-              id="accountNumber"
-              value={accountNumber}
-              onChange={(e) => setAccountNumber(e.target.value)}
-              placeholder="XXXXXXXX-XX 형식"
-            />
-          </div>
-
-          {error && (
-            <div className="flex items-center gap-2 rounded-lg bg-destructive/10 p-3 text-destructive">
-              <XCircle className="h-4 w-4" />
-              {error}
+        <CardContent className="space-y-3 pt-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label className="text-xs">증권사</Label>
+              <Select value={brokerType} onValueChange={(v) => setBrokerType(v as BrokerType)}>
+                <SelectTrigger className="h-8 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="kis">한국투자증권</SelectItem>
+                  <SelectItem value="kiwoom">키움증권</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-          )}
-
-          {success && (
-            <div className="flex items-center gap-2 rounded-lg bg-green-500/10 p-3 text-green-600">
-              <CheckCircle className="h-4 w-4" />
-              {success}
+            <div className="space-y-1">
+              <Label className="text-xs">계좌 별칭 <span className="text-gray-400">(선택)</span></Label>
+              <Input
+                className="h-8 text-sm"
+                value={accountAlias}
+                onChange={(e) => setAccountAlias(e.target.value)}
+                placeholder="예: ISA계좌"
+                disabled={!!editingAlias}
+              />
             </div>
-          )}
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">App Key</Label>
+            <Input className="h-8 text-sm" type="password" value={appKey}
+              onChange={(e) => setAppKey(e.target.value)} placeholder="API 포털에서 발급받은 App Key" />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">App Secret</Label>
+            <Input className="h-8 text-sm" type="password" value={appSecret}
+              onChange={(e) => setAppSecret(e.target.value)} placeholder="App Secret" />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">계좌번호</Label>
+            <Input className="h-8 text-sm" value={accountNumber}
+              onChange={(e) => setAccountNumber(e.target.value)} placeholder="XXXXXXXX-XX" />
+          </div>
+          <p className="text-xs text-gray-500">
+            <a href={BROKER_INFO[brokerType].docsUrl} target="_blank" rel="noopener noreferrer"
+              className="text-blue-500 hover:underline">
+              {BROKER_INFO[brokerType].name} API 발급 안내 →
+            </a>
+          </p>
         </CardContent>
         <CardFooter className="flex gap-2">
+          {editingAlias && (
+            <Button
+              variant="outline"
+              onClick={() => { setEditingAlias(null); setAppKey(''); setAppSecret(''); setAccountNumber(''); setAccountAlias(''); }}
+              className="flex-1"
+            >
+              취소
+            </Button>
+          )}
           <Button
-            variant="outline"
             onClick={handleSave}
-            disabled={isLoading || !appKey || !appSecret || !accountNumber}
-            className="flex-1"
+            disabled={actionLoading === 'save' || !appKey || !appSecret || !accountNumber}
+            className={`${editingAlias ? 'flex-1' : 'w-full'} bg-emerald-600 hover:bg-emerald-700 text-white`}
           >
-            {isLoading ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            {actionLoading === 'save' ? (
+              <><Loader2 className="mr-2 h-4 w-4 animate-spin" />저장 중...</>
+            ) : editingAlias ? (
+              <><Save className="mr-2 h-4 w-4" />수정 저장</>
             ) : (
-              <Save className="mr-2 h-4 w-4" />
-            )}
-            저장하기
-          </Button>
-          <Button
-            onClick={handleConnect}
-            disabled={isLoading || !appKey || !appSecret || !accountNumber}
-            className="flex-1"
-          >
-            {isLoading ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                연결 중...
-              </>
-            ) : (
-              <>
-                <Link className="mr-2 h-4 w-4" />
-                연결하기
-              </>
+              <><Save className="mr-2 h-4 w-4" />저장하기</>
             )}
           </Button>
         </CardFooter>
       </Card>
 
-      {/* TOTP 설정 다이얼로그 */}
-      <TOTPSetupDialog
-        open={showTotpSetup}
-        onOpenChange={setShowTotpSetup}
-        onSuccess={handleTotpSetupSuccess}
-      />
-
-      {/* TOTP 인증 다이얼로그 */}
+      {/* TOTP 다이얼로그 */}
+      <TOTPSetupDialog open={showTotpSetup} onOpenChange={setShowTotpSetup} onSuccess={handleTotpSetupSuccess} />
       <TOTPVerifyDialog
         open={showTotpVerify}
         onOpenChange={setShowTotpVerify}
         onSuccess={handleTotpVerifySuccess}
-        title={totpVerifyAction === 'save' ? 'API Key 저장 인증' : 'API Key 불러오기 인증'}
-        description={
-          totpVerifyAction === 'save'
-            ? 'API Key를 저장하려면 2FA 인증이 필요합니다.'
-            : '저장된 API Key를 불러오려면 2FA 인증이 필요합니다.'
-        }
+        title="2FA 인증"
+        description="계속하려면 2FA 인증이 필요합니다."
       />
     </div>
   );

@@ -40,6 +40,9 @@ import {
   DollarSign,
   Download,
   ExternalLink,
+  Pencil,
+  Trash2,
+  Clock,
 } from 'lucide-react';
 import { fetchTrackerPosition } from '@/lib/infinite-buy/tracker/position';
 
@@ -121,10 +124,13 @@ export function AutoTradePanel({
   } | null>(null);
   const [autoTradeEnabled, setAutoTradeEnabled] = useState(false);
   const [isSavingAutoTrade, setIsSavingAutoTrade] = useState(false);
+  const [allSettings, setAllSettings] = useState<{ id: string; symbol: string; broker_type: string; strategy_version: string; total_capital: number; is_enabled: boolean }[]>([]);
+  const [togglingSettingId, setTogglingSettingId] = useState<string | null>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
   const [todayDuplicates, setTodayDuplicates] = useState<{
     buyExists: boolean;
     sellExists: boolean;
-    orders?: { id: string; broker_order_id: string; side: string; status: string }[];
+    orders?: { id: string; broker_order_id: string; side: string; status: string; order_quantity: number; market: string }[];
   } | null>(null);
   const [isCancellingToday, setIsCancellingToday] = useState(false);
   const [cancelResult, setCancelResult] = useState<{ success: boolean; message: string } | null>(null);
@@ -272,20 +278,32 @@ export function AutoTradePanel({
     setCancelResult(null);
     try {
       const cancellable = todayDuplicates.orders.filter(o => o.status === 'submitted' || o.status === 'partial');
-      const results = await Promise.all(
+
+      // KIS 취소 시도 (실패해도 DB는 정리)
+      await Promise.all(
         cancellable.map(async o => {
-          const res = await fetch(`/api/broker/orders?brokerType=${brokerType}&orderId=${o.broker_order_id}`, { method: 'DELETE' });
-          const data = await res.json();
-          return { side: o.side, success: data.success, error: data.error };
+          if (!o.broker_order_id) return;
+          const params = new URLSearchParams({
+            brokerType,
+            orderId: o.broker_order_id,
+            symbol,
+            quantity: o.order_quantity.toString(),
+            market: o.market || (symbol.match(/^\d{6}$/) ? 'domestic' : 'overseas'),
+          });
+          await fetch(`/api/broker/orders?${params}`, { method: 'DELETE' });
         })
       );
-      const succeeded = results.filter(r => r.success);
-      const failed = results.filter(r => !r.success);
-      if (failed.length > 0) {
-        setCancelResult({ success: false, message: `취소 실패 ${failed.length}건: ${failed.map(r => r.error || '오류').join(', ')}` });
-      } else {
-        setCancelResult({ success: true, message: `${succeeded.map(r => r.side === 'buy' ? '매수' : '매도').join(' · ')} 주문 취소 완료` });
-      }
+
+      // DB pending_orders 상태를 cancelled로 변경 (KIS 취소 성공 여부 무관)
+      const ids = cancellable.map(o => o.id);
+      await fetch('/api/auto-trade/pending-orders', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
+      });
+
+      const labels = cancellable.map(o => o.side === 'buy' ? '매수' : '매도').join(' · ');
+      setCancelResult({ success: true, message: `${labels} 주문 취소 완료` });
       await calculateOrders();
     } catch {
       setCancelResult({ success: false, message: '주문 취소 중 오류가 발생했습니다.' });
@@ -369,13 +387,14 @@ export function AutoTradePanel({
 
   // 자동매매 설정 로드
   const loadAutoTradeSettings = async () => {
-    if (!symbol) return;
     try {
       const res = await fetch('/api/auto-trade/settings');
       if (res.ok) {
         const data = await res.json();
-        const setting = data.data?.find((s: { symbol: string }) => s.symbol === symbol.toUpperCase());
-        setAutoTradeEnabled(setting?.is_enabled ?? false);
+        const list = data.data ?? [];
+        setAllSettings(list);
+        const current = list.find((s: { symbol: string }) => s.symbol === symbol.toUpperCase());
+        setAutoTradeEnabled(current?.is_enabled ?? false);
       }
     } catch {}
   };
@@ -391,6 +410,7 @@ export function AutoTradePanel({
         const data = await res.json();
         if (data.success) {
           setAutoTradeEnabled(false);
+          await loadAutoTradeSettings();
           alert(`${symbol} 자동매매가 해제되었습니다.`);
         } else {
           alert(`해제 실패: ${data.error || '알 수 없는 오류'}`);
@@ -411,6 +431,7 @@ export function AutoTradePanel({
         const data = await res.json();
         if (data.success) {
           setAutoTradeEnabled(true);
+          await loadAutoTradeSettings();
           alert(`${symbol} 자동매매가 등록되었습니다.\n매일 밤 21:00(서머타임) / 22:00(겨울) 프리장에 자동 실행됩니다.`);
         } else {
           alert(`활성화 실패: ${data.error || '알 수 없는 오류'}`);
@@ -424,11 +445,46 @@ export function AutoTradePanel({
     }
   };
 
+  // 스케줄러 목록에서 수정
+  const handleEditSetting = (s: typeof allSettings[0]) => {
+    setSymbol(s.symbol);
+    setBrokerType(s.broker_type as BrokerType);
+    setStrategyVersion(s.strategy_version.toLowerCase() as StrategyVersion);
+    setTotalCapital(s.total_capital);
+    setTimeout(() => cardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+  };
+
+  // 스케줄러 목록에서 삭제
+  const handleDeleteSetting = async (sym: string) => {
+    if (!confirm(`${sym} 자동매매 설정을 삭제할까요?`)) return;
+    await fetch(`/api/auto-trade/settings?symbol=${sym}`, { method: 'DELETE' });
+    await loadAutoTradeSettings();
+  };
+
+  // 스케줄러 목록에서 활성/비활성 토글
+  const handleToggleSetting = async (s: typeof allSettings[0]) => {
+    setTogglingSettingId(s.id);
+    try {
+      await fetch('/api/auto-trade/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          symbol: s.symbol,
+          broker_type: s.broker_type,
+          strategy_version: s.strategy_version,
+          total_capital: s.total_capital,
+          is_enabled: !s.is_enabled,
+        }),
+      });
+      await loadAutoTradeSettings();
+    } finally {
+      setTogglingSettingId(null);
+    }
+  };
+
   // 종목 변경 시 자동매매 설정 로드
   useEffect(() => {
-    if (symbol) {
-      loadAutoTradeSettings();
-    }
+    loadAutoTradeSettings();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [symbol]);
 
@@ -437,7 +493,7 @@ export function AutoTradePanel({
   return (
     <div className="space-y-4">
       {/* 설정 카드 */}
-      <Card className="border-emerald-500/30 bg-white dark:bg-white">
+      <Card className="border-emerald-500/30 bg-white dark:bg-white" ref={cardRef}>
         <CardHeader className="border-b border-emerald-200 bg-emerald-50">
           <div className="flex items-center justify-between">
             <div>
@@ -712,6 +768,76 @@ export function AutoTradePanel({
           </div>
         </CardFooter>
       </Card>
+
+      {/* 등록된 스케줄러 전체 목록 */}
+      {allSettings.length > 0 && (
+        <Card className="border-emerald-500/30 bg-white">
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-sm font-medium">
+              <Clock className="h-4 w-4 text-gray-500" />
+              등록된 자동매매 ({allSettings.length}개)
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {allSettings.map(s => (
+              <div
+                key={s.id}
+                className={`flex items-center justify-between rounded-lg border px-4 py-3 ${
+                  s.is_enabled ? 'border-emerald-300 bg-white' : 'border-gray-200 bg-gray-50'
+                }`}
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-medium text-sm">{s.symbol}</span>
+                    <span className="text-xs text-gray-400">{s.strategy_version}</span>
+                    <span className="text-xs text-gray-400">·</span>
+                    <span className="text-xs text-gray-400">${s.total_capital.toLocaleString()}</span>
+                    <span className="text-xs text-gray-400">·</span>
+                    <span className="text-xs text-gray-400">{s.broker_type === 'kis' ? '한투' : '키움'}</span>
+                    {s.is_enabled ? (
+                      <Badge className="bg-emerald-500 text-white text-xs border-0">ON</Badge>
+                    ) : (
+                      <Badge variant="outline" className="text-gray-400 text-xs">OFF</Badge>
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    {s.is_enabled ? '매일 밤 21:00(서머타임) / 22:00(겨울) 자동 실행 중' : '비활성 상태 — 자동 실행 안 됨'}
+                  </p>
+                </div>
+                <div className="flex items-center gap-1 ml-3 shrink-0">
+                  <Button
+                    size="sm"
+                    variant={s.is_enabled ? 'destructive' : 'default'}
+                    onClick={() => handleToggleSetting(s)}
+                    disabled={togglingSettingId === s.id}
+                    className={`h-7 text-xs ${!s.is_enabled ? 'bg-emerald-500 hover:bg-emerald-600 text-white' : ''}`}
+                  >
+                    {togglingSettingId === s.id ? <Loader2 className="h-3 w-3 animate-spin" /> : s.is_enabled ? '해제' : '활성화'}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 text-blue-400 hover:text-blue-600"
+                    onClick={() => handleEditSetting(s)}
+                    disabled={!!togglingSettingId}
+                  >
+                    <Pencil className="h-3 w-3" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    onClick={() => handleDeleteSetting(s.symbol)}
+                    disabled={!!togglingSettingId}
+                  >
+                    <Trash2 className="h-3 w-3 text-gray-400" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       {/* 에러 표시 */}
       {error && (

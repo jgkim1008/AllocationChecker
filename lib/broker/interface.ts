@@ -69,7 +69,7 @@ export interface IBroker {
   /**
    * 주문 취소
    */
-  cancelOrder(orderId: string): Promise<BrokerResponse<void>>;
+  cancelOrder(orderId: string, hint?: { symbol: string; quantity: number; market: 'domestic' | 'overseas'; exchange?: string }): Promise<BrokerResponse<void>>;
 
   /**
    * 주문 조회

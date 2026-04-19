@@ -7,11 +7,15 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
 
 import { createClient } from '@/lib/supabase/server';
-import { saveBrokerCredentials, deleteBrokerCredentials, getConnectedBrokers } from '@/lib/broker/storage';
-import { getBrokerClient, disconnectBroker } from '@/lib/broker/session';
+import { saveBrokerCredentials, deleteBrokerCredentials, getConnectedBrokers, getConnectedCredentialIds } from '@/lib/broker/storage';
+import { getBrokerClient, getBrokerClientByCredentialId, disconnectBroker, disconnectBrokerByCredentialId } from '@/lib/broker/session';
+import { hashSessionToken } from '@/lib/crypto/encryption';
 import type { BrokerType, KISCredentials, KiwoomCredentials } from '@/lib/broker/types';
+
+const SESSION_COOKIE_NAME = 'broker_session';
 
 // POST: 브로커 연결
 export async function POST(request: NextRequest) {
@@ -28,11 +32,29 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { brokerType, credentials } = body as {
-      brokerType: BrokerType;
-      credentials: KISCredentials | KiwoomCredentials;
+    const { credentialId, brokerType, credentials } = body as {
+      credentialId?: string;
+      brokerType?: BrokerType;
+      credentials?: KISCredentials | KiwoomCredentials;
     };
 
+    // credentialId 기반 연결 (저장된 계좌 직접 연결)
+    if (credentialId) {
+      const connectResult = await getBrokerClientByCredentialId(credentialId);
+      if (!connectResult.success) {
+        return NextResponse.json(
+          { success: false, error: connectResult.error || '연결에 실패했습니다.' },
+          { status: 400 }
+        );
+      }
+      return NextResponse.json({
+        success: true,
+        message: '브로커 연결이 완료되었습니다.',
+        data: { credentialId, connected: true },
+      });
+    }
+
+    // 레거시: {brokerType, credentials} 기반 임시 연결
     if (!brokerType || !credentials) {
       return NextResponse.json(
         { success: false, error: '필수 파라미터가 누락되었습니다.' },
@@ -59,10 +81,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       message: '브로커 연결이 완료되었습니다.',
-      data: {
-        brokerType,
-        connected: true,
-      },
+      data: { brokerType, connected: true },
     });
   } catch (error) {
     console.error('브로커 연결 오류:', error);
@@ -88,25 +107,40 @@ export async function DELETE(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url);
-    const brokerType = searchParams.get('brokerType') as BrokerType;
+    const credentialId = searchParams.get('credentialId');
+    const brokerType = searchParams.get('brokerType') as BrokerType | null;
 
-    if (!brokerType) {
+    if (!credentialId && !brokerType) {
       return NextResponse.json(
-        { success: false, error: 'brokerType이 필요합니다.' },
+        { success: false, error: 'credentialId 또는 brokerType이 필요합니다.' },
         { status: 400 }
       );
     }
 
-    // 연결 해제
-    await disconnectBroker(user.id, brokerType);
+    // credentialId 기반: 런타임 세션만 해제, 2FA/DB 유지
+    if (credentialId) {
+      await disconnectBrokerByCredentialId(credentialId);
+      return NextResponse.json({ success: true, message: '연결이 해제되었습니다.' });
+    }
 
-    // 설정 삭제
-    await deleteBrokerCredentials(user.id, brokerType);
+    // 레거시 brokerType 기반: 메모리 + 2FA 세션 무효화
+    await disconnectBroker(user.id, brokerType!);
+    await deleteBrokerCredentials(user.id, brokerType!);
 
-    return NextResponse.json({
-      success: true,
-      message: '브로커 연결이 해제되었습니다.',
-    });
+    // 2FA 세션 무효화
+    const cookieStore = await cookies();
+    const sessionToken = cookieStore.get(SESSION_COOKIE_NAME)?.value;
+    if (sessionToken) {
+      const sessionTokenHash = hashSessionToken(sessionToken);
+      await supabase
+        .from('credential_access_sessions')
+        .delete()
+        .eq('user_id', user.id)
+        .eq('session_token_hash', sessionTokenHash);
+      cookieStore.delete(SESSION_COOKIE_NAME);
+    }
+
+    return NextResponse.json({ success: true, message: '브로커 연결이 해제되었습니다.' });
   } catch (error) {
     console.error('브로커 연결 해제 오류:', error);
     return NextResponse.json(
@@ -139,10 +173,13 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    const connectedCredentials = getConnectedCredentialIds(user.id);
+
     return NextResponse.json({
       success: true,
       data: {
         connectedBrokers: result.data || [],
+        connectedCredentials,
       },
     });
   } catch (error) {

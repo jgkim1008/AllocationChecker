@@ -54,9 +54,10 @@ interface Order {
 
 interface OrderHistoryProps {
   defaultBroker?: BrokerType;
+  credentialId?: string;
 }
 
-export function OrderHistory({ defaultBroker = 'kis' }: OrderHistoryProps) {
+export function OrderHistory({ defaultBroker = 'kis', credentialId }: OrderHistoryProps) {
   const [brokerType, setBrokerType] = useState<BrokerType>(defaultBroker);
   const [orders, setOrders] = useState<Order[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -65,14 +66,17 @@ export function OrderHistory({ defaultBroker = 'kis' }: OrderHistoryProps) {
 
   useEffect(() => {
     fetchOrders();
-  }, [brokerType]);
+  }, [brokerType, credentialId]);
 
   const fetchOrders = async () => {
     setIsLoading(true);
     setError(null);
 
     try {
-      const response = await fetch(`/api/broker/orders?brokerType=${brokerType}`);
+      const params = credentialId
+        ? `credentialId=${credentialId}`
+        : `brokerType=${brokerType}`;
+      const response = await fetch(`/api/broker/orders?${params}`);
       const data = await response.json();
 
       if (data.success) {
@@ -93,8 +97,11 @@ export function OrderHistory({ defaultBroker = 'kis' }: OrderHistoryProps) {
     setCancellingId(orderId);
 
     try {
+      const params = credentialId
+        ? `credentialId=${credentialId}&orderId=${orderId}`
+        : `brokerType=${brokerType}&orderId=${orderId}`;
       const response = await fetch(
-        `/api/broker/orders?brokerType=${brokerType}&orderId=${orderId}`,
+        `/api/broker/orders?${params}`,
         { method: 'DELETE' }
       );
       const data = await response.json();

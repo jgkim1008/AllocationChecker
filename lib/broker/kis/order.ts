@@ -101,8 +101,10 @@ export class KISOrder {
       case 'market':
         orderTypeCode = KIS_DOMESTIC_ORDER_TYPE.BUY_MARKET;
         break;
-      case 'limit':
       case 'loc':
+        orderTypeCode = KIS_DOMESTIC_ORDER_TYPE.BUY_POST_MARKET; // 장후 시간외 (15:30~16:00, 종가로 체결)
+        break;
+      case 'limit':
         orderTypeCode = KIS_DOMESTIC_ORDER_TYPE.BUY_LIMIT;
         break;
       default:

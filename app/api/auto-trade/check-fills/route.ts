@@ -63,6 +63,7 @@ async function checkFills(targetMarket: MarketType | null) {
   let cancelledCount = 0;
   let checkedCount = 0;
   const recordsToInsert: any[] = [];
+  const dcaRecordsToInsert: any[] = [];
   const ordersToUpdate: { id: string; updates: any }[] = [];
 
   // 각 사용자별로 브로커 클라이언트로 체결 확인
@@ -123,22 +124,42 @@ async function checkFills(targetMarket: MarketType | null) {
               },
             });
 
-            // 매수 주문이면 infinite_buy_records에 추가
-            if (pendingOrder.side === 'buy' && pendingOrder.capital) {
-              const n = pendingOrder.strategy_version === 'V3.0' ? 20 : 40;
-              recordsToInsert.push({
-                symbol: pendingOrder.symbol,
-                buy_date: new Date(pendingOrder.order_time).toISOString().split('T')[0],
-                price: brokerOrder.filledPrice || pendingOrder.order_price,
-                shares: brokerOrder.filledQuantity || pendingOrder.order_quantity,
-                amount: brokerOrder.filledAmount ||
-                  (brokerOrder.filledPrice || pendingOrder.order_price) *
-                  (brokerOrder.filledQuantity || pendingOrder.order_quantity),
-                capital: pendingOrder.capital,
-                n,
-                target_rate: 0.10,
-                user_id: pendingOrder.user_id,
-              });
+            // 매수 주문 기록
+            if (pendingOrder.side === 'buy') {
+              const filledPrice = brokerOrder.filledPrice || pendingOrder.order_price;
+              const filledShares = brokerOrder.filledQuantity || pendingOrder.order_quantity;
+              const filledAmount = brokerOrder.filledAmount || filledPrice * filledShares;
+              const tradeDate = new Date(pendingOrder.order_time).toISOString().split('T')[0];
+
+              if (pendingOrder.strategy_version === 'dca') {
+                // DCA 전략 → dca_records
+                dcaRecordsToInsert.push({
+                  user_id: pendingOrder.user_id,
+                  symbol: pendingOrder.symbol,
+                  trade_date: tradeDate,
+                  price: filledPrice,
+                  shares: filledShares,
+                  amount: filledAmount,
+                  order_type: pendingOrder.order_type === 'loc' ? 'loc' : 'limit',
+                  threshold_pct: pendingOrder.reason?.match(/([-\d.]+)%/)?.[1]
+                    ? parseFloat(pendingOrder.reason.match(/([-\d.]+)%/)![1])
+                    : null,
+                });
+              } else if (pendingOrder.capital) {
+                // 무한매수법 → infinite_buy_records
+                const n = pendingOrder.strategy_version === 'V3.0' ? 20 : 40;
+                recordsToInsert.push({
+                  symbol: pendingOrder.symbol,
+                  buy_date: tradeDate,
+                  price: filledPrice,
+                  shares: filledShares,
+                  amount: filledAmount,
+                  capital: pendingOrder.capital,
+                  n,
+                  target_rate: 0.10,
+                  user_id: pendingOrder.user_id,
+                });
+              }
             }
           } else if (brokerOrder.status === 'cancelled' || brokerOrder.status === 'rejected') {
             // 취소 또는 거부
@@ -189,6 +210,9 @@ async function checkFills(targetMarket: MarketType | null) {
   // 체결된 매수 주문 기록
   if (recordsToInsert.length > 0) {
     await serviceClient.from('infinite_buy_records').insert(recordsToInsert);
+  }
+  if (dcaRecordsToInsert.length > 0) {
+    await serviceClient.from('dca_records').insert(dcaRecordsToInsert);
   }
 
   // 장 마감 후 미체결 주문 만료 처리 (24시간 이상 지난 주문)

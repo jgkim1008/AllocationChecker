@@ -69,9 +69,10 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { brokerType, credentials } = body as {
+    const { brokerType, credentials, accountAlias } = body as {
       brokerType: BrokerType;
       credentials: KISCredentials | KiwoomCredentials;
+      accountAlias?: string;
     };
 
     if (!brokerType || !credentials) {
@@ -87,6 +88,8 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    const alias = accountAlias?.trim() || 'default';
 
     // 2FA 설정 확인 (저장 시에도 2FA 필요)
     const { data: totpData } = await supabase
@@ -116,18 +119,19 @@ export async function POST(request: NextRequest) {
     // 자격증명 암호화
     const encryptedData = encryptCredentials(credentials);
 
-    // DB에 저장 (upsert)
+    // DB에 저장 (upsert — user_id+broker_type+account_alias 기준)
     const { error: upsertError } = await supabase
       .from('broker_credentials')
       .upsert({
         user_id: user.id,
         broker_type: brokerType,
+        account_alias: alias,
         encrypted_credentials: encryptedData.encrypted_credentials,
         encryption_iv: encryptedData.encryption_iv,
         encryption_tag: encryptedData.encryption_tag,
         updated_at: new Date().toISOString(),
       }, {
-        onConflict: 'user_id,broker_type',
+        onConflict: 'user_id,broker_type,account_alias',
       });
 
     if (upsertError) {
@@ -167,18 +171,20 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // 세션 유효성 검증
-    const sessionCheck = await validateSession(user.id);
-    if (!sessionCheck.valid) {
-      return NextResponse.json({
-        success: false,
-        error: sessionCheck.error,
-        requiresTotpVerify: true,
-      }, { status: 401 });
-    }
-
     const { searchParams } = new URL(request.url);
     const brokerType = searchParams.get('brokerType') as BrokerType | null;
+
+    // 특정 브로커 자격증명 복호화 조회 시에만 세션 필요
+    if (brokerType) {
+      const sessionCheck = await validateSession(user.id);
+      if (!sessionCheck.valid) {
+        return NextResponse.json({
+          success: false,
+          error: sessionCheck.error,
+          requiresTotpVerify: true,
+        }, { status: 401 });
+      }
+    }
 
     if (brokerType) {
       // 특정 브로커 자격증명 조회
@@ -212,21 +218,22 @@ export async function GET(request: NextRequest) {
         },
       });
     } else {
-      // 모든 저장된 브로커 목록 조회 (자격증명 내용은 제외)
+      // 모든 저장된 브로커 목록 조회 (자격증명 내용은 제외 — 세션 불필요)
       const { data: credList } = await supabase
         .from('broker_credentials')
-        .select('broker_type, created_at, updated_at')
-        .eq('user_id', user.id);
+        .select('id, broker_type, account_alias, created_at, updated_at')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: true });
 
       return NextResponse.json({
         success: true,
-        data: {
-          savedBrokers: (credList || []).map(c => ({
-            brokerType: c.broker_type,
-            savedAt: c.created_at,
-            updatedAt: c.updated_at,
-          })),
-        },
+        data: (credList || []).map(c => ({
+          id: c.id,
+          brokerType: c.broker_type,
+          accountAlias: c.account_alias,
+          savedAt: c.created_at,
+          updatedAt: c.updated_at,
+        })),
       });
     }
   } catch (error) {
@@ -265,20 +272,24 @@ export async function DELETE(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url);
+    const credentialId = searchParams.get('credentialId');
     const brokerType = searchParams.get('brokerType') as BrokerType | null;
 
-    if (!brokerType) {
+    if (!credentialId && !brokerType) {
       return NextResponse.json(
-        { success: false, error: 'brokerType 파라미터가 필요합니다.' },
+        { success: false, error: 'credentialId 또는 brokerType 파라미터가 필요합니다.' },
         { status: 400 }
       );
     }
 
-    const { error: deleteError } = await supabase
-      .from('broker_credentials')
-      .delete()
-      .eq('user_id', user.id)
-      .eq('broker_type', brokerType);
+    let deleteQuery = supabase.from('broker_credentials').delete().eq('user_id', user.id);
+    if (credentialId) {
+      deleteQuery = deleteQuery.eq('id', credentialId) as any;
+    } else {
+      deleteQuery = deleteQuery.eq('broker_type', brokerType!) as any;
+    }
+
+    const { error: deleteError } = await deleteQuery;
 
     if (deleteError) {
       console.error('자격증명 삭제 오류:', deleteError);
@@ -286,6 +297,19 @@ export async function DELETE(request: NextRequest) {
         { success: false, error: '삭제에 실패했습니다.' },
         { status: 500 }
       );
+    }
+
+    // 브로커 연결 해제 시 2FA 세션도 무효화
+    const cookieStore = await cookies();
+    const sessionToken = cookieStore.get(SESSION_COOKIE_NAME)?.value;
+    if (sessionToken) {
+      const sessionTokenHash = hashSessionToken(sessionToken);
+      await supabase
+        .from('credential_access_sessions')
+        .delete()
+        .eq('user_id', user.id)
+        .eq('session_token_hash', sessionTokenHash);
+      cookieStore.delete(SESSION_COOKIE_NAME);
     }
 
     return NextResponse.json({

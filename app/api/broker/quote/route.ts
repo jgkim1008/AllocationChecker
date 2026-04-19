@@ -7,7 +7,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { createClient } from '@/lib/supabase/server';
-import { getBrokerClient } from '@/lib/broker/session';
+import { getBrokerClient, getBrokerClientByCredentialId } from '@/lib/broker/session';
 import type { BrokerType } from '@/lib/broker/types';
 
 export async function GET(request: NextRequest) {
@@ -24,6 +24,7 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url);
+    const credentialId = searchParams.get('credentialId');
     const brokerType = (searchParams.get('brokerType') || 'kis') as BrokerType;
     const symbol = searchParams.get('symbol');
 
@@ -35,7 +36,9 @@ export async function GET(request: NextRequest) {
     }
 
     // 브로커 클라이언트 가져오기
-    const clientResult = await getBrokerClient(user.id, brokerType);
+    const clientResult = credentialId
+      ? await getBrokerClientByCredentialId(credentialId)
+      : await getBrokerClient(user.id, brokerType);
 
     if (!clientResult.success || !clientResult.client) {
       return NextResponse.json(
