@@ -127,6 +127,7 @@ export async function GET(request: NextRequest) {
         ];
 
         const submittedOrders: { broker_order_id: string; price: number; pct: number; qty: number }[] = [];
+        const orderErrors: string[] = [];
 
         for (const o of orders) {
           if (o.qty <= 0) continue;
@@ -142,6 +143,8 @@ export async function GET(request: NextRequest) {
           if (orderResult.success && orderResult.data?.orderId) {
             submittedOrders.push({ broker_order_id: orderResult.data.orderId, price: o.price, pct: o.pct, qty: o.qty });
           } else {
+            const errMsg = orderResult.error?.message || JSON.stringify(orderResult.error) || '알 수 없는 오류';
+            orderErrors.push(`${o.pct}%: ${errMsg}`);
             console.error(`DCA 지정가 주문 실패: ${symbol} ${o.pct}%`, orderResult.error);
           }
         }
@@ -167,11 +170,12 @@ export async function GET(request: NextRequest) {
           );
         }
 
+        const errorSuffix = orderErrors.length > 0 ? ` | 실패: ${orderErrors.join(', ')}` : '';
         results.push({
           user_id,
           symbol,
           success: submittedOrders.length > 0,
-          message: `지정가 주문 ${submittedOrders.length}건 제출 (기준가: ${previousClose})`,
+          message: `지정가 주문 ${submittedOrders.length}건 제출 (기준가: ${previousClose})${errorSuffix}`,
         });
       } catch (err) {
         results.push({ user_id, symbol, success: false, message: `오류: ${err}` });
