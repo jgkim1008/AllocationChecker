@@ -35,6 +35,10 @@
       "schedule": "30 13 * * 1-5"
     },
     {
+      "path": "/api/auto-trade/dca/cron/morning?market=overseas",
+      "schedule": "30 14 * * 1-5"
+    },
+    {
       "path": "/api/auto-trade/dca/cron/morning?market=domestic",
       "schedule": "5 0 * * 1-5"
     },
