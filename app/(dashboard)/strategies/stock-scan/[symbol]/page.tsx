@@ -846,7 +846,7 @@ function FundamentalChart({
     ma120Series.setData(calcMA(sortedData, 120));
 
     // MA240 (보라색, 굵은 선)
-    const ma240Series = chart.addSeries(LineSeries, { color: '#a855f7', lineWidth: 2.5, priceLineVisible: false, lastValueVisible: false });
+    const ma240Series = chart.addSeries(LineSeries, { color: '#a855f7', lineWidth: 3, priceLineVisible: false, lastValueVisible: false });
     ma240Series.setData(calcMA(sortedData, 240));
 
     // 5. 거래량 차트
