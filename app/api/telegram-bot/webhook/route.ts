@@ -390,14 +390,15 @@ async function handleMessage(chatId: number, text: string, username?: string) {
 
 아래 형식으로 입력해주세요:
 
-<code>/subscribe 이메일 비밀번호</code>
+<code>/subscribe 아이디 비밀번호</code>
 
 예시:
-<code>/subscribe user@example.com mypassword</code>`);
+<code>/subscribe myusername mypassword</code>`);
       return;
     }
 
-    const email = parts[1];
+    const username = parts[1].trim().toLowerCase();
+    const email = `${username}@allocationchecker.local`;
     const password = parts.slice(2).join(' ');
 
     // Supabase 계정 인증
@@ -408,7 +409,7 @@ async function handleMessage(chatId: number, text: string, username?: string) {
     const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email, password });
 
     if (authError || !authData.user) {
-      await sendMessage(chatId, '❌ 이메일 또는 비밀번호가 올바르지 않습니다.\n\n다시 시도해주세요.');
+      await sendMessage(chatId, '❌ 아이디 또는 비밀번호가 올바르지 않습니다.\n\n다시 시도해주세요.');
       return;
     }
 
