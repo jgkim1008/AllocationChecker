@@ -52,7 +52,7 @@
     },
     {
       "path": "/api/auto-trade/cron",
-      "schedule": "30 1 * * 1-5"
+      "schedule": "0 12 * * 1-5"
     },
     {
       "path": "/api/fibonacci/scan?market=US",
