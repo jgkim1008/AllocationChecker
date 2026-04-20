@@ -2,8 +2,8 @@
  * DCA 전략 아침 cron
  *
  * 전일 종가 기준 threshold1%, threshold2% 가격으로 지정가 주문 2개 제출
- * - 미국 해외: KST 10:30 (UTC 01:30) - schedule: "30 1 * * 1-5"
- * - 국내: KST 09:10 (UTC 00:10) - schedule: "10 0 * * 1-5"
+ * - 미국 해외: KST 22:30 (UTC 13:30) - schedule: "30 13 * * 1-5" (미국 개장 직후)
+ * - 국내: KST 09:05 (UTC 00:05) - schedule: "5 0 * * 1-5"
  */
 
 import { NextRequest, NextResponse } from 'next/server';
