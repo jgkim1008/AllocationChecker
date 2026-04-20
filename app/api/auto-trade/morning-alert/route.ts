@@ -121,6 +121,36 @@ export async function GET(request: NextRequest) {
 
     const serviceClient = await createServiceClient();
 
+    // 어제 주문 내역 조회 (KST 기준 어제 00:00 ~ 23:59)
+    const now = new Date();
+    const kstOffset = 9 * 60 * 60 * 1000; // KST = UTC + 9
+    const kstNow = new Date(now.getTime() + kstOffset);
+    const kstYesterdayStart = new Date(kstNow);
+    kstYesterdayStart.setDate(kstYesterdayStart.getDate() - 1);
+    kstYesterdayStart.setHours(0, 0, 0, 0);
+    const kstTodayStart = new Date(kstNow);
+    kstTodayStart.setHours(0, 0, 0, 0);
+
+    // UTC로 변환
+    const yesterdayStartUTC = new Date(kstYesterdayStart.getTime() - kstOffset);
+    const todayStartUTC = new Date(kstTodayStart.getTime() - kstOffset);
+
+    const { data: yesterdayOrders } = await serviceClient
+      .from('pending_orders')
+      .select('*')
+      .gte('order_time', yesterdayStartUTC.toISOString())
+      .lt('order_time', todayStartUTC.toISOString())
+      .order('order_time', { ascending: true });
+
+    // 사용자별 어제 주문 그룹화
+    const yesterdayOrdersByUser = new Map<string, typeof yesterdayOrders>();
+    for (const order of yesterdayOrders || []) {
+      if (!order.user_id) continue;
+      const list = yesterdayOrdersByUser.get(order.user_id) ?? [];
+      list.push(order);
+      yesterdayOrdersByUser.set(order.user_id, list);
+    }
+
     // 활성화된 자동매매 설정 조회
     const { data: settings, error: settingsError } = await serviceClient
       .from('auto_trade_settings')
@@ -295,6 +325,13 @@ export async function GET(request: NextRequest) {
       userSchedules.get(item.user_id)!.dcaSchedule.push(item);
     }
 
+    // 어제 주문이 있는 사용자도 추가
+    for (const userId of yesterdayOrdersByUser.keys()) {
+      if (!userSchedules.has(userId)) {
+        userSchedules.set(userId, { buySchedule: [], dcaSchedule: [] });
+      }
+    }
+
     // 텔레그램 구독자에게 알림 전송 (사용자별)
     const today = new Date().toLocaleDateString('ko-KR', {
       year: 'numeric',
@@ -313,8 +350,10 @@ export async function GET(request: NextRequest) {
       if (!subscribers || subscribers.length === 0) continue;
 
       const { buySchedule: userBuySchedule, dcaSchedule: userDcaSchedule } = schedules;
+      const userYesterdayOrdersCount = (yesterdayOrdersByUser.get(userId) || []).length;
 
-      if (userBuySchedule.length === 0 && userDcaSchedule.length === 0) continue;
+      // 오늘 예정도 없고 어제 주문도 없으면 스킵
+      if (userBuySchedule.length === 0 && userDcaSchedule.length === 0 && userYesterdayOrdersCount === 0) continue;
 
       let alertText = `📅 <b>${today} 자동매매 예정</b>\n`;
       alertText += `━━━━━━━━━━━━━━━\n\n`;
@@ -367,7 +406,87 @@ export async function GET(request: NextRequest) {
         }
       }
 
-      // 합계
+      // 어제 주문 내역
+      const userYesterdayOrders = yesterdayOrdersByUser.get(userId) || [];
+      if (userYesterdayOrders.length > 0) {
+        alertText += `📋 <b>어제 주문 내역</b>\n`;
+
+        const filledOrders = userYesterdayOrders.filter(o => o.status === 'filled');
+        const partialOrders = userYesterdayOrders.filter(o => o.status === 'partial');
+        const submittedOrders = userYesterdayOrders.filter(o => o.status === 'submitted');
+        const cancelledOrders = userYesterdayOrders.filter(o => o.status === 'cancelled' || o.status === 'expired');
+
+        // 체결 완료
+        if (filledOrders.length > 0) {
+          alertText += `✅ <b>체결 완료</b>\n`;
+          for (const order of filledOrders) {
+            const marketEmoji = order.market === 'domestic' ? '🇰🇷' : '🇺🇸';
+            const price = order.market === 'domestic'
+              ? `₩${Number(order.filled_price || order.order_price).toLocaleString()}`
+              : `$${Number(order.filled_price || order.order_price).toFixed(2)}`;
+            const amount = order.market === 'domestic'
+              ? `₩${Math.round(Number(order.filled_amount || order.order_price * order.filled_quantity)).toLocaleString()}`
+              : `$${Number(order.filled_amount || order.order_price * order.filled_quantity).toFixed(2)}`;
+            const strategyLabel = order.strategy_version === 'dca' ? 'DCA' : '무한매수';
+            alertText += `   ${marketEmoji} ${order.symbol} ${order.filled_quantity}주 @ ${price} (${amount}) [${strategyLabel}]\n`;
+          }
+          alertText += `\n`;
+        }
+
+        // 부분 체결
+        if (partialOrders.length > 0) {
+          alertText += `🔶 <b>부분 체결</b>\n`;
+          for (const order of partialOrders) {
+            const marketEmoji = order.market === 'domestic' ? '🇰🇷' : '🇺🇸';
+            alertText += `   ${marketEmoji} ${order.symbol} ${order.filled_quantity}/${order.order_quantity}주\n`;
+          }
+          alertText += `\n`;
+        }
+
+        // 미체결 (아직 submitted 상태)
+        if (submittedOrders.length > 0) {
+          alertText += `⏳ <b>미체결</b>\n`;
+          for (const order of submittedOrders) {
+            const marketEmoji = order.market === 'domestic' ? '🇰🇷' : '🇺🇸';
+            const price = order.market === 'domestic'
+              ? `₩${Number(order.order_price).toLocaleString()}`
+              : `$${Number(order.order_price).toFixed(2)}`;
+            alertText += `   ${marketEmoji} ${order.symbol} ${order.order_quantity}주 @ ${price}\n`;
+          }
+          alertText += `\n`;
+        }
+
+        // 취소/만료
+        if (cancelledOrders.length > 0) {
+          alertText += `❌ <b>취소/만료</b>\n`;
+          for (const order of cancelledOrders) {
+            const marketEmoji = order.market === 'domestic' ? '🇰🇷' : '🇺🇸';
+            alertText += `   ${marketEmoji} ${order.symbol} ${order.order_quantity}주\n`;
+          }
+          alertText += `\n`;
+        }
+
+        // 어제 체결 금액 합계
+        const yesterdayFilledDomestic = filledOrders
+          .filter(o => o.market === 'domestic')
+          .reduce((sum, o) => sum + Number(o.filled_amount || o.order_price * o.filled_quantity), 0);
+        const yesterdayFilledOverseas = filledOrders
+          .filter(o => o.market === 'overseas')
+          .reduce((sum, o) => sum + Number(o.filled_amount || o.order_price * o.filled_quantity), 0);
+
+        if (yesterdayFilledDomestic > 0 || yesterdayFilledOverseas > 0) {
+          alertText += `<b>어제 체결 금액</b>\n`;
+          if (yesterdayFilledDomestic > 0) {
+            alertText += `🇰🇷 국내: ₩${Math.round(yesterdayFilledDomestic).toLocaleString()}\n`;
+          }
+          if (yesterdayFilledOverseas > 0) {
+            alertText += `🇺🇸 해외: $${yesterdayFilledOverseas.toFixed(2)}\n`;
+          }
+        }
+        alertText += `\n`;
+      }
+
+      // 오늘 예상 금액
       const totalDomestic = userBuySchedule
         .filter(i => i.market === 'domestic')
         .reduce((sum, i) => sum + i.buyAmount, 0);
@@ -377,7 +496,7 @@ export async function GET(request: NextRequest) {
 
       if (totalDomestic > 0 || totalOverseas > 0) {
         alertText += `━━━━━━━━━━━━━━━\n`;
-        alertText += `<b>무한매수법 예상 금액</b>\n`;
+        alertText += `<b>오늘 무한매수법 예상 금액</b>\n`;
         if (totalDomestic > 0) {
           alertText += `🇰🇷 국내: ₩${Math.round(totalDomestic).toLocaleString()}\n`;
         }
@@ -393,13 +512,20 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    const totalYesterdayOrders = (yesterdayOrders || []).length;
+    const filledYesterdayOrders = (yesterdayOrders || []).filter(o => o.status === 'filled').length;
+
     return NextResponse.json({
       success: true,
-      message: `무한매수법 ${buySchedule.length}개, DCA ${dcaSchedule.length}개 매수 예정 알림 전송`,
+      message: `무한매수법 ${buySchedule.length}개, DCA ${dcaSchedule.length}개 예정 / 어제 ${filledYesterdayOrders}/${totalYesterdayOrders}건 체결`,
       data: {
         processed: (settings?.length || 0) + (dcaSettings?.length || 0),
         buySchedule,
         dcaSchedule,
+        yesterdayOrders: {
+          total: totalYesterdayOrders,
+          filled: filledYesterdayOrders,
+        },
       },
     });
   } catch (error) {
