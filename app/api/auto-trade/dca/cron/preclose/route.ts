@@ -62,7 +62,7 @@ export async function GET(request: NextRequest) {
       ? new Date(todayStart.getTime() - 9 * 60 * 60 * 1000) // KST 자정 = UTC -9h
       : todayStart;
 
-    const results: { symbol: string; success: boolean; message: string }[] = [];
+    const results: { user_id: string; symbol: string; success: boolean; message: string }[] = [];
 
     for (const setting of settings) {
       const { user_id, symbol, broker_type, broker_credential_id, daily_quantity, order_mode } = setting;
@@ -74,7 +74,7 @@ export async function GET(request: NextRequest) {
             ? await getBrokerClientByCredentialId(broker_credential_id)
             : await getBrokerClient(user_id, broker_type, { skipBlockCheck: true });
           if (!clientResult.success || !clientResult.client) {
-            results.push({ symbol, success: false, message: `브로커 연결 실패 (LOC 전용)` });
+            results.push({ user_id, symbol, success: false, message: `브로커 연결 실패 (LOC 전용)` });
             continue;
           }
 
@@ -89,7 +89,7 @@ export async function GET(request: NextRequest) {
             .gte('order_time', rangeStart.toISOString());
 
           if (todayLoc && todayLoc.length > 0) {
-            results.push({ symbol, success: false, message: 'LOC 전용 — 오늘 이미 제출됨 (스킵)' });
+            results.push({ user_id, symbol, success: false, message: 'LOC 전용 — 오늘 이미 제출됨 (스킵)' });
             continue;
           }
 
@@ -111,9 +111,9 @@ export async function GET(request: NextRequest) {
               status: 'submitted', strategy_version: 'dca',
               reason: 'DCA LOC 전용', order_time: new Date().toISOString(),
             });
-            results.push({ symbol, success: true, message: `LOC 전용 ${qty}주 제출` });
+            results.push({ user_id, symbol, success: true, message: `LOC 전용 ${qty}주 제출` });
           } else {
-            results.push({ symbol, success: false, message: 'LOC 주문 실패' });
+            results.push({ user_id, symbol, success: false, message: 'LOC 주문 실패' });
           }
           continue;
         }
@@ -129,7 +129,7 @@ export async function GET(request: NextRequest) {
           .gte('order_time', rangeStart.toISOString());
 
         if (!todayOrders || todayOrders.length === 0) {
-          results.push({ symbol, success: false, message: '오늘 DCA 지정가 주문 없음 (morning cron 미실행?)' });
+          results.push({ user_id, symbol, success: false, message: '오늘 DCA 지정가 주문 없음 (morning cron 미실행?)' });
           continue;
         }
 
@@ -138,7 +138,7 @@ export async function GET(request: NextRequest) {
           o => o.order_type === 'loc' && ['submitted', 'partial', 'filled'].includes(o.status)
         );
         if (locAlreadySubmitted) {
-          results.push({ symbol, success: false, message: 'LOC 폴백 이미 제출됨 (스킵)' });
+          results.push({ user_id, symbol, success: false, message: 'LOC 폴백 이미 제출됨 (스킵)' });
           continue;
         }
 
@@ -147,7 +147,7 @@ export async function GET(request: NextRequest) {
           ? await getBrokerClientByCredentialId(broker_credential_id)
           : await getBrokerClient(user_id, broker_type, { skipBlockCheck: true });
         if (!clientResult.success || !clientResult.client) {
-          results.push({ symbol, success: false, message: `브로커 연결 실패: ${clientResult.error}` });
+          results.push({ user_id, symbol, success: false, message: `브로커 연결 실패: ${clientResult.error}` });
           continue;
         }
 
@@ -185,7 +185,7 @@ export async function GET(request: NextRequest) {
         const unfilledCount = totalLimit - filledCount;
 
         if (unfilledCount <= 0) {
-          results.push({ symbol, success: true, message: `지정가 ${totalLimit}건 모두 체결 - LOC 불필요` });
+          results.push({ user_id, symbol, success: true, message: `지정가 ${totalLimit}건 모두 체결 - LOC 불필요` });
           continue;
         }
 
@@ -238,22 +238,43 @@ export async function GET(request: NextRequest) {
         }
 
         results.push({
+          user_id,
           symbol,
           success: submittedLoc.length > 0,
           message: `LOC 폴백 ${submittedLoc.length}건 제출 (미체결 지정가 ${unfilledCount}건)`,
         });
       } catch (err) {
-        results.push({ symbol, success: false, message: `오류: ${err}` });
+        results.push({ user_id, symbol, success: false, message: `오류: ${err}` });
       }
     }
 
-    // 텔레그램 알림
+    // 텔레그램 알림 (사용자별로 발송)
     if (TELEGRAM_BOT_TOKEN && results.some(r => r.success)) {
-      const { data: subscribers } = await serviceClient.from('telegram_subscribers').select('chat_id');
-      const summary = results.map(r => `${r.success ? '✅' : '⏭️'} ${r.symbol}: ${r.message}`).join('\n');
-      const msg = `🔔 <b>DCA LOC 폴백</b>\n${summary}`;
-      for (const sub of subscribers || []) {
-        await sendTelegramMessage(sub.chat_id, msg);
+      // 사용자별로 결과 그룹화
+      const byUser = new Map<string, typeof results>();
+      for (const r of results) {
+        const list = byUser.get(r.user_id) ?? [];
+        list.push(r);
+        byUser.set(r.user_id, list);
+      }
+
+      for (const [userId, userResults] of byUser) {
+        if (!userResults.some(r => r.success)) continue;
+
+        const { data: subscribers } = await serviceClient
+          .from('telegram_subscribers')
+          .select('chat_id')
+          .eq('is_active', true)
+          .eq('user_id', userId);
+
+        if (!subscribers || subscribers.length === 0) continue;
+
+        const summary = userResults.map(r => `${r.success ? '✅' : '⏭️'} ${r.symbol}: ${r.message}`).join('\n');
+        const msg = `🔔 <b>DCA LOC 폴백</b>\n${summary}`;
+
+        for (const sub of subscribers) {
+          await sendTelegramMessage(sub.chat_id, msg);
+        }
       }
     }
 

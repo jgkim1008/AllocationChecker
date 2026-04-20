@@ -10,6 +10,7 @@ const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 export interface TelegramSubscriber {
   chat_id: number;
   username?: string;
+  user_id?: string;
   subscribed_at: string;
   is_active: boolean;
 }
@@ -74,7 +75,7 @@ export async function getActiveSubscribers(): Promise<TelegramSubscriber[]> {
 /**
  * 구독 추가
  */
-export async function addSubscriber(chatId: number, username?: string): Promise<boolean> {
+export async function addSubscriber(chatId: number, username?: string, userId?: string): Promise<boolean> {
   const supabase = await createServiceClient();
 
   const { error } = await supabase
@@ -83,6 +84,7 @@ export async function addSubscriber(chatId: number, username?: string): Promise<
       {
         chat_id: chatId,
         username: username || null,
+        user_id: userId || null,
         subscribed_at: new Date().toISOString(),
         is_active: true,
       },

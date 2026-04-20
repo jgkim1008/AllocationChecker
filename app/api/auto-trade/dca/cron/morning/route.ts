@@ -66,14 +66,14 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: true, message: '활성화된 DCA 설정 없음', data: { processed: 0 } });
     }
 
-    const results: { symbol: string; success: boolean; message: string }[] = [];
+    const results: { user_id: string; symbol: string; success: boolean; message: string }[] = [];
 
     for (const setting of settings) {
       const { user_id, symbol, broker_type, broker_credential_id, daily_quantity, threshold1_pct, threshold2_pct, order_mode } = setting;
 
       // LOC 전용 모드는 morning cron 스킵 (preclose cron에서 처리)
       if (order_mode === 'loc_only') {
-        results.push({ symbol, success: true, message: 'LOC 전용 모드 — preclose cron에서 처리' });
+        results.push({ user_id, symbol, success: true, message: 'LOC 전용 모드 — preclose cron에서 처리' });
         continue;
       }
 
@@ -83,14 +83,14 @@ export async function GET(request: NextRequest) {
           ? await getBrokerClientByCredentialId(broker_credential_id)
           : await (await import('@/lib/broker/session')).getBrokerClient(user_id, broker_type, { skipBlockCheck: true });
         if (!clientResult.success || !clientResult.client) {
-          results.push({ symbol, success: false, message: `브로커 연결 실패: ${clientResult.error}` });
+          results.push({ user_id, symbol, success: false, message: `브로커 연결 실패: ${clientResult.error}` });
           continue;
         }
 
         // 시세 조회 (전일 종가 필요)
         const quoteResult = await clientResult.client.getQuote(symbol);
         if (!quoteResult.success || !quoteResult.data) {
-          results.push({ symbol, success: false, message: `시세 조회 실패: ${quoteResult.error?.message}` });
+          results.push({ user_id, symbol, success: false, message: `시세 조회 실패: ${quoteResult.error?.message}` });
           continue;
         }
 
@@ -109,7 +109,7 @@ export async function GET(request: NextRequest) {
           .gte('order_time', todayStart.toISOString());
 
         if (todayOrders && todayOrders.length > 0) {
-          results.push({ symbol, success: false, message: '오늘 이미 DCA 주문 존재 (중복 방지)' });
+          results.push({ user_id, symbol, success: false, message: '오늘 이미 DCA 주문 존재 (중복 방지)' });
           continue;
         }
 
@@ -168,27 +168,43 @@ export async function GET(request: NextRequest) {
         }
 
         results.push({
+          user_id,
           symbol,
           success: submittedOrders.length > 0,
           message: `지정가 주문 ${submittedOrders.length}건 제출 (기준가: ${previousClose})`,
         });
       } catch (err) {
-        results.push({ symbol, success: false, message: `오류: ${err}` });
+        results.push({ user_id, symbol, success: false, message: `오류: ${err}` });
       }
     }
 
-    // 텔레그램 알림
+    // 텔레그램 알림 (사용자별로 발송)
     const successCount = results.filter(r => r.success).length;
     if (TELEGRAM_BOT_TOKEN) {
-      const { data: subscribers } = await serviceClient
-        .from('telegram_subscribers')
-        .select('chat_id');
+      // 사용자별로 결과 그룹화
+      const byUser = new Map<string, typeof results>();
+      for (const r of results) {
+        const list = byUser.get(r.user_id) ?? [];
+        list.push(r);
+        byUser.set(r.user_id, list);
+      }
 
-      const summary = results.map(r => `${r.success ? '✅' : '❌'} ${r.symbol}: ${r.message}`).join('\n');
-      const msg = `🌅 <b>DCA 지정가 주문</b>\n${summary}\n\n총 ${successCount}/${results.length}건 제출`;
+      for (const [userId, userResults] of byUser) {
+        const { data: subscribers } = await serviceClient
+          .from('telegram_subscribers')
+          .select('chat_id')
+          .eq('is_active', true)
+          .eq('user_id', userId);
 
-      for (const sub of subscribers || []) {
-        await sendTelegramMessage(sub.chat_id, msg);
+        if (!subscribers || subscribers.length === 0) continue;
+
+        const userSuccessCount = userResults.filter(r => r.success).length;
+        const summary = userResults.map(r => `${r.success ? '✅' : '❌'} ${r.symbol}: ${r.message}`).join('\n');
+        const msg = `🌅 <b>DCA 지정가 주문</b>\n${summary}\n\n총 ${userSuccessCount}/${userResults.length}건 제출`;
+
+        for (const sub of subscribers) {
+          await sendTelegramMessage(sub.chat_id, msg);
+        }
       }
     }
 

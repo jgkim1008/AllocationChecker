@@ -412,7 +412,7 @@ async function handleMessage(chatId: number, text: string, username?: string) {
       return;
     }
 
-    const success = await addSubscriber(chatId, username);
+    const success = await addSubscriber(chatId, username, authData.user.id);
     if (success) {
       await sendMessage(chatId, `🔔 <b>마감 알림 구독 완료!</b>
 

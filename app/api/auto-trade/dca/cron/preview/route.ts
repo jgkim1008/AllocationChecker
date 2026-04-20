@@ -11,11 +11,39 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
-import { getBrokerClientByCredentialId, getBrokerClient } from '@/lib/broker/session';
 import type { MarketType } from '@/lib/broker/types';
+import { getQuotes as getYahooQuotes } from '@/lib/api/yahoo';
+import { getQuotes as getPolygonQuotes } from '@/lib/api/fmp';
 
 const CRON_SECRET = process.env.CRON_SECRET;
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+
+// 브로커 연결 없이 전일 종가 조회
+async function getPrevClose(symbol: string, market: MarketType): Promise<number | null> {
+  try {
+    if (market === 'overseas') {
+      // 미국주식: Polygon API 사용
+      const quotes = await getPolygonQuotes([symbol]);
+      if (quotes.length > 0 && quotes[0]?.previousClose) {
+        return quotes[0].previousClose;
+      }
+      // Polygon 실패 시 Yahoo 시도
+      const yahooQuotes = await getYahooQuotes([symbol]);
+      if (yahooQuotes.length > 0 && yahooQuotes[0]?.price) {
+        return yahooQuotes[0].price;
+      }
+    } else {
+      // 국내주식: Yahoo Finance 사용
+      const quotes = await getYahooQuotes([symbol]);
+      if (quotes.length > 0 && quotes[0]?.price) {
+        return quotes[0].price;
+      }
+    }
+  } catch (err) {
+    console.error(`시세 조회 실패 (${symbol}):`, err);
+  }
+  return null;
+}
 
 async function sendTelegramMessage(chatId: number | string, text: string) {
   if (!TELEGRAM_BOT_TOKEN) return;
@@ -94,24 +122,17 @@ export async function GET(request: NextRequest) {
       const previews: PreviewItem[] = [];
 
       for (const setting of userSettings) {
-        const { symbol, broker_type, broker_credential_id, daily_quantity, threshold1_pct, threshold2_pct, order_mode } = setting;
+        const { symbol, broker_type, daily_quantity, threshold1_pct, threshold2_pct, order_mode } = setting;
 
-        try {
-          const clientResult = broker_credential_id
-            ? await getBrokerClientByCredentialId(broker_credential_id)
-            : await getBrokerClient(userId, broker_type, { skipBlockCheck: true });
+        // 브로커 연결 없이 전일 종가 조회
+        const prevClose = await getPrevClose(symbol, market);
+        const alias = setting.broker_credentials?.account_alias ?? broker_type;
+        const totalQty = Number(daily_quantity);
 
-          if (!clientResult.success || !clientResult.client) continue;
-
-          const quoteResult = await clientResult.client.getQuote(symbol);
-          if (!quoteResult.success || !quoteResult.data) continue;
-
-          const prevClose = quoteResult.data.prevClose || quoteResult.data.currentPrice;
+        if (prevClose) {
           const price1 = calcLimitPrice(prevClose, threshold1_pct, market);
           const price2 = calcLimitPrice(prevClose, threshold2_pct, market);
-          const alias = setting.broker_credentials?.account_alias ?? broker_type;
 
-          const totalQty = Number(daily_quantity);
           previews.push({
             symbol,
             prevClose,
@@ -124,16 +145,31 @@ export async function GET(request: NextRequest) {
             threshold2_pct,
             alias,
           });
-        } catch {}
+        } else {
+          // 시세 조회 실패해도 기본 정보로 추가
+          previews.push({
+            symbol,
+            prevClose: 0,
+            price1: 0,
+            price2: 0,
+            qty1: Math.ceil(totalQty / 2),
+            order_mode: order_mode ?? 'threshold',
+            qty2: Math.floor(totalQty / 2),
+            threshold1_pct,
+            threshold2_pct,
+            alias,
+          });
+        }
       }
 
       if (previews.length === 0) continue;
 
-      // Telegram 구독자 조회
+      // 해당 사용자의 Telegram 구독자 조회
       const { data: subscribers } = await serviceClient
         .from('telegram_subscribers')
         .select('chat_id')
-        .eq('is_active', true);
+        .eq('is_active', true)
+        .eq('user_id', userId);
 
       if (!subscribers || subscribers.length === 0) continue;
 
@@ -141,6 +177,15 @@ export async function GET(request: NextRequest) {
       const openTime = market === 'overseas' ? '22:30~23:00 (KST)' : '09:00 (KST)';
 
       const lines = previews.map(p => {
+        // 시세 조회 실패 시
+        if (p.prevClose === 0) {
+          return (
+            `<b>${p.symbol}</b> <code>[${p.alias}]</code>\n` +
+            `  ⚠️ 시세 조회 실패\n` +
+            `  ${p.qty1 + p.qty2}주 예정`
+          );
+        }
+
         const curr = fmtPrice(p.prevClose, market);
         const p1 = fmtPrice(p.price1, market);
         const p2 = fmtPrice(p.price2, market);
