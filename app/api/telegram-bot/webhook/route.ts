@@ -375,18 +375,21 @@ async function handleMessage(chatId: number, text: string, username?: string) {
     return;
   }
 
-  // 마감 알림 구독 (이메일/비밀번호 인증 필요)
+  // 마감 알림 구독 (아이디/비밀번호 인증 필요)
   if (lower.startsWith('/subscribe') || lower === '구독') {
-    const alreadySubscribed = await isSubscribed(chatId);
-    if (alreadySubscribed) {
-      await sendMessage(chatId, '✅ 이미 마감 알림을 구독 중입니다.\n\n해제하려면 /unsubscribe 를 입력하세요.');
-      return;
-    }
-
     // /subscribe 만 입력한 경우 안내
     const parts = trimmed.split(/\s+/);
     if (parts.length < 3) {
-      await sendMessage(chatId, `🔐 <b>구독하려면 계정 인증이 필요합니다.</b>
+      const alreadySubscribed = await isSubscribed(chatId);
+      if (alreadySubscribed) {
+        await sendMessage(chatId, `✅ 이미 마감 알림을 구독 중입니다.
+
+계정을 연결하려면 아래 형식으로 입력하세요:
+<code>/subscribe 아이디 비밀번호</code>
+
+해제하려면 /unsubscribe`);
+      } else {
+        await sendMessage(chatId, `🔐 <b>구독하려면 계정 인증이 필요합니다.</b>
 
 아래 형식으로 입력해주세요:
 
@@ -394,11 +397,12 @@ async function handleMessage(chatId: number, text: string, username?: string) {
 
 예시:
 <code>/subscribe myusername mypassword</code>`);
+      }
       return;
     }
 
-    const username = parts[1].trim().toLowerCase();
-    const email = `${username}@allocationchecker.local`;
+    const inputUsername = parts[1].trim().toLowerCase();
+    const email = `${inputUsername}@allocationchecker.local`;
     const password = parts.slice(2).join(' ');
 
     // Supabase 계정 인증
@@ -413,9 +417,12 @@ async function handleMessage(chatId: number, text: string, username?: string) {
       return;
     }
 
+    const alreadySubscribed = await isSubscribed(chatId);
     const success = await addSubscriber(chatId, username, authData.user.id);
     if (success) {
-      await sendMessage(chatId, `🔔 <b>마감 알림 구독 완료!</b>
+      const msg = alreadySubscribed
+        ? `✅ <b>계정 연결 완료!</b>\n\n${inputUsername} 계정과 연결되었습니다.\nDCA 알림이 이제 정상적으로 발송됩니다.`
+        : `🔔 <b>마감 알림 구독 완료!</b>
 
 미국장/한국장 마감 시 자동으로 피보나치 현황을 알려드립니다.
 
@@ -423,7 +430,8 @@ async function handleMessage(chatId: number, text: string, username?: string) {
 🇺🇸 미국장: 오전 7시 (서머타임 시 6시)
 🇰🇷 한국장: 오후 4시
 
-해제하려면 /unsubscribe`);
+해제하려면 /unsubscribe`;
+      await sendMessage(chatId, msg);
     } else {
       await sendMessage(chatId, '❌ 구독 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.');
     }
