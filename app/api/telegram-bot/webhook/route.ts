@@ -385,7 +385,7 @@ async function handleMessage(chatId: number, text: string, username?: string) {
         await sendMessage(chatId, `✅ 이미 마감 알림을 구독 중입니다.
 
 계정을 연결하려면 아래 형식으로 입력하세요:
-<code>/subscribe 아이디 비밀번호</code>
+<code>/subscribe 아이디(또는 이메일) 비밀번호</code>
 
 해제하려면 /unsubscribe`);
       } else {
@@ -393,16 +393,19 @@ async function handleMessage(chatId: number, text: string, username?: string) {
 
 아래 형식으로 입력해주세요:
 
-<code>/subscribe 아이디 비밀번호</code>
+<code>/subscribe 아이디(또는 이메일) 비밀번호</code>
 
 예시:
-<code>/subscribe myusername mypassword</code>`);
+<code>/subscribe user@email.com mypassword</code>`);
       }
       return;
     }
 
     const inputUsername = parts[1].trim().toLowerCase();
-    const email = `${inputUsername}@allocationchecker.local`;
+    // 이메일 형식이면 그대로 사용, 아니면 @allocationchecker.local 추가
+    const email = inputUsername.includes('@')
+      ? inputUsername
+      : `${inputUsername}@allocationchecker.local`;
     const password = parts.slice(2).join(' ');
 
     // Supabase 계정 인증
