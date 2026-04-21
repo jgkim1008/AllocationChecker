@@ -92,11 +92,19 @@ interface AutoTradePanelProps {
   defaultBroker?: BrokerType;
 }
 
+interface SavedAccount {
+  id: string;
+  brokerType: BrokerType;
+  accountAlias: string;
+}
+
 export function AutoTradePanel({
   defaultSymbol = 'TQQQ',
   defaultBroker = 'kis',
 }: AutoTradePanelProps) {
   const [brokerType, setBrokerType] = useState<BrokerType>(defaultBroker);
+  const [credentialId, setCredentialId] = useState<string>('');
+  const [savedAccounts, setSavedAccounts] = useState<SavedAccount[]>([]);
   const [symbol, setSymbol] = useState(defaultSymbol);
   const [strategyVersion, setStrategyVersion] = useState<StrategyVersion>('v3.0');
   const [totalCapital, setTotalCapital] = useState(5000);
@@ -124,7 +132,7 @@ export function AutoTradePanel({
   } | null>(null);
   const [autoTradeEnabled, setAutoTradeEnabled] = useState(false);
   const [isSavingAutoTrade, setIsSavingAutoTrade] = useState(false);
-  const [allSettings, setAllSettings] = useState<{ id: string; symbol: string; broker_type: string; strategy_version: string; total_capital: number; is_enabled: boolean }[]>([]);
+  const [allSettings, setAllSettings] = useState<{ id: string; symbol: string; broker_type: string; broker_credential_id?: string; strategy_version: string; total_capital: number; is_enabled: boolean }[]>([]);
   const [togglingSettingId, setTogglingSettingId] = useState<string | null>(null);
   const cardRef = useRef<HTMLDivElement>(null);
   const [todayDuplicates, setTodayDuplicates] = useState<{
@@ -423,6 +431,7 @@ export function AutoTradePanel({
           body: JSON.stringify({
             symbol: symbol.toUpperCase(),
             broker_type: brokerType,
+            broker_credential_id: credentialId || null,
             strategy_version: strategyVersion,
             total_capital: totalCapital,
             is_enabled: true,
@@ -449,6 +458,7 @@ export function AutoTradePanel({
   const handleEditSetting = (s: typeof allSettings[0]) => {
     setSymbol(s.symbol);
     setBrokerType(s.broker_type as BrokerType);
+    setCredentialId(s.broker_credential_id || '');
     setStrategyVersion(s.strategy_version.toLowerCase() as StrategyVersion);
     setTotalCapital(s.total_capital);
     setTimeout(() => cardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
@@ -487,6 +497,27 @@ export function AutoTradePanel({
     loadAutoTradeSettings();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [symbol]);
+
+  useEffect(() => {
+    fetch('/api/broker/credentials')
+      .then(r => r.json())
+      .then(data => {
+        if (data.success && data.data) {
+          const accounts: SavedAccount[] = data.data.map((c: any) => ({
+            id: c.id,
+            brokerType: c.broker_type as BrokerType,
+            accountAlias: c.account_alias || 'default',
+          }));
+          setSavedAccounts(accounts);
+          if (accounts.length > 0 && !credentialId) {
+            setCredentialId(accounts[0].id);
+            setBrokerType(accounts[0].brokerType);
+          }
+        }
+      })
+      .catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const isOverseas = !/^\d{6}$/.test(symbol);
 
@@ -531,19 +562,38 @@ export function AutoTradePanel({
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 text-gray-900">
           <div className="space-y-2">
-            <Label className="text-gray-900">증권사</Label>
-            <Select
-              value={brokerType}
-              onValueChange={(v) => setBrokerType(v as BrokerType)}
-            >
-              <SelectTrigger className="text-gray-900 bg-white border-gray-300">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="kis">한국투자증권</SelectItem>
-                <SelectItem value="kiwoom">키움증권</SelectItem>
-              </SelectContent>
-            </Select>
+            <Label className="text-gray-900">계좌</Label>
+            {savedAccounts.length > 0 ? (
+              <Select
+                value={credentialId}
+                onValueChange={(v) => {
+                  setCredentialId(v);
+                  const acc = savedAccounts.find(a => a.id === v);
+                  if (acc) setBrokerType(acc.brokerType);
+                }}
+              >
+                <SelectTrigger className="text-gray-900 bg-white border-gray-300">
+                  <SelectValue placeholder="계좌 선택" />
+                </SelectTrigger>
+                <SelectContent>
+                  {savedAccounts.map(acc => (
+                    <SelectItem key={acc.id} value={acc.id}>
+                      {acc.brokerType === 'kis' ? '한투' : '키움'} — {acc.accountAlias === 'default' ? '기본계좌' : acc.accountAlias}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <Select value={brokerType} onValueChange={(v) => setBrokerType(v as BrokerType)}>
+                <SelectTrigger className="text-gray-900 bg-white border-gray-300">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="kis">한국투자증권</SelectItem>
+                  <SelectItem value="kiwoom">키움증권</SelectItem>
+                </SelectContent>
+              </Select>
+            )}
           </div>
 
           <div className="space-y-2">
@@ -793,7 +843,13 @@ export function AutoTradePanel({
                     <span className="text-xs text-gray-400">·</span>
                     <span className="text-xs text-gray-400">${s.total_capital.toLocaleString()}</span>
                     <span className="text-xs text-gray-400">·</span>
-                    <span className="text-xs text-gray-400">{s.broker_type === 'kis' ? '한투' : '키움'}</span>
+                    <span className="text-xs text-gray-400">
+                      {(() => {
+                        const acc = savedAccounts.find(a => a.id === s.broker_credential_id);
+                        if (acc) return `${acc.brokerType === 'kis' ? '한투' : '키움'} — ${acc.accountAlias === 'default' ? '기본계좌' : acc.accountAlias}`;
+                        return s.broker_type === 'kis' ? '한투' : '키움';
+                      })()}
+                    </span>
                     {s.is_enabled ? (
                       <Badge className="bg-emerald-500 text-white text-xs border-0">ON</Badge>
                     ) : (

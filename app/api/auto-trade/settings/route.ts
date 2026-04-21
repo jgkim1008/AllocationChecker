@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { symbol, broker_type, strategy_version, total_capital, is_enabled } = body;
+    const { symbol, broker_type, strategy_version, total_capital, is_enabled, broker_credential_id } = body;
 
     if (!symbol || !broker_type || !strategy_version || !total_capital) {
       return NextResponse.json({ success: false, error: '필수 필드가 누락되었습니다.' }, { status: 400 });
@@ -68,6 +68,7 @@ export async function POST(request: NextRequest) {
       user_id: user.id,
       symbol: symbol.toUpperCase(),
       broker_type,
+      broker_credential_id: broker_credential_id || null,
       strategy_version: strategy_version.toUpperCase(),
       total_capital,
       is_enabled: is_enabled ?? true,
