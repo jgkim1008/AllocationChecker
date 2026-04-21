@@ -108,6 +108,7 @@ export async function GET(request: NextRequest) {
       success: boolean;
       message: string;
       orders?: { buy: number; sell: number };
+      errors?: string[];
     }[] = [];
 
     // 각 설정에 대해 주문 실행
@@ -278,6 +279,7 @@ export async function GET(request: NextRequest) {
             buy: orderResults.filter(r => r.side === 'buy' && !r.error).length,
             sell: orderResults.filter(r => r.side === 'sell' && !r.error).length,
           },
+          errors: orderResults.filter(r => r.error).map(r => `${r.side}: ${r.error}`),
         });
 
       } catch (error) {
@@ -318,6 +320,9 @@ export async function GET(request: NextRequest) {
           alertText += `${emoji} <b>${r.symbol}</b>: ${r.message}\n`;
           if (r.orders) {
             alertText += `   매수 ${r.orders.buy}건 / 매도 ${r.orders.sell}건\n`;
+          }
+          if (r.errors && r.errors.length > 0) {
+            alertText += `   ⚠️ ${r.errors.join(', ')}\n`;
           }
         }
 

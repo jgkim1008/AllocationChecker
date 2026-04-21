@@ -44,7 +44,11 @@
     },
     {
       "path": "/api/auto-trade/cron",
-      "schedule": "0 12 * * 1-5"
+      "schedule": "35 13 * * 1-5"
+    },
+    {
+      "path": "/api/auto-trade/cron",
+      "schedule": "35 14 * * 1-5"
     },
     {
       "path": "/api/fibonacci/scan?market=US",
