@@ -93,8 +93,12 @@ export async function GET(request: NextRequest) {
             continue;
           }
 
-          const quoteResult = await clientResult.client.getQuote(symbol);
-          const locPrice = quoteResult.success ? quoteResult.data!.currentPrice : 0;
+          // 국내 LOC(장후시간외)는 가격 0, 해외 LOC는 현재가 필요
+          let locPrice = 0;
+          if (market === 'overseas') {
+            const quoteResult = await clientResult.client.getQuote(symbol);
+            locPrice = quoteResult.success ? quoteResult.data!.currentPrice : 0;
+          }
           const qty = Number(daily_quantity);
 
           const orderResult = await clientResult.client.createOrder({
@@ -189,9 +193,13 @@ export async function GET(request: NextRequest) {
           continue;
         }
 
-        // 현재가 조회 (LOC는 현재가를 price로 전송)
-        const quoteResult = await clientResult.client.getQuote(symbol);
-        const locPrice = quoteResult.success ? quoteResult.data!.currentPrice : 0;
+        // 국내 LOC(장후시간외)는 가격 0으로 전송 (종가 체결)
+        // 해외 LOC는 현재가 필요
+        let locPrice = 0;
+        if (market === 'overseas') {
+          const quoteResult = await clientResult.client.getQuote(symbol);
+          locPrice = quoteResult.success ? quoteResult.data!.currentPrice : 0;
+        }
 
         // 미체결 지정가 주문 목록 (체결 안 된 것만)
         const unfilledLimitOrders = limitOrders.filter((_, idx) => {
@@ -200,6 +208,7 @@ export async function GET(request: NextRequest) {
         });
 
         const submittedLoc: { orderId: string; qty: number }[] = [];
+        const locErrors: string[] = [];
         for (const unfilledOrder of unfilledLimitOrders) {
           const locQty = Number((unfilledOrder as any).order_quantity) || Math.floor(Number(daily_quantity) / 2);
           const orderResult = await clientResult.client.createOrder({
@@ -213,6 +222,10 @@ export async function GET(request: NextRequest) {
 
           if (orderResult.success && orderResult.data?.orderId) {
             submittedLoc.push({ orderId: orderResult.data.orderId, qty: locQty });
+          } else {
+            const errMsg = orderResult.error?.message || JSON.stringify(orderResult.error) || '알 수 없는 오류';
+            locErrors.push(errMsg);
+            console.error(`DCA LOC 주문 실패 (${symbol}):`, orderResult.error);
           }
         }
 
@@ -237,11 +250,12 @@ export async function GET(request: NextRequest) {
           );
         }
 
+        const errorSuffix = locErrors.length > 0 ? ` | 실패: ${locErrors.join(', ')}` : '';
         results.push({
           user_id,
           symbol,
           success: submittedLoc.length > 0,
-          message: `LOC 폴백 ${submittedLoc.length}건 제출 (미체결 지정가 ${unfilledCount}건)`,
+          message: `LOC 폴백 ${submittedLoc.length}건 제출 (미체결 지정가 ${unfilledCount}건)${errorSuffix}`,
         });
       } catch (err) {
         results.push({ user_id, symbol, success: false, message: `오류: ${err}` });
