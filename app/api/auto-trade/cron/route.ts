@@ -291,25 +291,39 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 7. 텔레그램 알림 (구독자에게)
-    const { data: subscribers } = await serviceClient
-      .from('telegram_subscribers')
-      .select('chat_id');
-
-    if (subscribers && subscribers.length > 0 && results.length > 0) {
-      let alertText = `🤖 <b>무한매수법 자동매매 실행</b>\n`;
-      alertText += `━━━━━━━━━━━━━━━\n`;
-
+    // 7. 텔레그램 알림 (사용자별로 발송)
+    if (results.length > 0) {
+      // 사용자별로 그룹화
+      const resultsByUser = new Map<string, typeof results>();
       for (const r of results) {
-        const emoji = r.success ? '✅' : '❌';
-        alertText += `${emoji} <b>${r.symbol}</b>: ${r.message}\n`;
-        if (r.orders) {
-          alertText += `   매수 ${r.orders.buy}건 / 매도 ${r.orders.sell}건\n`;
-        }
+        const list = resultsByUser.get(r.userId) ?? [];
+        list.push(r);
+        resultsByUser.set(r.userId, list);
       }
 
-      for (const sub of subscribers) {
-        await sendTelegramMessage(sub.chat_id, alertText);
+      for (const [userId, userResults] of resultsByUser) {
+        const { data: subscribers } = await serviceClient
+          .from('telegram_subscribers')
+          .select('chat_id')
+          .eq('is_active', true)
+          .eq('user_id', userId);
+
+        if (!subscribers || subscribers.length === 0) continue;
+
+        let alertText = `🤖 <b>무한매수법 자동매매 실행</b>\n`;
+        alertText += `━━━━━━━━━━━━━━━\n`;
+
+        for (const r of userResults) {
+          const emoji = r.success ? '✅' : '❌';
+          alertText += `${emoji} <b>${r.symbol}</b>: ${r.message}\n`;
+          if (r.orders) {
+            alertText += `   매수 ${r.orders.buy}건 / 매도 ${r.orders.sell}건\n`;
+          }
+        }
+
+        for (const sub of subscribers) {
+          await sendTelegramMessage(sub.chat_id, alertText);
+        }
       }
     }
 

@@ -176,15 +176,13 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // 무한매수법 매수 예정
+    // 무한매수법 매수/매도 예정
     const buySchedule: {
+      user_id: string;
       symbol: string;
       market: MarketType;
       currentT: number;
-      buyPrice: number;
-      buyQuantity: number;
-      buyAmount: number;
-      reason: string;
+      orders: { side: string; price: number; quantity: number; reason: string; orderType: string }[];
     }[] = [];
 
     // 각 설정에 대해 매수 예정 계산
@@ -233,19 +231,21 @@ export async function GET(request: NextRequest) {
 
         const liveOrders = buildLiveOrders(config, currentPrice);
 
-        // 실행 가능한 매수 주문만 필터
+        // 실행 가능한 매수/매도 주문 필터
         const executableBuys = liveOrders.buyOrders.filter(o => !o.isReference && o.quantity > 0);
+        const executableSells = liveOrders.sellOrders.filter(o => !o.isReference && o.quantity > 0);
 
-        if (executableBuys.length > 0) {
-          const buyOrder = executableBuys[0]; // 첫 번째 매수 주문 (보통 1개만 있음)
+        if (executableBuys.length > 0 || executableSells.length > 0) {
+          const allOrders = [
+            ...executableBuys.map(o => ({ side: 'buy', price: o.price, quantity: o.quantity, reason: o.reason || '', orderType: o.orderType })),
+            ...executableSells.map(o => ({ side: 'sell', price: o.price, quantity: o.quantity, reason: o.reason || '', orderType: o.orderType })),
+          ];
           buySchedule.push({
+            user_id,
             symbol,
             market,
             currentT,
-            buyPrice: buyOrder.price,
-            buyQuantity: buyOrder.quantity,
-            buyAmount: buyOrder.price * buyOrder.quantity,
-            reason: buyOrder.reason || '',
+            orders: allOrders,
           });
         }
       } catch (error) {
@@ -300,21 +300,12 @@ export async function GET(request: NextRequest) {
     // 사용자별로 그룹화
     const userSchedules = new Map<string, { buySchedule: typeof buySchedule; dcaSchedule: typeof dcaSchedule }>();
 
-    // 무한매수법은 user_id가 settings에 있음
-    for (const setting of settings || []) {
-      const userId = setting.user_id;
-      if (!userSchedules.has(userId)) {
-        userSchedules.set(userId, { buySchedule: [], dcaSchedule: [] });
-      }
-    }
+    // 무한매수법
     for (const item of buySchedule) {
-      // buySchedule에는 user_id가 없으므로 settings에서 매칭
-      const matchSetting = (settings || []).find(s => s.symbol === item.symbol);
-      if (matchSetting) {
-        const userId = matchSetting.user_id;
-        const schedules = userSchedules.get(userId);
-        if (schedules) schedules.buySchedule.push(item);
+      if (!userSchedules.has(item.user_id)) {
+        userSchedules.set(item.user_id, { buySchedule: [], dcaSchedule: [] });
       }
+      userSchedules.get(item.user_id)!.buySchedule.push(item);
     }
 
     // DCA
@@ -363,20 +354,29 @@ export async function GET(request: NextRequest) {
         alertText += `📊 <b>무한매수법</b>\n`;
         for (const item of userBuySchedule) {
           const marketEmoji = item.market === 'domestic' ? '🇰🇷' : '🇺🇸';
-          const formattedPrice = item.market === 'domestic'
-            ? `₩${item.buyPrice.toLocaleString()}`
-            : `$${item.buyPrice.toFixed(2)}`;
-          const formattedAmount = item.market === 'domestic'
-            ? `₩${Math.round(item.buyAmount).toLocaleString()}`
-            : `$${item.buyAmount.toFixed(2)}`;
+          const formatPrice = (p: number) => item.market === 'domestic'
+            ? `₩${p.toLocaleString()}`
+            : `$${p.toFixed(2)}`;
 
-          alertText += `${marketEmoji} <b>${item.symbol}</b>\n`;
-          alertText += `   • 현재 T: ${item.currentT.toFixed(1)}\n`;
-          alertText += `   • 매수가: ${formattedPrice}\n`;
-          alertText += `   • 수량: ${item.buyQuantity}주\n`;
-          alertText += `   • 금액: ${formattedAmount}\n`;
-          if (item.reason) {
-            alertText += `   • 사유: ${item.reason}\n`;
+          alertText += `${marketEmoji} <b>${item.symbol}</b> (T=${item.currentT.toFixed(1)})\n`;
+
+          const buyOrders = item.orders.filter(o => o.side === 'buy');
+          const sellOrders = item.orders.filter(o => o.side === 'sell');
+
+          if (buyOrders.length > 0) {
+            alertText += `   <b>매수</b>\n`;
+            for (const o of buyOrders) {
+              const typeLabel = o.orderType === 'loc' ? 'LOC' : '지정가';
+              alertText += `   • ${o.reason}: ${formatPrice(o.price)} × ${o.quantity}주 [${typeLabel}]\n`;
+            }
+          }
+
+          if (sellOrders.length > 0) {
+            alertText += `   <b>매도</b>\n`;
+            for (const o of sellOrders) {
+              const typeLabel = o.orderType === 'loc' ? 'LOC' : '지정가';
+              alertText += `   • ${o.reason}: ${formatPrice(o.price)} × ${o.quantity}주 [${typeLabel}]\n`;
+            }
           }
           alertText += `\n`;
         }
@@ -486,17 +486,17 @@ export async function GET(request: NextRequest) {
         alertText += `\n`;
       }
 
-      // 오늘 예상 금액
+      // 오늘 예상 금액 (매수만)
       const totalDomestic = userBuySchedule
         .filter(i => i.market === 'domestic')
-        .reduce((sum, i) => sum + i.buyAmount, 0);
+        .reduce((sum, i) => sum + i.orders.filter(o => o.side === 'buy').reduce((s, o) => s + o.price * o.quantity, 0), 0);
       const totalOverseas = userBuySchedule
         .filter(i => i.market === 'overseas')
-        .reduce((sum, i) => sum + i.buyAmount, 0);
+        .reduce((sum, i) => sum + i.orders.filter(o => o.side === 'buy').reduce((s, o) => s + o.price * o.quantity, 0), 0);
 
       if (totalDomestic > 0 || totalOverseas > 0) {
         alertText += `━━━━━━━━━━━━━━━\n`;
-        alertText += `<b>오늘 무한매수법 예상 금액</b>\n`;
+        alertText += `<b>오늘 무한매수법 예상 매수금액</b>\n`;
         if (totalDomestic > 0) {
           alertText += `🇰🇷 국내: ₩${Math.round(totalDomestic).toLocaleString()}\n`;
         }
