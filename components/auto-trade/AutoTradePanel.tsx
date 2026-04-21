@@ -505,8 +505,8 @@ export function AutoTradePanel({
         if (data.success && data.data) {
           const accounts: SavedAccount[] = data.data.map((c: any) => ({
             id: c.id,
-            brokerType: c.broker_type as BrokerType,
-            accountAlias: c.account_alias || 'default',
+            brokerType: (c.brokerType ?? c.broker_type) as BrokerType,
+            accountAlias: c.accountAlias ?? c.account_alias ?? 'default',
           }));
           setSavedAccounts(accounts);
           if (accounts.length > 0 && !credentialId) {
