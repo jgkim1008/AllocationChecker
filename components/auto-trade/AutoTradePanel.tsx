@@ -229,6 +229,7 @@ export function AutoTradePanel({
       const divisions = strategyVersion === 'v3.0' ? '20' : '40';
       const params = new URLSearchParams({
         brokerType,
+        ...(credentialId ? { credentialId } : {}),
         symbol: symbol.toUpperCase(),
         strategy: strategyVersion,
         capital: totalCapital.toString(),
@@ -331,7 +332,7 @@ export function AutoTradePanel({
       const response = await fetch('/api/auto-trade/infinite-buy', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ brokerType, orders: ordersToExecute, market, capital: totalCapital, strategyVersion }),
+        body: JSON.stringify({ brokerType, credentialId: credentialId || null, orders: ordersToExecute, market, capital: totalCapital, strategyVersion }),
       });
       const data = await response.json();
 

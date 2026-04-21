@@ -7,7 +7,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
-import { getBrokerClient } from '@/lib/broker/session';
+import { getBrokerClient, getBrokerClientByCredentialId } from '@/lib/broker/session';
 import { buildLiveOrders, type LiveStrategyConfig, type BrokerOrderRequest } from '@/lib/infinite-buy/broker/order-builder';
 import type { StrategyVersion, MarketType } from '@/lib/infinite-buy/core/types';
 import type { BrokerType } from '@/lib/broker/types';
@@ -43,7 +43,10 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: access.error }, { status: 403 });
     }
 
-    const clientResult = await getBrokerClient(user.id, brokerType);
+    const credentialId = searchParams.get('credentialId');
+    const clientResult = credentialId
+      ? await getBrokerClientByCredentialId(credentialId)
+      : await getBrokerClient(user.id, brokerType);
     if (!clientResult.success || !clientResult.client) {
       return NextResponse.json({ success: false, error: clientResult.error || '브로커에 연결되지 않았습니다.' }, { status: 400 });
     }
@@ -122,8 +125,9 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { brokerType, orders, market, capital, strategyVersion } = body as {
+    const { brokerType, credentialId, orders, market, capital, strategyVersion } = body as {
       brokerType: BrokerType;
+      credentialId?: string;
       orders: (BrokerOrderRequest & { id: string; status: string })[];
       market: MarketType;
       capital?: number;
@@ -139,7 +143,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: accessPost.error }, { status: 403 });
     }
 
-    const clientResult = await getBrokerClient(user.id, brokerType);
+    const clientResult = credentialId
+      ? await getBrokerClientByCredentialId(credentialId)
+      : await getBrokerClient(user.id, brokerType);
     if (!clientResult.success || !clientResult.client) {
       return NextResponse.json({ success: false, error: clientResult.error || '브로커에 연결되지 않았습니다.' }, { status: 400 });
     }
