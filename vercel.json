@@ -19,18 +19,6 @@
       "schedule": "50 23 * * 0-4"
     },
     {
-      "path": "/api/auto-trade/dca/cron/preview?market=overseas",
-      "schedule": "0 13 * * 1-5"
-    },
-    {
-      "path": "/api/auto-trade/dca/cron/preview?market=overseas",
-      "schedule": "0 14 * * 1-5"
-    },
-    {
-      "path": "/api/auto-trade/dca/cron/preview?market=domestic",
-      "schedule": "30 23 * * 0-4"
-    },
-    {
       "path": "/api/auto-trade/dca/cron/morning?market=overseas",
       "schedule": "30 13 * * 1-5"
     },
