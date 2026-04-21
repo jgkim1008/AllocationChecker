@@ -16,7 +16,6 @@ import { checkBrokerAccess } from '@/lib/broker/auth-guard';
 // GET: 오늘의 주문 계산
 export async function GET(request: NextRequest) {
   try {
-    if (process.env.NODE_ENV === 'production') return NextResponse.json({ error: '서비스 준비 중입니다.' }, { status: 503 });
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
 
@@ -116,7 +115,6 @@ export async function GET(request: NextRequest) {
 // POST: 주문 실행
 export async function POST(request: NextRequest) {
   try {
-    if (process.env.NODE_ENV === 'production') return NextResponse.json({ error: '서비스 준비 중입니다.' }, { status: 503 });
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
 
