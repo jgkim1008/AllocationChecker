@@ -1,13 +1,14 @@
 'use client';
 
-import { useState, useMemo } from 'react';
-import { Plus, Settings2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { useState, useMemo, useCallback } from 'react';
+import { Plus, Settings2, ChevronLeft, ChevronRight, RefreshCw, Link2 } from 'lucide-react';
 import { usePortfolio } from '@/hooks/usePortfolio';
 import { useAccounts } from '@/hooks/useAccounts';
 import { AnalyticsSummary } from '@/components/portfolio/AnalyticsSummary';
 import { PortfolioTable } from '@/components/portfolio/PortfolioTable';
 import { AddHoldingDialog } from '@/components/portfolio/AddHoldingDialog';
 import { AccountManageDialog } from '@/components/portfolio/AccountManageDialog';
+import { AccountMappingDialog } from '@/components/portfolio/AccountMappingDialog';
 import { DividendProjectionChart } from '@/components/portfolio/DividendProjectionChart';
 import { DividendGoalCard } from '@/components/portfolio/DividendGoalCard';
 import { DividendCalendarView } from '@/components/portfolio/DividendCalendarView';
@@ -94,16 +95,19 @@ function consolidateHoldings(
 }
 
 export default function PortfolioPage() {
-  const { holdings, loading, addHolding, updateHolding, deleteHolding } = usePortfolio();
+  const { holdings, loading, addHolding, updateHolding, deleteHolding, fetchHoldings } = usePortfolio();
   const { accounts, addAccount, updateAccount, deleteAccount } = useAccounts();
 
   const [pageTab, setPageTab] = useState<PageTab>('asset');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [accountDialogOpen, setAccountDialogOpen] = useState(false);
+  const [mappingDialogOpen, setMappingDialogOpen] = useState(false);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [editingHolding, setEditingHolding] = useState<PortfolioHoldingWithStock | null>(null);
   const [selectedAccountId, setSelectedAccountId] = useState<string>('all');
   const [accountPage, setAccountPage] = useState(0);
+  const [syncing, setSyncing] = useState(false);
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const ACCOUNTS_PER_PAGE = 4;
 
   const filteredHoldings = useMemo(() => {
@@ -139,6 +143,35 @@ export default function PortfolioPage() {
     setDialogOpen(true);
   };
 
+  // 브로커 동기화
+  const handleSync = useCallback(async () => {
+    setSyncing(true);
+    setSyncMessage(null);
+    try {
+      const res = await fetch('/api/portfolio/sync', { method: 'POST' });
+      const data = await res.json();
+
+      if (!res.ok) {
+        if (data.requiresTotpVerify) {
+          setSyncMessage('2FA 인증이 필요합니다. 설정 페이지에서 인증하세요.');
+        } else {
+          setSyncMessage(data.error || '동기화에 실패했습니다.');
+        }
+        return;
+      }
+
+      setSyncMessage(data.message || '동기화가 완료되었습니다.');
+      // 포트폴리오 데이터 새로고침
+      fetchHoldings();
+    } catch (err) {
+      setSyncMessage('동기화 중 오류가 발생했습니다.');
+    } finally {
+      setSyncing(false);
+      // 3초 후 메시지 사라짐
+      setTimeout(() => setSyncMessage(null), 3000);
+    }
+  }, [fetchHoldings]);
+
   // 기존 타입을 과세/비과세로 매핑
   const mapToTaxType = (type: string): string => {
     if (type === '과세' || type === '비과세') return type;
@@ -171,14 +204,46 @@ export default function PortfolioPage() {
             <p className="text-xs font-medium text-gray-500 mb-1">내 포트폴리오</p>
             <h1 className="text-2xl font-bold text-gray-900 tracking-tight">배당 분석</h1>
           </div>
-          <button
-            onClick={() => { setEditingHolding(null); setDialogOpen(true); }}
-            className="flex items-center gap-1.5 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold px-4 py-2 rounded-xl transition-colors"
-          >
-            <Plus className="h-4 w-4" />
-            종목 추가
-          </button>
+          <div className="flex items-center gap-2">
+            {/* 증권사 연결 버튼 */}
+            <button
+              onClick={() => setMappingDialogOpen(true)}
+              className="flex items-center gap-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-semibold px-3 py-2 rounded-xl transition-colors"
+              title="증권사 계좌 연결"
+            >
+              <Link2 className="h-4 w-4" />
+            </button>
+            {/* 동기화 버튼 */}
+            <button
+              onClick={handleSync}
+              disabled={syncing}
+              className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white text-sm font-semibold px-3 py-2 rounded-xl transition-colors"
+              title="증권사 동기화"
+            >
+              <RefreshCw className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
+              {syncing ? '동기화 중...' : '동기화'}
+            </button>
+            {/* 종목 추가 버튼 */}
+            <button
+              onClick={() => { setEditingHolding(null); setDialogOpen(true); }}
+              className="flex items-center gap-1.5 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold px-4 py-2 rounded-xl transition-colors"
+            >
+              <Plus className="h-4 w-4" />
+              종목 추가
+            </button>
+          </div>
         </div>
+
+        {/* 동기화 메시지 */}
+        {syncMessage && (
+          <div className={`mb-4 px-4 py-2.5 rounded-lg text-sm ${
+            syncMessage.includes('실패') || syncMessage.includes('오류') || syncMessage.includes('필요')
+              ? 'bg-red-50 text-red-700 border border-red-200'
+              : 'bg-green-50 text-green-700 border border-green-200'
+          }`}>
+            {syncMessage}
+          </div>
+        )}
 
         {/* 자산 / 배당 탭 */}
         <div className="flex items-center border-b border-gray-200 mb-5">
@@ -343,6 +408,12 @@ export default function PortfolioPage() {
         onAdd={addAccount}
         onUpdate={updateAccount}
         onDelete={deleteAccount}
+      />
+
+      <AccountMappingDialog
+        open={mappingDialogOpen}
+        onClose={() => setMappingDialogOpen(false)}
+        accounts={accounts}
       />
 
       {calendarOpen && (
