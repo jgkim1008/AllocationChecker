@@ -3,7 +3,6 @@ import {
   findNearestFibonacciLevel,
 } from '@/lib/utils/fibonacci-calculator';
 import { createServiceClient } from '@/lib/supabase/server';
-import { sendKakaoListTemplate } from './kakao';
 import { broadcastToSubscribers } from './telegram';
 
 const ALERT_SYMBOLS = ['^GSPC', '^IXIC', '^KS11', '^KQ11', 'SOXL'];
@@ -36,26 +35,6 @@ function fmtPrice(price: number, market: string): string {
   if (market === 'KR') return price.toLocaleString('ko-KR');
   if (price >= 1000)   return '$' + Math.round(price).toLocaleString('en-US');
   return '$' + price.toFixed(2);
-}
-
-function buildListItems(statuses: SymbolStatus[], order: string[]): { title: string; description: string }[] {
-  const map = new Map(statuses.map(s => [s.symbol, s]));
-
-  return order
-    .map(sym => map.get(sym))
-    .filter((s): s is SymbolStatus => !!s)
-    .map(s => {
-      const pos   = (s.fibonacciValue * 100).toFixed(1);
-      const lvl   = (s.nearestLevel   * 100).toFixed(1);
-      const dist  = s.distanceFromLevel.toFixed(1);
-      const emoji = alertEmoji(s.distanceFromLevel);
-      const price = fmtPrice(s.currentPrice, s.market);
-      const name  = DISPLAY_NAME[s.symbol] ?? s.symbol;
-      return {
-        title:       `${emoji} ${name}`,
-        description: `현재 ${pos}% → Fib ${lvl}%  (거리 ${dist}%)  ${price}`,
-      };
-    });
 }
 
 async function fetchTargetStatuses(): Promise<SymbolStatus[]> {
@@ -204,46 +183,16 @@ function buildTelegramMessage(
 
 /**
  * 마감 알림 발송 (US 또는 KR 마감)
- * 카테고리별로 3개 메시지로 나눠서 전송 (1000자 제한 대응)
+ * Telegram으로만 발송
  */
 export async function sendMarketCloseAlert(market: 'US' | 'KR'): Promise<void> {
   const marketLabel = market === 'US' ? '미국장 마감' : '한국장 마감';
-  const today = new Date().toLocaleDateString('ko-KR', {
-    month: '2-digit', day: '2-digit', timeZone: 'Asia/Seoul',
-  }).replace('. ', '/').replace('.', '');
 
   const statuses = await fetchTargetStatuses();
   if (statuses.length === 0) {
     console.log(`[FibonacciAlert] ${marketLabel} - 데이터 없음`);
     return;
   }
-
-  // 마감 시장에 따라 전송 순서 결정
-  const categoryOrder = market === 'US'
-    ? ['US', 'SOXL', 'KR'] as const
-    : ['KR', 'SOXL', 'US'] as const;
-
-  // 카테고리별로 메시지 전송
-  for (const category of categoryOrder) {
-    const symbols = CATEGORY_GROUPS[category];
-    const items = buildListItems(statuses, symbols);
-
-    if (items.length === 0) continue;
-
-    const nearCount = statuses
-      .filter(s => symbols.includes(s.symbol) && s.distanceFromLevel < 5)
-      .length;
-    const alertSuffix = nearCount > 0 ? ` ⚠️${nearCount}개 근접` : '';
-
-    const headerTitle = `📊 ${CATEGORY_LABELS[category]} [${today}]${alertSuffix}`;
-
-    await sendKakaoListTemplate(headerTitle, items);
-
-    // API rate limit 방지를 위한 짧은 딜레이
-    await new Promise(resolve => setTimeout(resolve, 500));
-  }
-
-  console.log(`[FibonacciAlert] ${marketLabel} 카카오 알림 발송 완료 (3개 메시지)`);
 
   // Telegram 구독자에게 알림 전송
   try {
