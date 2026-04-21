@@ -16,7 +16,7 @@
   "crons": [
     {
       "path": "/api/auto-trade/morning-alert",
-      "schedule": "50 23 * * 0-4"
+      "schedule": "30 23 * * 0-4"
     },
     {
       "path": "/api/auto-trade/dca/cron/morning?market=overseas",
