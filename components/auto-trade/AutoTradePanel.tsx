@@ -130,6 +130,7 @@ export function AutoTradePanel({
     message: string;
     details?: { orderId: string; side: string; error?: string; duplicate?: boolean }[];
   } | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [autoTradeEnabled, setAutoTradeEnabled] = useState(false);
   const [isSavingAutoTrade, setIsSavingAutoTrade] = useState(false);
   const [allSettings, setAllSettings] = useState<{ id: string; symbol: string; broker_type: string; broker_credential_id?: string; strategy_version: string; total_capital: number; is_enabled: boolean }[]>([]);
@@ -353,9 +354,11 @@ export function AutoTradePanel({
       if (failCount > 0) {
         setExecutionResult({ success: false, message: data.message, details });
       } else {
-        setExecutionResult({ success: true, message: data.message });
         setDailyOrders(null);
         setConfirmedOrders(new Set());
+        setExecutionResult(null);
+        setSuccessMessage(data.message);
+        setTimeout(() => setSuccessMessage(null), 5000);
       }
     } catch {
       setError('서버 오류가 발생했습니다.');
@@ -1005,6 +1008,18 @@ export function AutoTradePanel({
             )}
           </CardContent>
         </Card>
+      )}
+
+      {/* 주문 완료 알림 */}
+      {successMessage && (
+        <div className="flex items-center gap-3 rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+          <CheckCircle className="h-5 w-5 shrink-0 text-emerald-500" />
+          <div className="flex-1">
+            <p className="font-medium">✅ 주문 완료</p>
+            <p className="text-xs text-emerald-600">{successMessage}</p>
+          </div>
+          <button onClick={() => setSuccessMessage(null)} className="text-emerald-400 hover:text-emerald-600">✕</button>
+        </div>
       )}
 
       {/* 주문 목록 */}
