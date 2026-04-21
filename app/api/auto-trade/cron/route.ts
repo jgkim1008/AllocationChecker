@@ -224,14 +224,28 @@ export async function GET(request: NextRequest) {
         let failCount = 0;
         const orderResults: { orderId?: string; side: string; error?: string }[] = [];
 
+        // 잔고 및 포지션 사전 조회
+        const balanceResult = await clientResult.client.getBalance();
+        const positionsResult = await clientResult.client.getPositions();
+        const availableCash = balanceResult.success ? (balanceResult.data?.availableCash ?? 0) : 0;
+
         for (const order of ordersToExecute) {
-          // 매도 주문 시 잔고 확인
+          let actualQty = order.quantity;
+
           if (order.side === 'sell') {
-            const positionsResult = await clientResult.client.getPositions();
             const pos = positionsResult.data?.find(p => p.symbol.toUpperCase() === order.symbol.toUpperCase());
             if (!pos || pos.quantity <= 0) {
-              orderResults.push({ side: order.side, error: '보유 잔고 없음' });
-              failCount++;
+              orderResults.push({ side: order.side, error: '보유 잔고 없음 - 매도 스킵' });
+              continue;
+            }
+            // 보유 수량보다 많으면 보유 수량으로 조정
+            actualQty = Math.min(order.quantity, pos.quantity);
+          }
+
+          if (order.side === 'buy') {
+            const orderAmount = order.price * actualQty;
+            if (availableCash > 0 && orderAmount > availableCash) {
+              orderResults.push({ side: order.side, error: `잔고 부족 (필요: ${orderAmount.toFixed(0)}, 가능: ${availableCash.toFixed(0)}) - 매수 스킵` });
               continue;
             }
           }
@@ -240,7 +254,7 @@ export async function GET(request: NextRequest) {
             symbol: order.symbol,
             side: order.side,
             orderType: order.orderType,
-            quantity: order.quantity,
+            quantity: actualQty,
             price: order.price,
             market: order.market,
           });
@@ -258,7 +272,7 @@ export async function GET(request: NextRequest) {
               market,
               side: order.side,
               order_type: order.orderType,
-              order_quantity: order.quantity,
+              order_quantity: actualQty,
               order_price: order.price,
               status: 'submitted',
               strategy_version: version.toUpperCase(),

@@ -165,18 +165,34 @@ export async function POST(request: NextRequest) {
 
     const results: { order: typeof orders[0]; success: boolean; result?: any; error?: string; duplicate?: boolean }[] = [];
 
+    // 잔고 및 포지션 사전 조회
+    const balanceResult = await clientResult.client.getBalance();
+    const positionsResult = await clientResult.client.getPositions();
+    const availableCash = balanceResult.success ? (balanceResult.data?.availableCash ?? 0) : 0;
+
     for (const order of orders) {
       if (order.status !== 'confirmed') {
         results.push({ order, success: false, error: '확인되지 않은 주문입니다.' });
         continue;
       }
 
-      // 매도 주문 시 보유 수량 확인 (잔고 없으면 스킵)
+      let actualQty = order.quantity;
+
+      // 매도: 보유 수량으로 조정
       if (order.side === 'sell') {
-        const positionsResult = await clientResult.client.getPositions();
         const pos = positionsResult.data?.find(p => p.symbol.toUpperCase() === order.symbol.toUpperCase());
         if (!pos || pos.quantity <= 0) {
           results.push({ order: { ...order, status: 'skipped' }, success: false, error: '보유 잔고 없음 - 매도 스킵' });
+          continue;
+        }
+        actualQty = Math.min(order.quantity, pos.quantity);
+      }
+
+      // 매수: 잔고 부족 시 스킵
+      if (order.side === 'buy' && availableCash > 0) {
+        const orderAmount = order.price * actualQty;
+        if (orderAmount > availableCash) {
+          results.push({ order: { ...order, status: 'skipped' }, success: false, error: `잔고 부족 (필요: ${orderAmount.toFixed(0)}, 가능: ${availableCash.toFixed(0)})` });
           continue;
         }
       }
@@ -197,7 +213,7 @@ export async function POST(request: NextRequest) {
         symbol: order.symbol,
         side: order.side,
         orderType: order.orderType,
-        quantity: order.quantity,
+        quantity: actualQty,
         price: order.price,
         market: order.market,
       });
