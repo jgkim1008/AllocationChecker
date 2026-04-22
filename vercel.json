@@ -40,7 +40,7 @@
     },
     {
       "path": "/api/auto-trade/dca/cron/preclose?market=domestic",
-      "schedule": "35 6 * * 1-5"
+      "schedule": "31 6 * * 1-5"
     },
     {
       "path": "/api/auto-trade/cron",
