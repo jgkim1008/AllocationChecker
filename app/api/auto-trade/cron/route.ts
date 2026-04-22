@@ -227,7 +227,7 @@ export async function GET(request: NextRequest) {
         // 잔고 및 포지션 사전 조회
         const balanceResult = await clientResult.client.getBalance();
         const positionsResult = await clientResult.client.getPositions();
-        const availableCash = balanceResult.success ? (balanceResult.data?.availableCash ?? 0) : 0;
+        const availableCash = balanceResult.success ? (balanceResult.data?.totalDeposit ?? 0) : 0;
 
         for (const order of ordersToExecute) {
           let actualQty = order.quantity;
