@@ -113,11 +113,6 @@ export async function GET(request: NextRequest) {
   try {
     // Cron 인증
     const authHeader = request.headers.get('authorization');
-    console.log('[morning-alert] auth check:', {
-      hasSecret: !!CRON_SECRET,
-      authHeader: authHeader?.substring(0, 20) + '...',
-      match: authHeader === `Bearer ${CRON_SECRET}`,
-    });
     if (process.env.NODE_ENV === 'production' && CRON_SECRET) {
       if (authHeader !== `Bearer ${CRON_SECRET}`) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
