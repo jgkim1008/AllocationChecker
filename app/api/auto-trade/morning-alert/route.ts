@@ -8,7 +8,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
-import { getBrokerClient } from '@/lib/broker/session';
+import { getBrokerClient, getBrokerClientByCredentialId } from '@/lib/broker/session';
 import { buildLiveOrders, type LiveStrategyConfig } from '@/lib/infinite-buy/broker/order-builder';
 import type { StrategyVersion, MarketType } from '@/lib/infinite-buy/core/types';
 import { getQuotes as getYahooQuotes } from '@/lib/api/yahoo';
@@ -187,11 +187,13 @@ export async function GET(request: NextRequest) {
 
     // 각 설정에 대해 매수 예정 계산
     for (const setting of settings) {
-      const { user_id, symbol, broker_type, strategy_version, total_capital } = setting;
+      const { user_id, symbol, broker_type, broker_credential_id, strategy_version, total_capital } = setting;
 
       try {
-        // 1. 브로커 연결 확인
-        const clientResult = await getBrokerClient(user_id, broker_type, { skipBlockCheck: true });
+        // 1. 브로커 연결 확인 (credential_id 우선, fallback: broker_type)
+        const clientResult = broker_credential_id
+          ? await getBrokerClientByCredentialId(broker_credential_id)
+          : await getBrokerClient(user_id, broker_type, { skipBlockCheck: true });
         if (!clientResult.success || !clientResult.client) {
           continue;
         }
