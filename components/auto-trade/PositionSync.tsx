@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { RefreshCw, CheckCircle, AlertTriangle, AlertCircle, ChevronDown, ChevronUp, Plus, ArrowDownToLine } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -10,6 +10,17 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 type BrokerType = 'kis' | 'kiwoom';
+
+interface BrokerCredential {
+  id: string;
+  brokerType: string;
+  accountAlias: string;
+}
+
+const BROKER_LABELS: Record<string, string> = {
+  kis: '한국투자증권',
+  kiwoom: '키움증권',
+};
 
 interface SyncResult {
   symbol: string;
@@ -45,12 +56,38 @@ interface PositionSyncProps {
   credentialId?: string;
 }
 
-export function PositionSync({ credentialId }: PositionSyncProps = {}) {
-  const [brokerType, setBrokerType] = useState<BrokerType>('kis');
+export function PositionSync({ credentialId: propCredentialId }: PositionSyncProps = {}) {
+  const [credentials, setCredentials] = useState<BrokerCredential[]>([]);
+  const [selectedCredentialId, setSelectedCredentialId] = useState<string>(propCredentialId || '');
   const [symbol, setSymbol] = useState('TQQQ');
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<SyncResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // 브로커 자격증명 목록 조회
+  useEffect(() => {
+    async function fetchCredentials() {
+      try {
+        const res = await fetch('/api/broker/credentials');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && Array.isArray(data.data)) {
+            setCredentials(data.data);
+            // 첫 번째 계좌 자동 선택 (prop으로 전달된 게 없으면)
+            if (!propCredentialId && data.data.length > 0) {
+              setSelectedCredentialId(data.data[0].id);
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch credentials:', err);
+      }
+    }
+    fetchCredentials();
+  }, [propCredentialId]);
+
+  // 선택된 credential 정보
+  const selectedCredential = credentials.find(c => c.id === selectedCredentialId);
 
   // 수동 조정 폼
   const [showAdjust, setShowAdjust] = useState(false);
@@ -67,17 +104,14 @@ export function PositionSync({ credentialId }: PositionSyncProps = {}) {
   const [syncing, setSyncing] = useState(false);
 
   const checkSync = async () => {
-    if (!symbol) return;
+    if (!symbol || !selectedCredentialId) return;
     setIsLoading(true);
     setError(null);
     setResult(null);
     setAdjustResult(null);
     try {
-      const brokerParam = credentialId
-        ? `credentialId=${credentialId}`
-        : `brokerType=${brokerType}`;
       const res = await fetch(
-        `/api/auto-trade/sync-check?${brokerParam}&symbol=${encodeURIComponent(symbol.toUpperCase())}`
+        `/api/auto-trade/sync-check?credentialId=${selectedCredentialId}&symbol=${encodeURIComponent(symbol.toUpperCase())}`
       );
       const data = await res.json();
       if (data.success) {
@@ -94,7 +128,7 @@ export function PositionSync({ credentialId }: PositionSyncProps = {}) {
 
   // 증권사 실제 잔고로 DB 동기화
   const syncToBroker = async () => {
-    if (!result?.broker.found) return;
+    if (!result?.broker.found || !selectedCredentialId) return;
     if (!confirm(`${symbol} 포지션을 증권사 실제 잔고(${result.broker.shares}주, 평단 ${fmt(result.broker.avgCost)})로 동기화하시겠습니까?\n\n⚠️ 기존 매수/매도 기록이 모두 삭제됩니다.`)) return;
 
     setSyncing(true);
@@ -103,7 +137,11 @@ export function PositionSync({ credentialId }: PositionSyncProps = {}) {
       const res = await fetch('/api/auto-trade/sync-check', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ symbol: symbol.toUpperCase(), brokerType, ...(credentialId ? { credentialId } : {}) }),
+        body: JSON.stringify({
+          symbol: symbol.toUpperCase(),
+          credentialId: selectedCredentialId,
+          brokerType: selectedCredential?.brokerType || 'kis',
+        }),
       });
       const data = await res.json();
       if (data.success) {
@@ -178,14 +216,22 @@ export function PositionSync({ credentialId }: PositionSyncProps = {}) {
         <CardContent className="space-y-4">
           <div className="flex flex-wrap gap-3 items-end">
             <div className="space-y-1.5">
-              <Label>증권사</Label>
-              <Select value={brokerType} onValueChange={(v) => setBrokerType(v as BrokerType)}>
-                <SelectTrigger className="w-36">
-                  <SelectValue />
+              <Label>증권 계좌</Label>
+              <Select value={selectedCredentialId} onValueChange={setSelectedCredentialId}>
+                <SelectTrigger className="w-48">
+                  <SelectValue placeholder="계좌 선택" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="kis">한국투자증권</SelectItem>
-                  <SelectItem value="kiwoom">키움증권</SelectItem>
+                  {credentials.length === 0 ? (
+                    <SelectItem value="" disabled>등록된 계좌 없음</SelectItem>
+                  ) : (
+                    credentials.map((cred) => (
+                      <SelectItem key={cred.id} value={cred.id}>
+                        {BROKER_LABELS[cred.brokerType] || cred.brokerType}
+                        {cred.accountAlias !== 'default' && ` (${cred.accountAlias})`}
+                      </SelectItem>
+                    ))
+                  )}
                 </SelectContent>
               </Select>
             </div>
@@ -215,7 +261,7 @@ export function PositionSync({ credentialId }: PositionSyncProps = {}) {
               </div>
             </div>
 
-            <Button onClick={checkSync} disabled={isLoading || !symbol} className="h-9">
+            <Button onClick={checkSync} disabled={isLoading || !symbol || !selectedCredentialId} className="h-9">
               {isLoading ? (
                 <><RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" />확인 중...</>
               ) : (
