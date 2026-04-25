@@ -13,7 +13,7 @@ jobs:
       - name: Trigger auto trade cron
         run: |
           response=$(curl -s -o /dev/null -w "%{http_code}" \
-            -X GET "${{ secrets.NEXT_PUBLIC_APP_URL }}/api/auto-trade/cron" \
+            -X GET "${{ vars.NEXT_PUBLIC_APP_URL }}/api/auto-trade/cron" \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}")
           echo "Response: $response"
           if [ "$response" != "200" ]; then
