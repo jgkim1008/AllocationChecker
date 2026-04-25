@@ -11,6 +11,10 @@
     "app/api/auto-trade/morning-alert/route.ts": {
       "memory": 1024,
       "maxDuration": 60
+    },
+    "app/api/fibonacci/scan/route.ts": {
+      "memory": 1024,
+      "maxDuration": 300
     }
   }
 }
