@@ -1,0 +1,22 @@
+name: Auto Trade Cron
+
+on:
+  schedule:
+    - cron: '35 13 * * 1-5'  # KST 22:35 (EDT, 여름)
+    - cron: '35 14 * * 1-5'  # KST 23:35 (EST, 겨울)
+  workflow_dispatch:          # 수동 실행 가능
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger auto trade cron
+        run: |
+          response=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X GET "${{ secrets.NEXT_PUBLIC_APP_URL }}/api/auto-trade/cron" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}")
+          echo "Response: $response"
+          if [ "$response" != "200" ]; then
+            echo "Cron failed with status $response"
+            exit 1
+          fi
