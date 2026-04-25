@@ -1,0 +1,22 @@
+name: DCA Preclose Overseas Cron
+
+on:
+  schedule:
+    - cron: '30 19 * * 0-4'  # KST 04:30 일~목 (EDT, 여름)
+    - cron: '30 20 * * 0-4'  # KST 05:30 일~목 (EST, 겨울)
+  workflow_dispatch:
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger DCA preclose overseas
+        run: |
+          response=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X GET "${{ vars.NEXT_PUBLIC_APP_URL }}/api/auto-trade/dca/cron/preclose?market=overseas" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}")
+          echo "Response: $response"
+          if [ "$response" != "200" ]; then
+            echo "Cron failed with status $response"
+            exit 1
+          fi

@@ -1,0 +1,21 @@
+name: Morning Alert Cron
+
+on:
+  schedule:
+    - cron: '30 23 * * 0-4'  # KST 08:30 화~토
+  workflow_dispatch:
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger morning alert
+        run: |
+          response=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X GET "${{ vars.NEXT_PUBLIC_APP_URL }}/api/auto-trade/morning-alert" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}")
+          echo "Response: $response"
+          if [ "$response" != "200" ]; then
+            echo "Cron failed with status $response"
+            exit 1
+          fi

@@ -1,0 +1,61 @@
+name: Fibonacci Scan Cron
+
+on:
+  schedule:
+    - cron: '0 22 * * 1-5'  # KST 07:00 월~금 - US
+    - cron: '0 7 * * 1-5'   # KST 16:00 월~금 - KR
+    - cron: '30 7 * * 1-5'  # KST 16:30 월~금 - INDEX
+  workflow_dispatch:
+    inputs:
+      market:
+        description: 'Market to scan (US, KR, INDEX)'
+        required: true
+        default: 'US'
+        type: choice
+        options: [US, KR, INDEX]
+
+jobs:
+  scan-us:
+    if: github.event.schedule == '0 22 * * 1-5' || (github.event_name == 'workflow_dispatch' && github.event.inputs.market == 'US')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger fibonacci scan (US)
+        run: |
+          response=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X GET "${{ vars.NEXT_PUBLIC_APP_URL }}/api/fibonacci/scan?market=US" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}")
+          echo "Response: $response"
+          if [ "$response" != "200" ]; then
+            echo "Cron failed with status $response"
+            exit 1
+          fi
+
+  scan-kr:
+    if: github.event.schedule == '0 7 * * 1-5' || (github.event_name == 'workflow_dispatch' && github.event.inputs.market == 'KR')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger fibonacci scan (KR)
+        run: |
+          response=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X GET "${{ vars.NEXT_PUBLIC_APP_URL }}/api/fibonacci/scan?market=KR" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}")
+          echo "Response: $response"
+          if [ "$response" != "200" ]; then
+            echo "Cron failed with status $response"
+            exit 1
+          fi
+
+  scan-index:
+    if: github.event.schedule == '30 7 * * 1-5' || (github.event_name == 'workflow_dispatch' && github.event.inputs.market == 'INDEX')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger fibonacci scan (INDEX)
+        run: |
+          response=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X GET "${{ vars.NEXT_PUBLIC_APP_URL }}/api/fibonacci/scan?market=INDEX" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}")
+          echo "Response: $response"
+          if [ "$response" != "200" ]; then
+            echo "Cron failed with status $response"
+            exit 1
+          fi

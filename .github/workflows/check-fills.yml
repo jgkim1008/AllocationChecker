@@ -1,0 +1,45 @@
+name: Check Fills Cron
+
+on:
+  schedule:
+    - cron: '35 6 * * 1-5'  # KST 15:35 월~금 - 국내
+    - cron: '5 21 * * 1-5'  # KST 06:05 월~금 - 해외
+  workflow_dispatch:
+    inputs:
+      market:
+        description: 'Market to check fills (domestic, overseas)'
+        required: true
+        default: 'domestic'
+        type: choice
+        options: [domestic, overseas]
+
+jobs:
+  check-domestic:
+    if: github.event.schedule == '35 6 * * 1-5' || (github.event_name == 'workflow_dispatch' && github.event.inputs.market == 'domestic')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check fills (domestic)
+        run: |
+          response=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X GET "${{ vars.NEXT_PUBLIC_APP_URL }}/api/auto-trade/check-fills?action=check&market=domestic" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}")
+          echo "Response: $response"
+          if [ "$response" != "200" ]; then
+            echo "Cron failed with status $response"
+            exit 1
+          fi
+
+  check-overseas:
+    if: github.event.schedule == '5 21 * * 1-5' || (github.event_name == 'workflow_dispatch' && github.event.inputs.market == 'overseas')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check fills (overseas)
+        run: |
+          response=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X GET "${{ vars.NEXT_PUBLIC_APP_URL }}/api/auto-trade/check-fills?action=check&market=overseas" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}")
+          echo "Response: $response"
+          if [ "$response" != "200" ]; then
+            echo "Cron failed with status $response"
+            exit 1
+          fi

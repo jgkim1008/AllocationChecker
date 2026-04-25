@@ -1,0 +1,21 @@
+name: DCA Preclose Domestic Cron
+
+on:
+  schedule:
+    - cron: '31 6 * * 1-5'  # KST 15:31 월~금
+  workflow_dispatch:
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger DCA preclose domestic
+        run: |
+          response=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X GET "${{ vars.NEXT_PUBLIC_APP_URL }}/api/auto-trade/dca/cron/preclose?market=domestic" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}")
+          echo "Response: $response"
+          if [ "$response" != "200" ]; then
+            echo "Cron failed with status $response"
+            exit 1
+          fi
