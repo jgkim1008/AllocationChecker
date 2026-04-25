@@ -55,6 +55,21 @@ async function fetchTopKRSymbols(): Promise<string[]> {
   return [];
 }
 
+async function processBatch<T>(
+  items: T[],
+  fn: (item: T) => Promise<void>,
+  batchSize: number,
+  delayMs: number
+) {
+  for (let i = 0; i < items.length; i += batchSize) {
+    const batch = items.slice(i, i + batchSize);
+    await Promise.all(batch.map(fn));
+    if (i + batchSize < items.length) {
+      await new Promise(r => setTimeout(r, delayMs));
+    }
+  }
+}
+
 export async function refreshMarketData(marketType?: 'US' | 'KR' | 'INDEX') {
   console.log(`[MarketMonitor] Starting market data refresh for: ${marketType || 'all'}`);
   const supabase = await createServiceClient();
@@ -68,30 +83,36 @@ export async function refreshMarketData(marketType?: 'US' | 'KR' | 'INDEX') {
   const dbSymbols = existingStocks || [];
 
   if (!marketType || marketType === 'INDEX') {
-    for (const idx of INDICES) {
-      await updateStockData(idx.symbol, idx.name, idx.market as any);
-      await new Promise(r => setTimeout(r, 1000));
-    }
+    const indexItems = INDICES.map(idx => ({ symbol: idx.symbol, name: idx.name, market: idx.market as 'US' | 'KR' | 'JP' }));
+    await processBatch(indexItems, (idx) => updateStockData(idx.symbol, idx.name, idx.market), 3, 500);
   }
 
   if (!marketType || marketType === 'US') {
-    const targetUS = new Set([...topUS, ...dbSymbols.filter(s => s.market === 'US').map(s => s.symbol)]);
-    console.log(`[MarketMonitor] Updating ${targetUS.size} US stocks...`);
-    for (const symbol of targetUS) {
-      const name = dbSymbols.find(s => s.symbol === symbol)?.name || symbol;
-      await updateStockData(symbol, name, 'US');
-      await new Promise(r => setTimeout(r, 2000)); // 2초 간격 (안전)
-    }
+    const targetUS = [...new Set([...topUS, ...dbSymbols.filter(s => s.market === 'US').map(s => s.symbol)])];
+    console.log(`[MarketMonitor] Updating ${targetUS.length} US stocks...`);
+    await processBatch(
+      targetUS,
+      (symbol) => {
+        const name = dbSymbols.find(s => s.symbol === symbol)?.name || symbol;
+        return updateStockData(symbol, name, 'US');
+      },
+      5,  // 5개씩 병렬
+      800 // 배치 간 0.8초
+    );
   }
 
   if (!marketType || marketType === 'KR') {
-    const targetKR = new Set([...topKR, ...dbSymbols.filter(s => s.market === 'KR').map(s => s.symbol)]);
-    console.log(`[MarketMonitor] Updating ${targetKR.size} KR stocks...`);
-    for (const symbol of targetKR) {
-      const name = dbSymbols.find(s => s.symbol === symbol)?.name || symbol;
-      await updateStockData(symbol, name, 'KR');
-      await new Promise(r => setTimeout(r, 1500));
-    }
+    const targetKR = [...new Set([...topKR, ...dbSymbols.filter(s => s.market === 'KR').map(s => s.symbol)])];
+    console.log(`[MarketMonitor] Updating ${targetKR.length} KR stocks...`);
+    await processBatch(
+      targetKR,
+      (symbol) => {
+        const name = dbSymbols.find(s => s.symbol === symbol)?.name || symbol;
+        return updateStockData(symbol, name, 'KR');
+      },
+      3,   // 3개씩 병렬
+      800  // 배치 간 0.8초
+    );
   }
 
   console.log('[MarketMonitor] Market data refresh completed.');
