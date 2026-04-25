@@ -13,7 +13,7 @@ jobs:
     steps:
       - name: Trigger DCA morning overseas
         run: |
-          response=$(curl -s -o /dev/null -w "%{http_code}" \
+          response=$(curl -sL -o /dev/null -w "%{http_code}" \
             -X GET "${{ vars.NEXT_PUBLIC_APP_URL }}/api/auto-trade/dca/cron/morning?market=overseas" \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}")
           echo "Response: $response"

@@ -22,7 +22,7 @@ jobs:
     steps:
       - name: Trigger fibonacci scan (US)
         run: |
-          response=$(curl -s -o /dev/null -w "%{http_code}" \
+          response=$(curl -sL -o /dev/null -w "%{http_code}" \
             -X GET "${{ vars.NEXT_PUBLIC_APP_URL }}/api/fibonacci/scan?market=US" \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}")
           echo "Response: $response"
@@ -38,7 +38,7 @@ jobs:
     steps:
       - name: Trigger fibonacci scan (KR)
         run: |
-          response=$(curl -s -o /dev/null -w "%{http_code}" \
+          response=$(curl -sL -o /dev/null -w "%{http_code}" \
             -X GET "${{ vars.NEXT_PUBLIC_APP_URL }}/api/fibonacci/scan?market=KR" \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}")
           echo "Response: $response"
@@ -54,7 +54,7 @@ jobs:
     steps:
       - name: Trigger fibonacci scan (INDEX)
         run: |
-          response=$(curl -s -o /dev/null -w "%{http_code}" \
+          response=$(curl -sL -o /dev/null -w "%{http_code}" \
             -X GET "${{ vars.NEXT_PUBLIC_APP_URL }}/api/fibonacci/scan?market=INDEX" \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}")
           echo "Response: $response"
