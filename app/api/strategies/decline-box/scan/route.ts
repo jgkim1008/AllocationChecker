@@ -1,29 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { KOSPI200_STOCKS } from '@/lib/utils/kospi200-stocks';
+import { SP500_STOCKS } from '@/lib/utils/sp500-stocks';
 import { createClient } from '@/lib/supabase/server';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
 
-const CACHE_HOURS = 12;
+const CACHE_HOURS = 24;
 const MIN_BOX_HEIGHT_PCT = 30;
 const PIVOT_WINDOW = 3;
 
-const TOP_US_SYMBOLS = [
-  'AAPL','MSFT','NVDA','AMZN','GOOGL','META','TSLA','BRK.B','AVGO','JPM',
-  'LLY','V','UNH','XOM','MA','COST','HD','PG','WMT','NFLX',
-  'ORCL','BAC','CRM','CVX','KO','ABBV','MRK','AMD','PEP','ACN',
-  'TMO','LIN','ADBE','MCD','CSCO','WFC','DHR','TXN','ABT','MS',
-  'AMGN','IBM','GE','PM','ISRG','CAT','RTX','INTU','NOW','SPGI',
-  'GS','BLK','HON','QCOM','NEE','LOW','AMAT','PFE','UBER','UNP',
-  'ELV','T','DE','BKNG','SBUX','C','AXP','TJX','VRTX','PANW',
-  'GILD','BSX','REGN','SYK','ADI','MDLZ','MU','MMC','BX','CI',
-  'PLD','ZTS','EOG','DUK','SO','APH','KLAC','CME','INTC','ETN',
-  'SHW','CB','MCO','LRCX','AON','WELL','ICE','MAR','HCA','GD',
-];
-
 const TARGET_STOCKS = [
-  ...TOP_US_SYMBOLS.map(symbol => ({ symbol, name: symbol, market: 'US' as const, yahooSymbol: symbol })),
+  ...SP500_STOCKS.map(s => ({ symbol: s.symbol, name: s.name, market: 'US' as const, yahooSymbol: s.symbol })),
   ...KOSPI200_STOCKS.map(s => ({ ...s, market: 'KR' as const, yahooSymbol: `${s.symbol}.KS` })),
 ];
 
