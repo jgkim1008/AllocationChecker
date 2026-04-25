@@ -297,7 +297,7 @@ export default function DeclineBoxPage() {
                   <tbody>
                     {sorted.map(stock => (
                       <StockRow
-                        key={stock.symbol}
+                        key={`${stock.symbol}-${stock.market}`}
                         stock={stock}
                         onClick={() => router.push(
                           `/strategies/decline-box/${encodeURIComponent(stock.symbol)}?market=${stock.market}&name=${encodeURIComponent(stock.name)}`
