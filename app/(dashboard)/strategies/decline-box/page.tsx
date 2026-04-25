@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   ArrowLeft, RefreshCw, TrendingUp, TrendingDown,
   ChevronUp, ChevronDown, AlertCircle, Eye,
@@ -50,6 +51,14 @@ function SignalBadge({ signal }: { signal: DeclineBoxStock['signal'] }) {
       </div>
     );
   }
+  if (signal === 'TRIANGLE_BREAKOUT') {
+    return (
+      <div className="inline-flex items-center gap-1 px-2 py-1 rounded-lg font-black text-xs bg-purple-100 text-purple-700">
+        <TrendingUp className="h-3 w-3" />
+        삼각돌파
+      </div>
+    );
+  }
   if (signal === 'NEAR_BREAKOUT') {
     return (
       <div className="inline-flex items-center gap-1 px-2 py-1 rounded-lg font-black text-xs bg-yellow-100 text-yellow-700">
@@ -68,6 +77,7 @@ function SignalBadge({ signal }: { signal: DeclineBoxStock['signal'] }) {
 
 function StockRow({ stock, onClick }: { stock: DeclineBoxStock; onClick: () => void }) {
   const isBest = stock.signal === 'BREAKOUT_PULLBACK';
+  const isTriangle = stock.signal === 'TRIANGLE_BREAKOUT';
   const isNear = stock.signal === 'NEAR_BREAKOUT';
 
   return (
@@ -75,6 +85,7 @@ function StockRow({ stock, onClick }: { stock: DeclineBoxStock; onClick: () => v
       onClick={onClick}
       className={`border-b transition-colors cursor-pointer ${
         isBest ? 'bg-orange-50/60 hover:bg-orange-100/60'
+        : isTriangle ? 'bg-purple-50/60 hover:bg-purple-100/60'
         : isNear ? 'bg-yellow-50/40 hover:bg-yellow-100/40'
         : 'hover:bg-gray-50'
       }`}
@@ -133,6 +144,7 @@ function StockRow({ stock, onClick }: { stock: DeclineBoxStock; onClick: () => v
 }
 
 export default function DeclineBoxPage() {
+  const router = useRouter();
   const [stocks, setStocks] = useState<DeclineBoxStock[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -166,7 +178,7 @@ export default function DeclineBoxPage() {
   const sorted = useMemo(() => {
     return [...stocks].sort((a, b) => {
       let cmp = 0;
-      const sigOrder = { BREAKOUT_PULLBACK: 3, NEAR_BREAKOUT: 2, IN_BOX: 1 };
+      const sigOrder = { BREAKOUT_PULLBACK: 4, TRIANGLE_BREAKOUT: 3, NEAR_BREAKOUT: 2, IN_BOX: 1 };
       switch (sortKey) {
         case 'signal': cmp = sigOrder[a.signal] - sigOrder[b.signal]; break;
         case 'symbol': cmp = a.symbol.localeCompare(b.symbol); break;
@@ -179,9 +191,10 @@ export default function DeclineBoxPage() {
     });
   }, [stocks, sortKey, sortOrder]);
 
-  const breakoutCount = stocks.filter(s => s.signal === 'BREAKOUT_PULLBACK').length;
-  const nearCount = stocks.filter(s => s.signal === 'NEAR_BREAKOUT').length;
-  const inBoxCount = stocks.filter(s => s.signal === 'IN_BOX').length;
+  const breakoutCount  = stocks.filter(s => s.signal === 'BREAKOUT_PULLBACK').length;
+  const triangleCount  = stocks.filter(s => s.signal === 'TRIANGLE_BREAKOUT').length;
+  const nearCount      = stocks.filter(s => s.signal === 'NEAR_BREAKOUT').length;
+  const inBoxCount     = stocks.filter(s => s.signal === 'IN_BOX').length;
 
   const TABLE_HEADERS = (
     <tr className="bg-gray-50 border-b border-gray-100">
@@ -244,11 +257,12 @@ export default function DeclineBoxPage() {
 
           {/* 요약 통계 */}
           {!loading && stocks.length > 0 && (
-            <div className="grid grid-cols-3 gap-3 mb-6">
+            <div className="grid grid-cols-4 gap-3 mb-6">
               {[
-                { label: '돌파·눌림 (진입 적기)', value: breakoutCount, color: 'text-orange-600', bg: 'bg-orange-50 border-orange-100' },
-                { label: '돌파임박 (관망)', value: nearCount, color: 'text-yellow-600', bg: 'bg-yellow-50 border-yellow-100' },
-                { label: '박스 내 (대기)', value: inBoxCount, color: 'text-gray-400', bg: 'bg-white border-gray-100' },
+                { label: '돌파·눌림',  value: breakoutCount,  color: 'text-orange-600', bg: 'bg-orange-50 border-orange-100' },
+                { label: '삼각돌파',   value: triangleCount,  color: 'text-purple-600', bg: 'bg-purple-50 border-purple-100' },
+                { label: '돌파임박',   value: nearCount,      color: 'text-yellow-600', bg: 'bg-yellow-50 border-yellow-100' },
+                { label: '박스 내 대기', value: inBoxCount,   color: 'text-gray-400',  bg: 'bg-white border-gray-100' },
               ].map(s => (
                 <div key={s.label} className={`rounded-xl border p-3 text-center ${s.bg}`}>
                   <p className={`text-2xl font-black ${s.color}`}>{s.value}</p>
@@ -285,7 +299,9 @@ export default function DeclineBoxPage() {
                       <StockRow
                         key={stock.symbol}
                         stock={stock}
-                        onClick={() => {}}
+                        onClick={() => router.push(
+                          `/strategies/decline-box/${encodeURIComponent(stock.symbol)}?market=${stock.market}&name=${encodeURIComponent(stock.name)}`
+                        )}
                       />
                     ))}
                   </tbody>

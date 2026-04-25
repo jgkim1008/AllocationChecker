@@ -32,15 +32,23 @@ export interface DeclineBoxStock {
   name: string;
   market: 'US' | 'KR';
   currentPrice: number;
-  signal: 'BREAKOUT_PULLBACK' | 'NEAR_BREAKOUT' | 'IN_BOX';
+  signal: 'BREAKOUT_PULLBACK' | 'TRIANGLE_BREAKOUT' | 'NEAR_BREAKOUT' | 'IN_BOX';
   boxHeightPct: number;
   upperLinePrice: number;
   lowerLinePrice: number;
   distanceFromUpper: number;
   boxStartDate: string;
+  // 삼각 수렴 패턴 (있을 경우)
+  trianglePattern: {
+    upperPoints: { date: string; price: number }[];
+    lowerPoints: { date: string; price: number }[];
+    breakoutPrice: number; // 삼각형 상단 돌파 기준 가격
+  } | null;
   weeklyCandles: { date: string; open: number; high: number; low: number; close: number }[];
   pivotHighs: { date: string; price: number }[];
   pivotLows: { date: string; price: number }[];
+  upperLine: { slope: number; intercept: number; startIdx: number };
+  lowerLine: { slope: number; intercept: number; startIdx: number };
 }
 
 async function fetchWeeklyCandles(
@@ -113,8 +121,62 @@ function priceAt(line: { slope: number; intercept: number }, x: number) {
   return line.slope * x + line.intercept;
 }
 
-function analyzeDeclineBox(
-  stock: (typeof TARGET_STOCKS)[number],
+/**
+ * 삼각 수렴 패턴 감지
+ * 최근 N개 캔들에서 고점이 낮아지고 저점이 높아지는(또는 유지되는) 패턴을 찾는다.
+ */
+function detectTriangle(
+  candles: { date: string; open: number; high: number; low: number; close: number }[],
+  startFromIdx: number
+): {
+  upperPoints: { date: string; price: number }[];
+  lowerPoints: { date: string; price: number }[];
+  breakoutPrice: number;
+} | null {
+  const window = 1;
+  const slice = candles.slice(startFromIdx);
+  if (slice.length < 8) return null;
+
+  const phIdxs = findPivotHighs(slice, window);
+  const plIdxs = findPivotLows(slice, window);
+
+  if (phIdxs.length < 2 || plIdxs.length < 2) return null;
+
+  // 최근 2개씩
+  const ph1 = slice[phIdxs[phIdxs.length - 2]];
+  const ph2 = slice[phIdxs[phIdxs.length - 1]];
+  const pl1 = slice[plIdxs[plIdxs.length - 2]];
+  const pl2 = slice[plIdxs[plIdxs.length - 1]];
+
+  // 삼각 수렴: 고점 하락 + 저점 상승(또는 유지)
+  const highsDescending = ph1.high > ph2.high;
+  const lowsAscending = pl2.low >= pl1.low * 0.98; // 2% 이내 유지면 수평으로 인정
+
+  if (!highsDescending || !lowsAscending) return null;
+
+  // 삼각형이 충분히 수렴되어야 함 (피벗 간격이 너무 크지 않을 것)
+  const triangleHeight = ph2.high - pl2.low;
+  const triangleHeightPct = (triangleHeight / pl2.low) * 100;
+  if (triangleHeightPct > 20) return null; // 삼각형 폭 20% 이내
+
+  // 돌파 기준가 = 삼각형 최근 고점
+  const breakoutPrice = ph2.high;
+
+  return {
+    upperPoints: [
+      { date: ph1.date, price: Math.round(ph1.high * 100) / 100 },
+      { date: ph2.date, price: Math.round(ph2.high * 100) / 100 },
+    ],
+    lowerPoints: [
+      { date: pl1.date, price: Math.round(pl1.low * 100) / 100 },
+      { date: pl2.date, price: Math.round(pl2.low * 100) / 100 },
+    ],
+    breakoutPrice: Math.round(breakoutPrice * 100) / 100,
+  };
+}
+
+export function analyzeDeclineBox(
+  stock: { symbol: string; name: string; market: 'US' | 'KR' },
   candles: { date: string; open: number; high: number; low: number; close: number }[]
 ): DeclineBoxStock | null {
   if (candles.length < 20) return null;
@@ -133,7 +195,6 @@ function analyzeDeclineBox(
 
   if (phIdxs.length < 2 || plIdxs.length < 2) return null;
 
-  // 가장 최근 피벗 2개씩
   const ph1Idx = phIdxs[phIdxs.length - 2];
   const ph2Idx = phIdxs[phIdxs.length - 1];
   const pl1Idx = plIdxs[plIdxs.length - 2];
@@ -144,22 +205,20 @@ function analyzeDeclineBox(
   const pl1 = recent[pl1Idx];
   const pl2 = recent[pl2Idx];
 
-  // 하락 박스 검증: 고점과 저점 모두 하락
+  // 하락 박스: 고점·저점 모두 하락
   if (ph1.high <= ph2.high) return null;
   if (pl1.low <= pl2.low) return null;
 
-  // 박스가 최근 데이터여야 함 (가장 최근 피벗이 너무 오래된 것 제외)
+  // 박스 최신성 검사
   if (ph2Idx < lastRecentIdx - 20) return null;
   if (pl2Idx < lastRecentIdx - 20) return null;
 
-  // 추세선 계산
   const upperLine = lineThrough(ph1Idx, ph1.high, ph2Idx, ph2.high);
   const lowerLine = lineThrough(pl1Idx, pl1.low, pl2Idx, pl2.low);
 
-  // 두 추세선 모두 하락
   if (upperLine.slope >= 0 || lowerLine.slope >= 0) return null;
 
-  // 박스 높이 계산 (박스 시작 시점)
+  // 박스 높이 검사
   const boxStartIdx = Math.min(ph1Idx, pl1Idx);
   const upperAtStart = priceAt(upperLine, boxStartIdx);
   const lowerAtStart = priceAt(lowerLine, boxStartIdx);
@@ -168,26 +227,39 @@ function analyzeDeclineBox(
   const boxHeightPct = ((upperAtStart - lowerAtStart) / lowerAtStart) * 100;
   if (boxHeightPct < MIN_BOX_HEIGHT_PCT) return null;
 
-  // 현재 추세선 가격 (외삽)
+  // 현재 추세선 가격
   const upperLinePrice = priceAt(upperLine, lastRecentIdx);
   const lowerLinePrice = priceAt(lowerLine, lastRecentIdx);
 
-  // 상단선이 현재가보다 크게 낮으면 이미 오래전 돌파 → 제외
   if (upperLinePrice < currentPrice * 0.65) return null;
-  // 상단선이 현재가보다 너무 높으면 아직 멀었음 (박스 중간)
-  if (upperLinePrice > currentPrice * 1.5) return null;
+  if (upperLinePrice > currentPrice * 1.6) return null;
 
-  // 현재가 상단선 거리
   const distanceFromUpper = ((currentPrice - upperLinePrice) / upperLinePrice) * 100;
 
-  // 신호 결정
+  // ── 삼각 수렴 감지 (박스 상단 40% 구간에서만) ──
+  const boxRangeAtNow = upperLinePrice - lowerLinePrice;
+  const positionInBox = (currentPrice - lowerLinePrice) / boxRangeAtNow; // 0=하단, 1=상단
+  let trianglePattern: DeclineBoxStock['trianglePattern'] = null;
+
+  if (positionInBox >= 0.4) {
+    // 최근 12개 캔들 기준으로 삼각형 탐지
+    const triStartIdx = Math.max(0, recent.length - 12);
+    trianglePattern = detectTriangle(recent, triStartIdx);
+  }
+
+  // ── 신호 결정 ──
   let signal: DeclineBoxStock['signal'];
+
   if (distanceFromUpper >= -5 && distanceFromUpper <= 12) {
-    signal = 'BREAKOUT_PULLBACK'; // 돌파 or 눌림목 구간 (진입 적기)
+    // 박스 상단 돌파 or 눌림목 구간
+    signal = 'BREAKOUT_PULLBACK';
+  } else if (trianglePattern && currentPrice >= trianglePattern.breakoutPrice * 0.97) {
+    // 박스 내 삼각 수렴 돌파 직전/직후
+    signal = 'TRIANGLE_BREAKOUT';
   } else if (distanceFromUpper > -20 && distanceFromUpper < -5) {
-    signal = 'NEAR_BREAKOUT'; // 박스 상단 접근 중
+    signal = 'NEAR_BREAKOUT';
   } else {
-    signal = 'IN_BOX'; // 박스 내 (관망)
+    signal = 'IN_BOX';
   }
 
   return {
@@ -201,7 +273,8 @@ function analyzeDeclineBox(
     lowerLinePrice: Math.round(lowerLinePrice * 100) / 100,
     distanceFromUpper: Math.round(distanceFromUpper * 10) / 10,
     boxStartDate: recent[boxStartIdx].date,
-    weeklyCandles: recent.slice(Math.max(0, recent.length - 26)), // 최근 26주
+    trianglePattern,
+    weeklyCandles: recent.slice(Math.max(0, recent.length - 26)),
     pivotHighs: [
       { date: ph1.date, price: Math.round(ph1.high * 100) / 100 },
       { date: ph2.date, price: Math.round(ph2.high * 100) / 100 },
@@ -210,6 +283,8 @@ function analyzeDeclineBox(
       { date: pl1.date, price: Math.round(pl1.low * 100) / 100 },
       { date: pl2.date, price: Math.round(pl2.low * 100) / 100 },
     ],
+    upperLine: { slope: upperLine.slope, intercept: upperLine.intercept, startIdx: boxStartIdx },
+    lowerLine: { slope: lowerLine.slope, intercept: lowerLine.intercept, startIdx: boxStartIdx },
   };
 }
 
@@ -219,6 +294,8 @@ async function processBatch<T>(items: T[], fn: (item: T) => Promise<void>, batch
     if (i + batchSize < items.length) await new Promise(r => setTimeout(r, delayMs));
   }
 }
+
+export { fetchWeeklyCandles };
 
 export async function GET(_req: NextRequest) {
   const { searchParams } = new URL(_req.url);
@@ -253,8 +330,7 @@ export async function GET(_req: NextRequest) {
       if (analyzed) results.push(analyzed);
     }, 5, 600);
 
-    // 우선순위: 신호 > 박스 높이
-    const signalOrder = { BREAKOUT_PULLBACK: 3, NEAR_BREAKOUT: 2, IN_BOX: 1 };
+    const signalOrder = { BREAKOUT_PULLBACK: 4, TRIANGLE_BREAKOUT: 3, NEAR_BREAKOUT: 2, IN_BOX: 1 };
     results.sort((a, b) => {
       const cmp = signalOrder[b.signal] - signalOrder[a.signal];
       return cmp !== 0 ? cmp : b.boxHeightPct - a.boxHeightPct;
