@@ -330,6 +330,17 @@ export async function GET(_req: NextRequest) {
       if (analyzed) results.push(analyzed);
     }, 5, 600);
 
+    // 중복 제거
+    const seen = new Set<string>();
+    const unique = results.filter(s => {
+      const key = `${s.symbol}-${s.market}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    results.length = 0;
+    results.push(...unique);
+
     const signalOrder = { BREAKOUT_PULLBACK: 4, TRIANGLE_BREAKOUT: 3, NEAR_BREAKOUT: 2, IN_BOX: 1 };
     results.sort((a, b) => {
       const cmp = signalOrder[b.signal] - signalOrder[a.signal];
