@@ -18,6 +18,7 @@ jobs:
   scan-us:
     if: github.event.schedule == '0 22 * * 1-5' || (github.event_name == 'workflow_dispatch' && github.event.inputs.market == 'US')
     runs-on: ubuntu-latest
+    environment: production
     steps:
       - name: Trigger fibonacci scan (US)
         run: |
@@ -33,6 +34,7 @@ jobs:
   scan-kr:
     if: github.event.schedule == '0 7 * * 1-5' || (github.event_name == 'workflow_dispatch' && github.event.inputs.market == 'KR')
     runs-on: ubuntu-latest
+    environment: production
     steps:
       - name: Trigger fibonacci scan (KR)
         run: |
@@ -48,6 +50,7 @@ jobs:
   scan-index:
     if: github.event.schedule == '30 7 * * 1-5' || (github.event_name == 'workflow_dispatch' && github.event.inputs.market == 'INDEX')
     runs-on: ubuntu-latest
+    environment: production
     steps:
       - name: Trigger fibonacci scan (INDEX)
         run: |

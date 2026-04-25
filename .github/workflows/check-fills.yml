@@ -17,6 +17,7 @@ jobs:
   check-domestic:
     if: github.event.schedule == '35 6 * * 1-5' || (github.event_name == 'workflow_dispatch' && github.event.inputs.market == 'domestic')
     runs-on: ubuntu-latest
+    environment: production
     steps:
       - name: Check fills (domestic)
         run: |
@@ -32,6 +33,7 @@ jobs:
   check-overseas:
     if: github.event.schedule == '5 21 * * 1-5' || (github.event_name == 'workflow_dispatch' && github.event.inputs.market == 'overseas')
     runs-on: ubuntu-latest
+    environment: production
     steps:
       - name: Check fills (overseas)
         run: |
