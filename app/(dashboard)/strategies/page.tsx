@@ -1,11 +1,21 @@
 'use client';
 
 import Link from 'next/link';
-import { TrendingUp, Infinity, ChevronRight, Activity, Zap, BookOpen, CalendarDays, BarChart2, CandlestickChart } from 'lucide-react';
+import { TrendingUp, TrendingDown, Infinity, ChevronRight, Activity, Zap, BookOpen, CalendarDays, BarChart2, CandlestickChart } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { PremiumGate } from '@/components/PremiumGate';
 
 const STRATEGIES = [
+  {
+    id: 'decline-box',
+    title: '하락 박스 돌파 전략',
+    description: '급락 후 형성된 하락 박스(평행 하락 채널)를 탐지합니다. 박스 높이 30% 이상 종목 중 상단 추세선 돌파 후 눌림목에서 진입하는 기법으로, 이미 저점에서 반등 중인 구간이라 초보자도 안정적으로 활용 가능합니다.',
+    icon: TrendingDown,
+    href: '/strategies/decline-box',
+    color: 'bg-orange-50 text-orange-600',
+    tag: '신규',
+    tagColor: 'bg-orange-100 text-orange-700',
+  },
   {
     id: 'forking',
     title: '월봉 포킹 전략',
