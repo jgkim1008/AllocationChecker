@@ -1033,7 +1033,9 @@ export function AutoTradePanel({
                 {dailyOrders.summary.message}
                 {dailyOrders.summary.avgCost > 0 && (
                   <span className="ml-2 text-xs text-gray-400">
-                    평단 ${dailyOrders.summary.avgCost.toFixed(2)} · 별% {dailyOrders.summary.starPct.toFixed(2)}% · T={dailyOrders.summary.t.toFixed(2)}
+                    평단 ${dailyOrders.summary.avgCost.toFixed(2)}
+                    {dailyOrders.summary.starPct != null && ` · 별% ${dailyOrders.summary.starPct.toFixed(2)}%`}
+                    {dailyOrders.summary.t != null && ` · T=${dailyOrders.summary.t.toFixed(2)}`}
                   </span>
                 )}
               </CardDescription>
