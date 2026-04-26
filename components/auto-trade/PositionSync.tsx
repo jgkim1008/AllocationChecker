@@ -223,7 +223,7 @@ export function PositionSync({ credentialId: propCredentialId }: PositionSyncPro
                 </SelectTrigger>
                 <SelectContent>
                   {credentials.length === 0 ? (
-                    <SelectItem value="" disabled>등록된 계좌 없음</SelectItem>
+                    <SelectItem value="__none__" disabled>등록된 계좌 없음</SelectItem>
                   ) : (
                     credentials.map((cred) => (
                       <SelectItem key={cred.id} value={cred.id}>
