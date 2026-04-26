@@ -45,6 +45,7 @@ interface PositionSyncProps {
 export function PositionSync({ credentialId: propCredentialId }: PositionSyncProps = {}) {
   const selectedCredentialId = propCredentialId || '';
   const [symbol, setSymbol] = useState('TQQQ');
+  const [cycleNumber, setCycleNumber] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<SyncResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -71,7 +72,7 @@ export function PositionSync({ credentialId: propCredentialId }: PositionSyncPro
     setAdjustResult(null);
     try {
       const res = await fetch(
-        `/api/auto-trade/sync-check?credentialId=${selectedCredentialId}&symbol=${encodeURIComponent(symbol.toUpperCase())}`
+        `/api/auto-trade/sync-check?credentialId=${selectedCredentialId}&symbol=${encodeURIComponent(symbol.toUpperCase())}&cycle_number=${cycleNumber}`
       );
       const data = await res.json();
       if (data.success) {
@@ -86,10 +87,16 @@ export function PositionSync({ credentialId: propCredentialId }: PositionSyncPro
     }
   };
 
-  // 증권사 실제 잔고로 DB 동기화
+  // 증권사 실제 잔고로 DB 자동 동기화
   const syncToBroker = async () => {
-    if (!result?.broker.found || !selectedCredentialId) return;
-    if (!confirm(`${symbol} 포지션을 증권사 실제 잔고(${result.broker.shares}주, 평단 ${fmt(result.broker.avgCost)})로 동기화하시겠습니까?\n\n⚠️ 기존 매수/매도 기록이 모두 삭제됩니다.`)) return;
+    if (!selectedCredentialId) return;
+    const brokerShares = result?.broker.shares ?? 0;
+    const brokerAvg = result?.broker.avgCost ?? 0;
+    if (!confirm(
+      `${symbol} ${cycleNumber}회차를 증권사 실제 잔고로 자동 동기화합니다.\n\n` +
+      `• 증권사: ${brokerShares}주, 평단 ${fmt(brokerAvg)}\n` +
+      `• ${cycleNumber}회차 기존 매수/매도 기록이 모두 삭제됩니다.`
+    )) return;
 
     setSyncing(true);
     setAdjustResult(null);
@@ -100,6 +107,7 @@ export function PositionSync({ credentialId: propCredentialId }: PositionSyncPro
         body: JSON.stringify({
           symbol: symbol.toUpperCase(),
           credentialId: selectedCredentialId,
+          cycleNumber,
         }),
       });
       const data = await res.json();
@@ -136,6 +144,7 @@ export function PositionSync({ credentialId: propCredentialId }: PositionSyncPro
           capital: parseFloat(adjCapital) || 0,
           n: parseInt(adjN) || 40,
           target_rate: (parseFloat(adjTargetRate) || 10) / 100,
+          cycleNumber,
         }),
       });
       const data = await res.json();
@@ -185,7 +194,7 @@ export function PositionSync({ credentialId: propCredentialId }: PositionSyncPro
                 {PRESET_SYMBOLS.map((sym) => (
                   <button
                     key={sym}
-                    onClick={() => setSymbol(sym)}
+                    onClick={() => { setSymbol(sym); setResult(null); }}
                     className={`text-xs px-2.5 py-1.5 rounded-lg border transition-colors ${
                       symbol === sym
                         ? 'bg-green-600 text-white border-green-600'
@@ -198,10 +207,21 @@ export function PositionSync({ credentialId: propCredentialId }: PositionSyncPro
                 <Input
                   placeholder="직접 입력"
                   value={PRESET_SYMBOLS.includes(symbol) ? '' : symbol}
-                  onChange={(e) => setSymbol(e.target.value.toUpperCase())}
+                  onChange={(e) => { setSymbol(e.target.value.toUpperCase()); setResult(null); }}
                   className="w-28 h-8 text-xs"
                 />
               </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>회차</Label>
+              <Input
+                type="number"
+                min={1}
+                value={cycleNumber}
+                onChange={(e) => { setCycleNumber(Math.max(1, parseInt(e.target.value) || 1)); setResult(null); }}
+                className="w-16 h-8 text-xs text-center"
+              />
             </div>
 
             <Button onClick={checkSync} disabled={isLoading || !symbol || !selectedCredentialId} className="h-9">
@@ -337,34 +357,31 @@ export function PositionSync({ credentialId: propCredentialId }: PositionSyncPro
               )}
             </div>
 
-            {/* 불일치 원인 안내 및 싱크 버튼 */}
+            {/* 불일치 원인 안내 */}
             {!result.inSync && (
-              <div className="rounded-lg bg-yellow-50 border border-yellow-200 px-4 py-3 text-sm text-yellow-800 space-y-3">
-                <div className="space-y-1">
-                  <p className="font-semibold">불일치 가능 원인</p>
-                  {!result.diff.sharesMatch && (
-                    <p>• 수량 차이 {Math.abs(result.diff.shares).toFixed(4)}주 — 미기록 매수/매도, 부분체결 누락 가능성</p>
-                  )}
-                  {!result.diff.avgCostMatch && (
-                    <p>• 평단가 차이 {Math.abs(result.diff.avgCostPct).toFixed(2)}% — 수수료 반영 여부나 환율 차이 확인 필요</p>
-                  )}
-                </div>
-
-                {result.broker.found && (
-                  <Button
-                    onClick={syncToBroker}
-                    disabled={syncing}
-                    className="w-full bg-blue-600 hover:bg-blue-700 text-white"
-                  >
-                    {syncing ? (
-                      <><RefreshCw className="h-4 w-4 mr-2 animate-spin" />동기화 중...</>
-                    ) : (
-                      <><ArrowDownToLine className="h-4 w-4 mr-2" />증권사 실제로 싱크 맞추기</>
-                    )}
-                  </Button>
+              <div className="rounded-lg bg-yellow-50 border border-yellow-200 px-4 py-3 text-sm text-yellow-800 space-y-1">
+                <p className="font-semibold">불일치 가능 원인</p>
+                {!result.diff.sharesMatch && (
+                  <p>• 수량 차이 {Math.abs(result.diff.shares).toFixed(4)}주 — 미기록 매수/매도, 부분체결 누락 가능성</p>
+                )}
+                {!result.diff.avgCostMatch && (
+                  <p>• 평단가 차이 {Math.abs(result.diff.avgCostPct).toFixed(2)}% — 수수료 반영 여부나 환율 차이 확인 필요</p>
                 )}
               </div>
             )}
+
+            {/* 자동 싱크 버튼 — 항상 표시 */}
+            <Button
+              onClick={syncToBroker}
+              disabled={syncing || !selectedCredentialId}
+              className={`w-full ${!result.inSync ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-500 hover:bg-gray-600'} text-white`}
+            >
+              {syncing ? (
+                <><RefreshCw className="h-4 w-4 mr-2 animate-spin" />동기화 중...</>
+              ) : (
+                <><ArrowDownToLine className="h-4 w-4 mr-2" />현재 잔고 기준으로 자동 싱크 ({cycleNumber}회차)</>
+              )}
+            </Button>
 
             {/* 수동 조정 */}
             {!result.inSync && (
