@@ -439,6 +439,7 @@ export default function InfiniteBuyPage() {
             targetRate={targetRate}
             market={activeMarket}
             activePrice={activePrice}
+            currentCycle={currentCycle}
             onCycleReset={handleCycleReset}
             onCapitalChange={(newCapital) => {
               setCapital(newCapital);

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Plus, Trash2, RefreshCw, Pencil, Check, X, TrendingDown } from 'lucide-react';
+import { Plus, Trash2, RefreshCw, Pencil, Check, X, TrendingDown, Trophy, RotateCcw } from 'lucide-react';
 import { useInfiniteBuyRecords, BuyRecord, SellRecord } from '@/hooks/useInfiniteBuyRecords';
 
 interface BuyTrackerProps {
@@ -11,6 +11,7 @@ interface BuyTrackerProps {
   targetRate: number;
   market?: 'US' | 'KR';
   activePrice?: number | null;
+  currentCycle?: number;
   onCycleReset?: () => void;
   onCapitalChange?: (newCapital: number) => void;
 }
@@ -20,12 +21,12 @@ function fmtP(price: number, market: 'US' | 'KR' = 'US'): string {
   return `$${price.toFixed(2)}`;
 }
 
-export function BuyTracker({ symbol, capital, n, targetRate, market = 'US', activePrice: propActivePrice, onCycleReset, onCapitalChange }: BuyTrackerProps) {
+export function BuyTracker({ symbol, capital, n, targetRate, market = 'US', activePrice: propActivePrice, currentCycle = 1, onCycleReset, onCapitalChange }: BuyTrackerProps) {
   const {
     records, sellRecords, loading: recordsLoading,
     addRecord, updateRecord, deleteRecord, deleteAllRecords, updateAllCapital,
     addSellRecord, deleteSellRecord,
-  } = useInfiniteBuyRecords(symbol);
+  } = useInfiniteBuyRecords(symbol, currentCycle);
 
   const [currentPrice, setCurrentPrice] = useState<number | null>(null);
   const [loadingPrice, setLoadingPrice] = useState(false);
@@ -210,10 +211,16 @@ export function BuyTracker({ symbol, capital, n, targetRate, market = 'US', acti
     }
   }
 
-  async function handleReset() {
-    if (!confirm(`${symbol} 무한매수 기록을 모두 삭제하시겠습니까? (새 사이클 시작)`)) return;
-    await deleteAllRecords();
+  // 회차 종료: 기록 유지, 사이클 번호만 증가
+  function handleEndCycle() {
+    if (!confirm(`${symbol} ${currentCycle}회차를 종료하고 새 회차를 시작할까요?\n매수/매도 기록은 삭제되지 않고 보존됩니다.`)) return;
     onCycleReset?.();
+  }
+
+  // 초기화: 현재 회차 기록 전부 삭제
+  async function handleReset() {
+    if (!confirm(`${symbol} ${currentCycle}회차 기록을 모두 삭제하시겠습니까?\n(이 작업은 되돌릴 수 없습니다)`)) return;
+    await deleteAllRecords();
   }
 
   async function handleDeleteBuy(id: string) {
@@ -228,7 +235,10 @@ export function BuyTracker({ symbol, capital, n, targetRate, market = 'US', acti
   const totalInvested = records.reduce((s, b) => s + b.amount, 0);
   const avgCost = totalShares > 0 ? totalInvested / totalShares : 0;
   const divisionsUsed = records.length;
-  const evalValue = currentPrice ? totalShares * currentPrice : null;
+  const totalSoldShares = sellRecords.reduce((s, r) => s + r.shares, 0);
+  const remainingShares = Math.max(0, totalShares - totalSoldShares);
+  const isCycleComplete = records.length > 0 && remainingShares <= 0.001;
+  const evalValue = currentPrice ? remainingShares * currentPrice : null;
   const unrealizedPnl = evalValue != null ? evalValue - totalInvested : null;
   const unrealizedPct = totalInvested > 0 && unrealizedPnl != null ? unrealizedPnl / totalInvested : null;
   const targetValue = totalInvested * (1 + targetRate);
@@ -256,6 +266,61 @@ export function BuyTracker({ symbol, capital, n, targetRate, market = 'US', acti
 
   return (
     <div className="space-y-6">
+      {/* 회차 헤더 */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-semibold text-gray-700">{currentCycle}회차</span>
+          {isCycleComplete && (
+            <span className="inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
+              <Trophy className="h-3 w-3" /> 완료
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {records.length > 0 && (
+            <button
+              onClick={handleReset}
+              className="text-xs text-gray-400 hover:text-red-500 px-2 py-1 rounded-lg hover:bg-red-50 transition-colors"
+            >
+              기록 삭제
+            </button>
+          )}
+          <button
+            onClick={handleEndCycle}
+            disabled={records.length === 0}
+            className={`flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors
+              ${isCycleComplete
+                ? 'border-emerald-500 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 animate-pulse'
+                : 'border-gray-300 text-gray-600 hover:border-indigo-400 hover:text-indigo-600 hover:bg-indigo-50 disabled:opacity-40 disabled:cursor-not-allowed'
+              }`}
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+            {currentCycle}회차 종료
+          </button>
+        </div>
+      </div>
+
+      {/* 회차 완료 배너 */}
+      {isCycleComplete && (
+        <div className="flex items-center gap-3 p-4 bg-emerald-50 border border-emerald-200 rounded-xl">
+          <Trophy className="h-5 w-5 text-emerald-600 shrink-0" />
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-emerald-800">{currentCycle}회차 완료 — 전량 매도 완료</p>
+            <p className="text-xs text-emerald-600 mt-0.5">
+              실현손익 {totalRealizedPnl != null ? `${totalRealizedPnl >= 0 ? '+' : ''}${fmtP(totalRealizedPnl, market)}` : '-'}
+              {realizedPct != null && ` (${realizedPct >= 0 ? '+' : ''}${(realizedPct * 100).toFixed(2)}%)`}
+            </p>
+          </div>
+          <button
+            onClick={handleEndCycle}
+            className="flex items-center gap-1.5 text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 px-4 py-2 rounded-lg transition-colors"
+          >
+            <RotateCcw className="h-4 w-4" />
+            새 회차 시작
+          </button>
+        </div>
+      )}
+
       {/* Position Summary Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         {/* Progress */}
@@ -352,7 +417,7 @@ export function BuyTracker({ symbol, capital, n, targetRate, market = 'US', acti
             {avgCost > 0 ? fmtP(avgCost, market) : '-'}
           </p>
           <p className="text-xs text-gray-400 mt-0.5">
-            보유 {totalShares > 0 ? `${Math.round(totalShares)}주` : '-'}
+            보유 {remainingShares > 0 ? `${Math.round(remainingShares)}주` : '-'}
           </p>
         </div>
 
@@ -464,14 +529,6 @@ export function BuyTracker({ symbol, capital, n, targetRate, market = 'US', acti
               <Plus className="h-3.5 w-3.5" />
               매수 추가
             </button>
-            {records.length > 0 && (
-              <button
-                onClick={handleReset}
-                className="text-xs font-medium text-gray-500 hover:text-red-600 px-2 py-1.5 rounded-lg hover:bg-red-50 transition-colors"
-              >
-                초기화
-              </button>
-            )}
           </div>
         </div>
 

@@ -26,7 +26,7 @@ export interface SellRecord {
   created_at: string;
 }
 
-export function useInfiniteBuyRecords(symbol: string) {
+export function useInfiniteBuyRecords(symbol: string, cycleNumber: number = 1) {
   const [records, setRecords] = useState<BuyRecord[]>([]);
   const [sellRecords, setSellRecords] = useState<SellRecord[]>([]);
   const [loading, setLoading] = useState(false);
@@ -38,8 +38,8 @@ export function useInfiniteBuyRecords(symbol: string) {
     setError(null);
     try {
       const [buyRes, sellRes] = await Promise.all([
-        fetch(`/api/infinite-buy/records?symbol=${encodeURIComponent(symbol)}`),
-        fetch(`/api/infinite-buy/sell-records?symbol=${encodeURIComponent(symbol)}`),
+        fetch(`/api/infinite-buy/records?symbol=${encodeURIComponent(symbol)}&cycle_number=${cycleNumber}`),
+        fetch(`/api/infinite-buy/sell-records?symbol=${encodeURIComponent(symbol)}&cycle_number=${cycleNumber}`),
       ]);
       if (!buyRes.ok) throw new Error('Failed to fetch buy records');
       if (!sellRes.ok) throw new Error('Failed to fetch sell records');
@@ -51,7 +51,7 @@ export function useInfiniteBuyRecords(symbol: string) {
     } finally {
       setLoading(false);
     }
-  }, [symbol]);
+  }, [symbol, cycleNumber]);
 
   const addRecord = useCallback(
     async (record: {
@@ -66,7 +66,7 @@ export function useInfiniteBuyRecords(symbol: string) {
       const res = await fetch('/api/infinite-buy/records', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ symbol, ...record }),
+        body: JSON.stringify({ symbol, ...record, cycle_number: cycleNumber }),
       });
       if (!res.ok) {
         const err = await res.json();
@@ -129,7 +129,7 @@ export function useInfiniteBuyRecords(symbol: string) {
       const res = await fetch('/api/infinite-buy/sell-records', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ symbol, ...record }),
+        body: JSON.stringify({ symbol, ...record, cycle_number: cycleNumber }),
       });
       if (!res.ok) {
         const err = await res.json();

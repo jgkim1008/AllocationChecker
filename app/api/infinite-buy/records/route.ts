@@ -10,12 +10,14 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'symbol is required' }, { status: 400 });
     }
 
+    const cycleNumber = searchParams.get('cycle_number') ? parseInt(searchParams.get('cycle_number')!, 10) : 1;
     const supabase = await createServiceClient();
 
     const { data, error } = await supabase
       .from('infinite_buy_records')
       .select('*')
       .eq('symbol', symbol.toUpperCase())
+      .eq('cycle_number', cycleNumber)
       .order('buy_date', { ascending: true });
 
     if (error) throw error;
@@ -30,7 +32,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { symbol, buy_date, price, shares, amount, capital, n, target_rate } = body;
+    const { symbol, buy_date, price, shares, amount, capital, n, target_rate, cycle_number = 1 } = body;
 
     if (!symbol || !buy_date || !price || !shares || !amount) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
@@ -49,6 +51,7 @@ export async function POST(request: NextRequest) {
         capital: Number(capital),
         n: Number(n),
         target_rate: Number(target_rate),
+        cycle_number: Number(cycle_number),
         user_id: null,
       })
       .select()
