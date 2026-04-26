@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { KOSPI200_STOCKS } from '@/lib/utils/kospi200-stocks';
-import { createClient } from '@/lib/supabase/server';
+import { createServiceClient } from '@/lib/supabase/server';
 
 const CACHE_DAYS = 15; // 캐시 유효 기간 (일)
 
@@ -289,7 +289,7 @@ export async function GET(_req: NextRequest) {
   const forceRefresh = searchParams.get('refresh') === 'true';
 
   try {
-    const supabase = await createClient();
+    const supabase = await createServiceClient();
 
     // 1. 캐시 확인 (강제 새로고침이 아닌 경우)
     if (!forceRefresh) {
@@ -336,11 +336,10 @@ export async function GET(_req: NextRequest) {
     // 3. 캐시 저장
     const { error: upsertError } = await supabase
       .from('strategy_cache')
-      .upsert({
-        cache_key: 'forking_scan',
-        data: results,
-        created_at: new Date().toISOString(),
-      });
+      .upsert(
+        { cache_key: 'forking_scan', data: results, created_at: new Date().toISOString() },
+        { onConflict: 'cache_key' }
+      );
 
     if (upsertError) {
       console.warn('[Forking] Cache save failed:', upsertError.message);

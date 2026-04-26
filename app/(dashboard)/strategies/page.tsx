@@ -1,11 +1,21 @@
 'use client';
 
 import Link from 'next/link';
-import { TrendingUp, TrendingDown, Infinity, ChevronRight, Activity, Zap, BookOpen, CalendarDays, BarChart2, CandlestickChart } from 'lucide-react';
+import { TrendingUp, TrendingDown, Infinity, ChevronRight, Activity, Zap, BookOpen, CalendarDays, BarChart2, CandlestickChart, GitMerge } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { PremiumGate } from '@/components/PremiumGate';
 
 const STRATEGIES = [
+  {
+    id: 'weekly-sr-channel',
+    title: '주봉 SR플립 + 채널 전략',
+    description: '주봉 10이평 위에서 저항→지지로 역전된 SR플립 구간 눌림목을 최우선 진입으로 포착합니다. 선형 회귀 기반 패러럴 채널(빗각) 하단 + 10MA 위 조합도 강력한 매수 신호입니다. S&P 500 + KOSPI 200 전종목 스캔.',
+    icon: GitMerge,
+    href: '/strategies/weekly-sr-channel',
+    color: 'bg-indigo-50 text-indigo-600',
+    tag: '신규',
+    tagColor: 'bg-indigo-100 text-indigo-700',
+  },
   {
     id: 'decline-box',
     title: '하락 박스 돌파 전략',

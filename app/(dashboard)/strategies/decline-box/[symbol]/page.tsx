@@ -10,9 +10,180 @@ import {
   createChart, ColorType, CrosshairMode,
   CandlestickSeries, LineSeries, createSeriesMarkers,
 } from 'lightweight-charts';
+import {
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer, ReferenceLine,
+} from 'recharts';
 import type { DeclineBoxStock } from '@/app/api/strategies/decline-box/scan/route';
 
 type WeeklyCandle = { date: string; open: number; high: number; low: number; close: number };
+
+// ── 벤치마크 차트 ─────────────────────────────────────────────
+interface BenchmarkSeries {
+  id: string;
+  name: string;
+  color: string;
+  data: { date: string; value: number }[];
+}
+
+function BenchmarkTooltip({
+  active, payload, label,
+}: {
+  active?: boolean;
+  payload?: { color: string; name: string; value: number | null }[];
+  label?: string;
+}) {
+  if (!active || !payload || payload.length === 0) return null;
+  const sorted = [...payload]
+    .filter(p => p.value != null)
+    .sort((a, b) => (b.value ?? 0) - (a.value ?? 0));
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl shadow-lg p-3 min-w-[160px]">
+      <p className="text-xs text-gray-500 mb-2 font-medium">{label}</p>
+      {sorted.map(p => (
+        <div key={p.name} className="flex items-center justify-between gap-4 py-0.5">
+          <div className="flex items-center gap-1.5">
+            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: p.color }} />
+            <span className="text-xs text-gray-600">{p.name}</span>
+          </div>
+          <span className="text-xs font-semibold" style={{ color: (p.value ?? 100) >= 100 ? '#16a34a' : '#ef4444' }}>
+            {p.value != null ? `${(p.value - 100).toFixed(1)}%` : '-'}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function BenchmarkChart({
+  stockCandles,
+  benchmarks,
+  stockName,
+}: {
+  stockCandles: WeeklyCandle[];
+  benchmarks: BenchmarkSeries[];
+  stockName: string;
+}) {
+  const [hidden, setHidden] = useState<Set<string>>(new Set());
+
+  if (stockCandles.length < 2 || benchmarks.length === 0) return null;
+
+  // 종목 수익률 정규화 (기준일 = 첫 캔들)
+  const base = stockCandles[0].close;
+  const stockSeries = stockCandles.map(c => ({
+    date: c.date,
+    STOCK: Math.round((c.close / base) * 10000) / 100,
+  }));
+
+  // 날짜 유니온으로 차트 데이터 병합
+  const dateSet = new Set<string>();
+  stockSeries.forEach(s => dateSet.add(s.date));
+  benchmarks.forEach(b => b.data.forEach(d => dateSet.add(d.date)));
+  const allDates = Array.from(dateSet).sort();
+
+  const stockMap = new Map(stockSeries.map(s => [s.date, s.STOCK]));
+  const benchMaps = benchmarks.map(b => ({
+    id: b.id,
+    map: new Map(b.data.map(d => [d.date, d.value])),
+  }));
+
+  const chartData = allDates.map(date => {
+    const row: Record<string, string | number | null> = { date };
+    row['STOCK'] = stockMap.get(date) ?? null;
+    benchMaps.forEach(({ id, map }) => {
+      row[id] = map.get(date) ?? null;
+    });
+    return row;
+  });
+
+  const allSeries = [
+    { id: 'STOCK', name: stockName, color: '#f59e0b' },
+    ...benchmarks.map(b => ({ id: b.id, name: b.name, color: b.color })),
+  ];
+
+  const toggle = (id: string) => {
+    setHidden(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const xTickFormatter = (v: string) => {
+    if (!v) return '';
+    const [year, month] = v.split('-');
+    return month === '01' || month === '07' ? year : '';
+  };
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-200 p-5">
+      <div className="mb-4">
+        <p className="text-sm font-bold text-gray-900">5대 지수 수익률 비교</p>
+        <p className="text-xs text-gray-400 mt-0.5">기준일(첫 주봉) = 0% 기준 정규화 · 주봉 기준</p>
+      </div>
+
+      {/* 범례 토글 */}
+      <div className="flex flex-wrap gap-2 mb-4">
+        {allSeries.map(s => {
+          const isHidden = hidden.has(s.id);
+          return (
+            <button
+              key={s.id}
+              onClick={() => toggle(s.id)}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
+                isHidden
+                  ? 'border-gray-200 text-gray-400 bg-gray-50'
+                  : 'border-transparent text-gray-700'
+              }`}
+              style={isHidden ? {} : { backgroundColor: `${s.color}18`, borderColor: `${s.color}40` }}
+            >
+              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: isHidden ? '#D1D5DB' : s.color }} />
+              {s.name}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="h-72">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={chartData} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" />
+            <XAxis
+              dataKey="date"
+              tickFormatter={xTickFormatter}
+              tick={{ fontSize: 11, fill: '#9CA3AF' }}
+              axisLine={false}
+              tickLine={false}
+              interval="preserveStartEnd"
+            />
+            <YAxis
+              tickFormatter={v => `${(v - 100).toFixed(0)}%`}
+              tick={{ fontSize: 11, fill: '#9CA3AF' }}
+              axisLine={false}
+              tickLine={false}
+              width={52}
+            />
+            <ReferenceLine y={100} stroke="#D1D5DB" strokeDasharray="4 4" />
+            <Tooltip content={<BenchmarkTooltip />} />
+            {allSeries.map(s => (
+              <Line
+                key={s.id}
+                type="monotone"
+                dataKey={s.id}
+                name={s.name}
+                stroke={s.color}
+                strokeWidth={s.id === 'STOCK' ? 3 : 1.5}
+                dot={false}
+                hide={hidden.has(s.id)}
+                connectNulls={false}
+              />
+            ))}
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
 
 function formatPrice(price: number, market: string): string {
   if (market === 'KR') return `₩${Math.round(price).toLocaleString('ko-KR')}`;
@@ -188,22 +359,34 @@ export default function DeclineBoxDetailPage() {
   const market = searchParams.get('market') || 'US';
   const name   = searchParams.get('name')   || symbol;
 
-  const [candles,  setCandles]  = useState<WeeklyCandle[]>([]);
-  const [analysis, setAnalysis] = useState<DeclineBoxStock | null>(null);
-  const [loading,  setLoading]  = useState(true);
-  const [error,    setError]    = useState<string | null>(null);
+  const [candles,    setCandles]    = useState<WeeklyCandle[]>([]);
+  const [analysis,   setAnalysis]   = useState<DeclineBoxStock | null>(null);
+  const [loading,    setLoading]    = useState(true);
+  const [error,      setError]      = useState<string | null>(null);
+  const [benchmarks, setBenchmarks] = useState<BenchmarkSeries[]>([]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setBenchmarks([]);
     try {
       const res = await fetch(
         `/api/strategies/decline-box/${encodeURIComponent(symbol)}?market=${market}&name=${encodeURIComponent(name)}`
       );
       if (!res.ok) throw new Error('데이터를 불러오는 중 오류가 발생했습니다.');
       const data = await res.json();
-      setCandles(data.candles || []);
+      const fetchedCandles: WeeklyCandle[] = data.candles || [];
+      setCandles(fetchedCandles);
       setAnalysis(data.analysis || null);
+
+      // 벤치마크 데이터 (종목 첫 캔들 날짜 기준)
+      if (fetchedCandles.length > 0) {
+        const from = fetchedCandles[0].date;
+        fetch(`/api/strategies/benchmark?from=${from}`)
+          .then(r => r.ok ? r.json() : null)
+          .then(d => { if (d?.benchmarks) setBenchmarks(d.benchmarks); })
+          .catch(() => {});
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : '오류가 발생했습니다.');
     } finally {
@@ -338,6 +521,17 @@ export default function DeclineBoxDetailPage() {
                 <DeclineBoxChart candles={candles} analysis={analysis} />
               </div>
             </div>
+
+            {/* 벤치마크 수익률 비교 */}
+            {benchmarks.length > 0 && (
+              <div className="mb-6">
+                <BenchmarkChart
+                  stockCandles={candles}
+                  benchmarks={benchmarks}
+                  stockName={name}
+                />
+              </div>
+            )}
 
             {/* 피벗 포인트 정보 */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { KOSPI200_STOCKS } from '@/lib/utils/kospi200-stocks';
 import { SP500_STOCKS } from '@/lib/utils/sp500-stocks';
-import { createClient } from '@/lib/supabase/server';
+import { createServiceClient } from '@/lib/supabase/server';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
@@ -290,7 +290,7 @@ export async function GET(_req: NextRequest) {
   const forceRefresh = searchParams.get('refresh') === 'true';
 
   try {
-    const supabase = await createClient();
+    const supabase = await createServiceClient();
 
     if (!forceRefresh) {
       const { data: cached } = await supabase
@@ -335,11 +335,10 @@ export async function GET(_req: NextRequest) {
       return cmp !== 0 ? cmp : b.boxHeightPct - a.boxHeightPct;
     });
 
-    await supabase.from('strategy_cache').upsert({
-      cache_key: 'decline_box_scan',
-      data: results,
-      created_at: new Date().toISOString(),
-    });
+    await supabase.from('strategy_cache').upsert(
+      { cache_key: 'decline_box_scan', data: results, created_at: new Date().toISOString() },
+      { onConflict: 'cache_key' }
+    );
 
     return NextResponse.json({ stocks: results, count: results.length, timestamp: new Date().toISOString(), cached: false });
   } catch (error) {
