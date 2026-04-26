@@ -9,6 +9,9 @@ import {
 } from 'lucide-react';
 import { PremiumGate } from '@/components/PremiumGate';
 import type { DeclineBoxStock } from '@/app/api/strategies/decline-box/scan/route';
+import { getClientCache, setClientCache, clearClientCache } from '@/lib/client-cache';
+
+const CACHE_KEY = '/api/strategies/decline-box/scan';
 
 type SortKey = 'signal' | 'symbol' | 'price' | 'boxHeight' | 'distance' | 'boxStart';
 type SortOrder = 'asc' | 'desc';
@@ -153,12 +156,23 @@ export default function DeclineBoxPage() {
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
 
   const fetchData = useCallback(async (refresh = false) => {
+    if (!refresh) {
+      const cached = getClientCache<{ stocks: DeclineBoxStock[]; timestamp: string }>(CACHE_KEY);
+      if (cached) {
+        setStocks(cached.stocks || []);
+        setLastUpdated(cached.timestamp);
+        setLoading(false);
+        return;
+      }
+    }
+    if (refresh) clearClientCache(CACHE_KEY);
     setLoading(true);
     setError(null);
     try {
       const res = await fetch(`/api/strategies/decline-box/scan${refresh ? '?refresh=true' : ''}`);
       if (!res.ok) throw new Error('데이터를 불러오는 중 오류가 발생했습니다.');
       const data = await res.json();
+      setClientCache(CACHE_KEY, data);
       setStocks(data.stocks || []);
       setLastUpdated(data.timestamp);
     } catch (e) {

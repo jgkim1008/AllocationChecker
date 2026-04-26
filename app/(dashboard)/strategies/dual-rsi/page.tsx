@@ -6,19 +6,28 @@ import { ArrowLeft, RefreshCw, Info, Target, Zap, TrendingDown } from 'lucide-re
 import { DualRSITable } from '@/components/strategies/DualRSITable';
 import { PremiumGate } from '@/components/PremiumGate';
 import type { DualRSIStock } from '@/types/strategies';
+import { getClientCache, setClientCache, clearClientCache } from '@/lib/client-cache';
+
+const CACHE_KEY = '/api/strategies/dual-rsi/scan';
 
 export default function DualRSIPage() {
   const [stocks, setStocks] = useState<DualRSIStock[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchScanResults = useCallback(async () => {
+  const fetchScanResults = useCallback(async (force = false) => {
+    if (!force) {
+      const cached = getClientCache<{ stocks: DualRSIStock[] }>(CACHE_KEY);
+      if (cached) { setStocks(cached.stocks || []); setLoading(false); return; }
+    }
+    if (force) clearClientCache(CACHE_KEY);
     setLoading(true);
     setError(null);
     try {
       const res = await fetch('/api/strategies/dual-rsi/scan');
       if (!res.ok) throw new Error('서버 분석이 지연되고 있습니다. 잠시 후 다시 시도해주세요.');
       const data = await res.json();
+      setClientCache(CACHE_KEY, data);
       setStocks(data.stocks || []);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Unknown error');
@@ -73,7 +82,7 @@ export default function DualRSIPage() {
           </div>
 
           <button
-            onClick={fetchScanResults}
+            onClick={() => fetchScanResults(true)}
             disabled={loading}
             className="group bg-gray-900 hover:bg-violet-600 disabled:bg-gray-200 text-white font-black px-10 py-5 rounded-[24px] transition-all shadow-2xl shadow-gray-200 active:scale-95 flex items-center gap-3"
           >

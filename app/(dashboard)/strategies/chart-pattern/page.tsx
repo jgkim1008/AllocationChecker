@@ -7,6 +7,9 @@ import { ChartPatternTable } from '@/components/strategies/ChartPatternTable';
 import { PremiumGate } from '@/components/PremiumGate';
 import { PATTERN_INFO, type ChartPatternType } from '@/lib/utils/chart-pattern-calculator';
 import type { ChartPatternStock } from '@/lib/utils/chart-pattern-scanner';
+import { getClientCache, setClientCache, clearClientCache } from '@/lib/client-cache';
+
+const CACHE_KEY = '/api/strategies/chart-pattern/scan';
 
 const SIGNAL_FILTERS = ['전체', '매수', '매도'] as const;
 type SignalFilter = typeof SIGNAL_FILTERS[number];
@@ -21,13 +24,19 @@ export default function ChartPatternPage() {
   const [signalFilter, setSignalFilter] = useState<SignalFilter>('전체');
   const [categoryFilter, setCategoryFilter] = useState<Category>('전체');
 
-  const fetchScanResults = useCallback(async () => {
+  const fetchScanResults = useCallback(async (force = false) => {
+    if (!force) {
+      const cached = getClientCache<{ stocks: ChartPatternStock[] }>(CACHE_KEY);
+      if (cached) { setStocks(cached.stocks || []); setLoading(false); return; }
+    }
+    if (force) clearClientCache(CACHE_KEY);
     setLoading(true);
     setError(null);
     try {
       const res = await fetch('/api/strategies/chart-pattern/scan');
       if (!res.ok) throw new Error('서버 분석이 지연되고 있습니다. 잠시 후 다시 시도해주세요.');
       const data = await res.json();
+      setClientCache(CACHE_KEY, data);
       setStocks(data.stocks || []);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Unknown error');
@@ -97,7 +106,7 @@ export default function ChartPatternPage() {
           </div>
 
           <button
-            onClick={fetchScanResults}
+            onClick={() => fetchScanResults(true)}
             disabled={loading}
             className="group bg-gray-900 hover:bg-green-600 disabled:bg-gray-200 text-white font-black px-10 py-5 rounded-[24px] transition-all shadow-2xl shadow-gray-200 active:scale-95 flex items-center gap-3 whitespace-nowrap"
           >

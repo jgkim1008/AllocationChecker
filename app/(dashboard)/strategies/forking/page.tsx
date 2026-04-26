@@ -10,6 +10,9 @@ import {
 } from 'lucide-react';
 import { PremiumGate } from '@/components/PremiumGate';
 import type { ForkingStock } from '@/app/api/strategies/forking/scan/route';
+import { getClientCache, setClientCache, clearClientCache } from '@/lib/client-cache';
+
+const CACHE_KEY = '/api/strategies/forking/scan';
 
 type SortKey = 'signal' | 'symbol' | 'price' | 'forkSpread' | 'forkingSpeed' | 'consecutive' | 'lastSignalDate' | 'returnSinceSignal' | 'fromYearHigh';
 type SortOrder = 'asc' | 'desc';
@@ -196,13 +199,19 @@ export default function ForkingPage() {
   const [sortKey, setSortKey] = useState<SortKey>('forkSpread');
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (force = false) => {
+    if (!force) {
+      const cached = getClientCache<{ stocks: ForkingStock[]; timestamp: string }>(CACHE_KEY);
+      if (cached) { setStocks(cached.stocks || []); setLastUpdated(cached.timestamp); setLoading(false); return; }
+    }
+    if (force) clearClientCache(CACHE_KEY);
     setLoading(true);
     setError(null);
     try {
       const res = await fetch('/api/strategies/forking/scan');
       if (!res.ok) throw new Error('데이터를 불러오는 중 오류가 발생했습니다.');
       const data = await res.json();
+      setClientCache(CACHE_KEY, data);
       setStocks(data.stocks || []);
       setLastUpdated(data.timestamp);
     } catch (e) {
@@ -334,7 +343,7 @@ export default function ForkingPage() {
           </div>
 
           <button
-            onClick={fetchData}
+            onClick={() => fetchData(true)}
             disabled={loading}
             className="group bg-gray-900 hover:bg-violet-600 disabled:bg-gray-200 text-white font-black px-8 py-4 rounded-2xl transition-all shadow-lg active:scale-95 flex items-center gap-2 whitespace-nowrap shrink-0"
           >
