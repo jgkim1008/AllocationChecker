@@ -63,6 +63,7 @@ async function checkFills(targetMarket: MarketType | null) {
   let cancelledCount = 0;
   let checkedCount = 0;
   const recordsToInsert: any[] = [];
+  const sellRecordsToInsert: any[] = [];
   const dcaRecordsToInsert: any[] = [];
   const ordersToUpdate: { id: string; updates: any }[] = [];
 
@@ -124,13 +125,13 @@ async function checkFills(targetMarket: MarketType | null) {
               },
             });
 
+            const filledPrice = brokerOrder.filledPrice || pendingOrder.order_price;
+            const filledShares = brokerOrder.filledQuantity || pendingOrder.order_quantity;
+            const filledAmount = brokerOrder.filledAmount || filledPrice * filledShares;
+            const tradeDate = new Date(pendingOrder.order_time).toISOString().split('T')[0];
+
             // 매수 주문 기록
             if (pendingOrder.side === 'buy') {
-              const filledPrice = brokerOrder.filledPrice || pendingOrder.order_price;
-              const filledShares = brokerOrder.filledQuantity || pendingOrder.order_quantity;
-              const filledAmount = brokerOrder.filledAmount || filledPrice * filledShares;
-              const tradeDate = new Date(pendingOrder.order_time).toISOString().split('T')[0];
-
               if (pendingOrder.strategy_version === 'dca') {
                 // DCA 전략 → dca_records
                 dcaRecordsToInsert.push({
@@ -160,6 +161,18 @@ async function checkFills(targetMarket: MarketType | null) {
                   user_id: pendingOrder.user_id,
                 });
               }
+            }
+
+            // 매도 주문 기록 → infinite_sell_records (트래커와 연동)
+            if (pendingOrder.side === 'sell' && pendingOrder.capital) {
+              sellRecordsToInsert.push({
+                symbol: pendingOrder.symbol,
+                sell_date: tradeDate,
+                price: filledPrice,
+                shares: filledShares,
+                amount: filledAmount,
+                user_id: pendingOrder.user_id,
+              });
             }
           } else if (brokerOrder.status === 'cancelled' || brokerOrder.status === 'rejected') {
             // 취소 또는 거부
@@ -207,9 +220,12 @@ async function checkFills(targetMarket: MarketType | null) {
       .eq('id', id);
   }
 
-  // 체결된 매수 주문 기록
+  // 체결된 주문 기록
   if (recordsToInsert.length > 0) {
     await serviceClient.from('infinite_buy_records').insert(recordsToInsert);
+  }
+  if (sellRecordsToInsert.length > 0) {
+    await serviceClient.from('infinite_sell_records').insert(sellRecordsToInsert);
   }
   if (dcaRecordsToInsert.length > 0) {
     await serviceClient.from('dca_records').insert(dcaRecordsToInsert);

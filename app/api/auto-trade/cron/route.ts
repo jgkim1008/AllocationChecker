@@ -49,7 +49,7 @@ async function getTrackerPosition(userId: string, symbol: string) {
 
   // 매도 기록 조회 (user_id 일치 또는 user_id=null 레거시 레코드 포함)
   const { data: sellRecords } = await serviceClient
-    .from('infinite_buy_sell_records')
+    .from('infinite_sell_records')
     .select('*')
     .eq('symbol', symbol.toUpperCase())
     .or(`user_id.eq.${userId},user_id.is.null`);
