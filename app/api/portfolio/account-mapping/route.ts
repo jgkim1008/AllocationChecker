@@ -18,7 +18,19 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // 매핑 목록 조회 (계좌명, 브로커 정보 포함)
+    // 현재 사용자의 계좌 ID 목록 조회
+    const { data: userAccounts } = await supabase
+      .from('accounts')
+      .select('id')
+      .eq('user_id', user.id);
+
+    const userAccountIds = (userAccounts || []).map((a: any) => a.id);
+
+    if (userAccountIds.length === 0) {
+      return NextResponse.json([]);
+    }
+
+    // 현재 사용자 계좌에 속한 매핑만 조회
     const { data: mappings, error } = await supabase
       .from('account_broker_mapping')
       .select(`
@@ -29,6 +41,7 @@ export async function GET() {
         account:accounts(id, name, type),
         broker:broker_credentials(id, broker_type, account_alias)
       `)
+      .in('account_id', userAccountIds)
       .order('created_at', { ascending: true });
 
     if (error) {
@@ -36,10 +49,7 @@ export async function GET() {
       return NextResponse.json({ error: 'Failed to fetch mappings' }, { status: 500 });
     }
 
-    // 유저 계좌만 필터 (RLS가 제대로 적용되지 않을 경우 대비)
-    const userMappings = (mappings || []).filter(
-      (m: any) => m.account?.id
-    );
+    const userMappings = mappings || [];
 
     return NextResponse.json(userMappings);
   } catch (error) {

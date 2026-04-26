@@ -1,26 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { RefreshCw, CheckCircle, AlertTriangle, AlertCircle, ChevronDown, ChevronUp, Plus, ArrowDownToLine } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-
-type BrokerType = 'kis' | 'kiwoom';
-
-interface BrokerCredential {
-  id: string;
-  brokerType: string;
-  accountAlias: string;
-}
-
-const BROKER_LABELS: Record<string, string> = {
-  kis: '한국투자증권',
-  kiwoom: '키움증권',
-};
 
 interface SyncResult {
   symbol: string;
@@ -57,37 +43,11 @@ interface PositionSyncProps {
 }
 
 export function PositionSync({ credentialId: propCredentialId }: PositionSyncProps = {}) {
-  const [credentials, setCredentials] = useState<BrokerCredential[]>([]);
-  const [selectedCredentialId, setSelectedCredentialId] = useState<string>(propCredentialId || '');
+  const selectedCredentialId = propCredentialId || '';
   const [symbol, setSymbol] = useState('TQQQ');
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<SyncResult | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  // 브로커 자격증명 목록 조회
-  useEffect(() => {
-    async function fetchCredentials() {
-      try {
-        const res = await fetch('/api/broker/credentials');
-        if (res.ok) {
-          const data = await res.json();
-          if (data.success && Array.isArray(data.data)) {
-            setCredentials(data.data);
-            // 첫 번째 계좌 자동 선택 (prop으로 전달된 게 없으면)
-            if (!propCredentialId && data.data.length > 0) {
-              setSelectedCredentialId(data.data[0].id);
-            }
-          }
-        }
-      } catch (err) {
-        console.error('Failed to fetch credentials:', err);
-      }
-    }
-    fetchCredentials();
-  }, [propCredentialId]);
-
-  // 선택된 credential 정보
-  const selectedCredential = credentials.find(c => c.id === selectedCredentialId);
 
   // 수동 조정 폼
   const [showAdjust, setShowAdjust] = useState(false);
@@ -140,7 +100,6 @@ export function PositionSync({ credentialId: propCredentialId }: PositionSyncPro
         body: JSON.stringify({
           symbol: symbol.toUpperCase(),
           credentialId: selectedCredentialId,
-          brokerType: selectedCredential?.brokerType || 'kis',
         }),
       });
       const data = await res.json();
@@ -214,28 +173,12 @@ export function PositionSync({ credentialId: propCredentialId }: PositionSyncPro
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {!selectedCredentialId && (
+            <p className="text-sm text-amber-600 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+              위의 계좌 선택 드롭다운에서 계좌를 먼저 선택해주세요.
+            </p>
+          )}
           <div className="flex flex-wrap gap-3 items-end">
-            <div className="space-y-1.5">
-              <Label>증권 계좌</Label>
-              <Select value={selectedCredentialId} onValueChange={setSelectedCredentialId}>
-                <SelectTrigger className="w-48">
-                  <SelectValue placeholder="계좌 선택" />
-                </SelectTrigger>
-                <SelectContent>
-                  {credentials.length === 0 ? (
-                    <SelectItem value="__none__" disabled>등록된 계좌 없음</SelectItem>
-                  ) : (
-                    credentials.map((cred) => (
-                      <SelectItem key={cred.id} value={cred.id}>
-                        {BROKER_LABELS[cred.brokerType] || cred.brokerType}
-                        {cred.accountAlias !== 'default' && ` (${cred.accountAlias})`}
-                      </SelectItem>
-                    ))
-                  )}
-                </SelectContent>
-              </Select>
-            </div>
-
             <div className="space-y-1.5">
               <Label>종목</Label>
               <div className="flex gap-1.5 flex-wrap">

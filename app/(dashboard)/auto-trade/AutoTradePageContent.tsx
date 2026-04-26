@@ -23,20 +23,18 @@ export default function AutoTradePageContent() {
 
   const fetchConnectedAccounts = useCallback(async () => {
     try {
-      const [authData, credsData] = await Promise.all([
-        fetch('/api/broker/auth').then(r => r.json()),
-        fetch('/api/broker/credentials').then(r => r.json()),
-      ]);
-      const connected: { credentialId: string; brokerType: string }[] = authData.data?.connectedCredentials ?? [];
-      const saved: { id: string; brokerType: string; accountAlias: string }[] = credsData.success ? (credsData.data ?? []) : [];
-      const merged: ConnectedCredential[] = connected.map(c => {
-        const match = saved.find(s => s.id === c.credentialId);
-        return { credentialId: c.credentialId, brokerType: c.brokerType, accountAlias: match?.accountAlias };
-      });
-      setConnectedCredentials(merged);
+      const credsData = await fetch('/api/broker/credentials').then(r => r.json());
+      const saved: ConnectedCredential[] = credsData.success
+        ? (credsData.data ?? []).map((c: any) => ({
+            credentialId: c.id,
+            brokerType: c.brokerType ?? c.broker_type,
+            accountAlias: c.accountAlias ?? c.account_alias,
+          }))
+        : [];
+      setConnectedCredentials(saved);
       setSelectedCredentialId(prev => {
-        if (prev && merged.some(m => m.credentialId === prev)) return prev;
-        return merged.length >= 1 ? merged[0].credentialId : undefined;
+        if (prev && saved.some(m => m.credentialId === prev)) return prev;
+        return saved.length >= 1 ? saved[0].credentialId : undefined;
       });
     } catch {}
   }, []);
@@ -105,7 +103,7 @@ export default function AutoTradePageContent() {
         </TabsContent>
 
         <TabsContent value="balance">
-          {connectedCredentials.length > 1 && (
+          {connectedCredentials.length >= 1 && (
             <div className="mb-3 flex items-center gap-2">
               <span className="text-sm text-gray-600">계좌 선택</span>
               <Select value={selectedCredentialId ?? ''} onValueChange={setSelectedCredentialId}>
@@ -126,7 +124,7 @@ export default function AutoTradePageContent() {
         </TabsContent>
 
         <TabsContent value="sync">
-          {connectedCredentials.length > 1 && (
+          {connectedCredentials.length >= 1 && (
             <div className="mb-3 flex items-center gap-2">
               <span className="text-sm text-gray-600">계좌 선택</span>
               <Select value={selectedCredentialId ?? ''} onValueChange={setSelectedCredentialId}>
@@ -147,7 +145,7 @@ export default function AutoTradePageContent() {
         </TabsContent>
 
         <TabsContent value="history">
-          {connectedCredentials.length > 1 && (
+          {connectedCredentials.length >= 1 && (
             <div className="mb-3 flex items-center gap-2">
               <span className="text-sm text-gray-600">계좌 선택</span>
               <Select value={selectedCredentialId ?? ''} onValueChange={setSelectedCredentialId}>
