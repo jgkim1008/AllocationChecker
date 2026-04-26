@@ -1,9 +1,8 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import type { User } from '@supabase/supabase-js';
-import type { SupabaseClient } from '@supabase/supabase-js';
+import type { User, Session, AuthChangeEvent } from '@supabase/supabase-js';
 
 interface AuthContextType {
   user: User | null;
@@ -18,14 +17,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [isPremium, setIsPremium] = useState(false);
-  const supabaseRef = useRef<SupabaseClient | null>(null);
+
+  // createClient()는 싱글턴 — 매 렌더마다 호출해도 동일 인스턴스 반환
+  const supabase = createClient();
 
   useEffect(() => {
-    if (!supabaseRef.current) {
-      supabaseRef.current = createClient();
-    }
-    const supabase = supabaseRef.current;
-
     const checkPremium = async () => {
       try {
         const res = await fetch('/api/auth/premium');
@@ -54,7 +50,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     initAuth();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event: AuthChangeEvent, session: Session | null) => {
       const currentUser = session?.user ?? null;
       setUser(currentUser);
 
@@ -68,14 +64,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       subscription.unsubscribe();
     };
-  }, []);
+  }, [supabase]);
 
   const logout = async () => {
-    if (supabaseRef.current) {
-      await supabaseRef.current.auth.signOut();
-      setUser(null);
-      setIsPremium(false);
-    }
+    await supabase.auth.signOut();
+    setUser(null);
+    setIsPremium(false);
   };
 
   return (
