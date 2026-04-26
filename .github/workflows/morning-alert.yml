@@ -2,7 +2,7 @@ name: Morning Alert Cron
 
 on:
   schedule:
-    - cron: '30 23 * * 0-4'  # KST 08:30 화~토
+    - cron: '30 23 * * 0-4'  # KST 08:30 월~금
   workflow_dispatch:
 
 jobs:
