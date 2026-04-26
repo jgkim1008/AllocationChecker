@@ -1,0 +1,22 @@
+name: Daily Position Sync
+
+on:
+  schedule:
+    - cron: '0 0 * * 1-5'  # KST 09:00 월~금 (UTC 00:00)
+  workflow_dispatch:         # 수동 실행 가능
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Daily position sync (broker ↔ tracker)
+        run: |
+          response=$(curl -sL -o /dev/null -w "%{http_code}" \
+            -X GET "${{ vars.NEXT_PUBLIC_APP_URL }}/api/auto-trade/daily-sync" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}")
+          echo "Response: $response"
+          if [ "$response" != "200" ]; then
+            echo "Daily sync failed with status $response"
+            exit 1
+          fi
