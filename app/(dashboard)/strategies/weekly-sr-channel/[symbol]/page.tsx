@@ -382,11 +382,13 @@ export default function WeeklySRDetailPage() {
   const [loading,      setLoading]      = useState(true);
   const [error,        setError]        = useState<string | null>(null);
   const [benchmarks,   setBenchmarks]   = useState<BenchmarkSeries[]>([]);
+  const [benchLoading, setBenchLoading] = useState(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError(null);
     setBenchmarks([]);
+    setBenchLoading(false);
     try {
       const res = await fetch(
         `/api/strategies/weekly-sr-channel/${encodeURIComponent(symbol)}?market=${market}&name=${encodeURIComponent(name)}`
@@ -403,10 +405,12 @@ export default function WeeklySRDetailPage() {
 
       if (fetchedCandles.length > 0) {
         const from = fetchedCandles[0].date;
+        setBenchLoading(true);
         fetch(`/api/strategies/benchmark?from=${from}`)
           .then(r => r.ok ? r.json() : null)
           .then(d => { if (d?.benchmarks) setBenchmarks(d.benchmarks); })
-          .catch(() => {});
+          .catch(() => {})
+          .finally(() => setBenchLoading(false));
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : '오류가 발생했습니다.');
@@ -654,7 +658,13 @@ export default function WeeklySRDetailPage() {
             </div>
 
             {/* 벤치마크 비교 차트 */}
-            {benchmarks.length > 0 && (
+            {benchLoading && (
+              <div className="mb-6 bg-white rounded-2xl border border-gray-200 p-6 flex items-center gap-3 text-sm text-gray-400">
+                <RefreshCw className="h-4 w-4 animate-spin" />
+                5대 지수 수익률 불러오는 중...
+              </div>
+            )}
+            {!benchLoading && benchmarks.length > 0 && (
               <div className="mb-6">
                 <BenchmarkChart stockCandles={candles} benchmarks={benchmarks} stockName={name} />
               </div>

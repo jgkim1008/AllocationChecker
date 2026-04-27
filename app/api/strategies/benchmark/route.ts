@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createServiceClient } from '@/lib/supabase/server';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
+
+const CACHE_HOURS = 6;
 
 const BENCHMARKS = [
   { id: 'KOSPI',   name: 'KOSPI',   symbol: '%5EKS11', color: '#3b82f6' },
@@ -50,16 +53,36 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'from 파라미터 필요' }, { status: 400 });
   }
 
+  // from 날짜를 연-월 단위로 잘라 캐시 키 생성 (같은 달 요청은 같은 캐시 사용)
+  const fromMonth = from.substring(0, 7);
+  const cacheKey = `benchmark_weekly_${fromMonth}`;
+
+  const supabase = await createServiceClient();
+
+  // 캐시 조회
+  const { data: cached } = await supabase
+    .from('strategy_cache')
+    .select('*')
+    .eq('cache_key', cacheKey)
+    .single();
+
+  if (cached) {
+    const age = Date.now() - new Date(cached.created_at).getTime();
+    if (age < CACHE_HOURS * 3600 * 1000) {
+      return NextResponse.json({ benchmarks: cached.data, cached: true });
+    }
+  }
+
+  // 캐시 miss → Yahoo Finance 실시간 조회
   const results = await Promise.all(
     BENCHMARKS.map(async (b) => {
       const closes = await fetchWeeklyClose(b.symbol, from);
       if (!closes || closes.length < 2) return null;
 
-      // from 날짜 이후 첫 번째 데이터를 기준(100)으로 정규화
       const base = closes[0].close;
       const normalized = closes.map((c) => ({
         date: c.date,
-        value: Math.round((c.close / base) * 10000) / 100, // 소수 2자리
+        value: Math.round((c.close / base) * 10000) / 100,
       }));
 
       return { id: b.id, name: b.name, color: b.color, data: normalized };
@@ -67,5 +90,14 @@ export async function GET(req: NextRequest) {
   );
 
   const valid = results.filter(Boolean);
+
+  // 1개 이상 성공하면 캐시 저장
+  if (valid.length > 0) {
+    await supabase.from('strategy_cache').upsert(
+      { cache_key: cacheKey, data: valid, created_at: new Date().toISOString() },
+      { onConflict: 'cache_key' }
+    );
+  }
+
   return NextResponse.json({ benchmarks: valid });
 }
