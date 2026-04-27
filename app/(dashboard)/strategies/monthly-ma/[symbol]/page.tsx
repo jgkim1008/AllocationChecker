@@ -5,7 +5,7 @@ import { useParams, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowLeft, RefreshCw, TrendingUp, TrendingDown,
-  AlertTriangle, CheckCircle, XCircle, Target, Ban,
+  AlertTriangle, CheckCircle, XCircle, Target, Layers, Ban,
 } from 'lucide-react';
 import { PullbackHoverCard } from '@/components/strategies/PullbackHoverCard';
 import { createChart, ColorType, CrosshairMode, CandlestickSeries, LineSeries, createSeriesMarkers, IChartApi } from 'lightweight-charts';
@@ -98,10 +98,14 @@ function MonthlyChartWithPopup({
   candles,
   market,
   symbol,
+  showChannel,
+  showSRFlip,
 }: {
   candles: MonthlyCandle[];
   market: string;
   symbol: string;
+  showChannel: boolean;
+  showSRFlip: boolean;
 }) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const [selectedSignal, setSelectedSignal] = useState<SignalMarker | null>(null);
@@ -347,6 +351,184 @@ function MonthlyChartWithPopup({
     }
     // ─────────────────────────────────────────────────────────────────
 
+    // ─── 패러럴 채널 ─────────────────────────────────────────────────
+    if (showChannel) {
+      const TOUCH_TOL = 0.015;
+      const BREAK_TOL = 0.005;
+      const PIVOT_W   = 3;
+      const lookback  = Math.min(60, sortedData.length);
+      const slice     = sortedData.slice(sortedData.length - lookback);
+      const n         = slice.length;
+
+      // 피벗 고점 탐지
+      const phForCh: { idx: number; price: number }[] = [];
+      for (let i = PIVOT_W; i < n - PIVOT_W; i++) {
+        const h = slice[i].high;
+        let ok = true;
+        for (let j = i - PIVOT_W; j <= i + PIVOT_W; j++) {
+          if (j !== i && slice[j].high >= h) { ok = false; break; }
+        }
+        if (ok) phForCh.push({ idx: i, price: h });
+      }
+
+      let chSlope: number | null = null;
+      let chIntercept: number | null = null;
+      let bestScore  = -Infinity;
+
+      for (let a = 0; a < phForCh.length - 1; a++) {
+        for (let b = a + 1; b < phForCh.length; b++) {
+          const { idx: ia, price: ya } = phForCh[a];
+          const { idx: ib, price: yb } = phForCh[b];
+          const slope     = (yb - ya) / (ib - ia);
+          const intercept = ya - slope * ia;
+          let valid = true;
+          let touches = 0;
+          for (let k = ia; k < n; k++) {
+            const lineAtK = slope * k + intercept;
+            if (lineAtK <= 0) { valid = false; break; }
+            if (slice[k].high > lineAtK * (1 + BREAK_TOL)) { valid = false; break; }
+            if (Math.abs(slice[k].high - lineAtK) / lineAtK < TOUCH_TOL) touches++;
+          }
+          if (!valid) continue;
+          const score = touches * 2 + (ib / n) * 3;
+          if (score > bestScore) {
+            bestScore = score; chSlope = slope; chIntercept = intercept;
+          }
+        }
+      }
+
+      // Fallback: 최고 고점에 선형 회귀 intercept
+      if (chSlope === null || chIntercept === null) {
+        const xs = Array.from({ length: n }, (_, i) => i);
+        const ys = slice.map(c => c.close);
+        const sumX = xs.reduce((a, b) => a + b, 0);
+        const sumY = ys.reduce((a, b) => a + b, 0);
+        const sumXY = xs.reduce((s, x, i) => s + x * ys[i], 0);
+        const sumX2 = xs.reduce((s, x) => s + x * x, 0);
+        const denom = n * sumX2 - sumX * sumX;
+        if (denom !== 0) {
+          chSlope = (n * sumXY - sumX * sumY) / denom;
+          let maxAbove = -Infinity;
+          for (let i = 0; i < n; i++) {
+            const res = slice[i].high - chSlope * i;
+            if (res > maxAbove) maxAbove = res;
+          }
+          chIntercept = maxAbove;
+        }
+      }
+
+      if (chSlope !== null && chIntercept !== null) {
+        // 하단선: 동일 기울기, 최저 저가에 맞춤
+        let lowerOffset = 0;
+        for (let i = 0; i < n; i++) {
+          const res = slice[i].low - (chSlope * i + chIntercept);
+          if (res < lowerOffset) lowerOffset = res;
+        }
+
+        const startGI = sortedData.length - n;
+        const chUpper: { time: string; value: number }[] = [];
+        const chMid:   { time: string; value: number }[] = [];
+        const chLower: { time: string; value: number }[] = [];
+
+        for (let i = 0; i < n; i++) {
+          const upper = chSlope * i + chIntercept;
+          const lower = upper + lowerOffset;
+          const t = `${sortedData[startGI + i].date}-01` as string;
+          chUpper.push({ time: t, value: upper });
+          chMid.push({   time: t, value: (upper + lower) / 2 });
+          chLower.push({ time: t, value: lower });
+        }
+
+        chart.addSeries(LineSeries, {
+          color: '#f97316', lineWidth: 1, lineStyle: 0,
+          priceLineVisible: false, lastValueVisible: true, title: '채널상단',
+        }).setData(chUpper);
+        chart.addSeries(LineSeries, {
+          color: '#9ca3af', lineWidth: 1, lineStyle: 2,
+          priceLineVisible: false, lastValueVisible: false,
+        }).setData(chMid);
+        chart.addSeries(LineSeries, {
+          color: '#06b6d4', lineWidth: 1, lineStyle: 0,
+          priceLineVisible: false, lastValueVisible: true, title: '채널하단',
+        }).setData(chLower);
+      }
+    }
+
+    // ─── SR 플립 존 ──────────────────────────────────────────────────
+    if (showSRFlip) {
+      const ZONE_TOL   = 0.015; // 1.5% 클러스터링
+      const NEARBY_PCT = 0.10;  // ±10% 이내만 표시
+      const PW         = 2;
+
+      const currentPrice = closes[sortedData.length - 1];
+
+      // 피벗 고점 → 저항 / 피벗 저점 → 지지
+      type RZ = { price: number; type: 'resistance' | 'support'; pivotIdx: number };
+      const rawZones: RZ[] = [];
+
+      for (let i = PW; i < sortedData.length - PW; i++) {
+        const h = sortedData[i].high;
+        let isH = true;
+        for (let j = i - PW; j <= i + PW; j++) {
+          if (j !== i && sortedData[j].high >= h) { isH = false; break; }
+        }
+        if (isH) rawZones.push({ price: h, type: 'resistance', pivotIdx: i });
+
+        const l = sortedData[i].low;
+        let isL = true;
+        for (let j = i - PW; j <= i + PW; j++) {
+          if (j !== i && sortedData[j].low <= l) { isL = false; break; }
+        }
+        if (isL) rawZones.push({ price: l, type: 'support', pivotIdx: i });
+      }
+
+      // 1.5% 클러스터링
+      const clustered: { price: number; type: 'resistance' | 'support' }[] = [];
+      const used = new Set<number>();
+      for (let i = 0; i < rawZones.length; i++) {
+        if (used.has(i)) continue;
+        const group = [rawZones[i]];
+        for (let j = i + 1; j < rawZones.length; j++) {
+          if (!used.has(j) && Math.abs(rawZones[j].price - rawZones[i].price) / rawZones[i].price < ZONE_TOL) {
+            group.push(rawZones[j]); used.add(j);
+          }
+        }
+        used.add(i);
+        const avgPrice = group.reduce((s, z) => s + z.price, 0) / group.length;
+        const dominant = group.filter(z => z.type === 'resistance').length >= group.length / 2 ? 'resistance' : 'support';
+        clustered.push({ price: avgPrice, type: dominant });
+      }
+
+      // SR 플립 판정 + 그리기
+      for (const z of clustered) {
+        const dist = Math.abs((currentPrice - z.price) / z.price);
+        if (dist > NEARBY_PCT) continue;
+
+        const aboveZone = currentPrice > z.price * 1.005;
+        const belowZone = currentPrice < z.price * 0.995;
+
+        const isFlipSupport = z.type === 'resistance' && aboveZone;   // 저항→지지
+        const isFlipResist  = z.type === 'support'    && belowZone;   // 지지→저항
+        if (!isFlipSupport && !isFlipResist) continue;
+
+        const color = isFlipSupport ? '#10b981' : '#f43f5e';
+        const title = isFlipSupport ? 'SR플립 지지' : 'SR플립 저항';
+
+        chart.addSeries(LineSeries, {
+          color,
+          lineWidth: 2,
+          lineStyle: 0,
+          priceLineVisible: false,
+          lastValueVisible: true,
+          title,
+        }).setData(sortedData.map(c => ({
+          time: `${c.date}-01` as string,
+          value: z.price,
+        })));
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────
+
     // 클릭 이벤트 - 마커 클릭 시 4분할 구간 차트에 그리기
     chart.subscribeClick((param) => {
       if (!param.time) { clearZones(); return; }
@@ -372,7 +554,7 @@ function MonthlyChartWithPopup({
       candleSeriesRef.current = null;
       zoneLinesRef.current = [];
     };
-  }, [candles, market, clearZones, drawZones]);
+  }, [candles, market, showChannel, showSRFlip, clearZones, drawZones]);
 
   // 현재가 기준 구간 계산 (info bar용)
   const zoneInfoBar = useMemo(() => {
@@ -468,6 +650,8 @@ export default function MonthlyMADetailPage() {
   const [candles, setCandles] = useState<MonthlyCandle[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showChannel, setShowChannel] = useState(true);
+  const [showSRFlip, setShowSRFlip] = useState(true);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -706,11 +890,59 @@ export default function MonthlyMADetailPage() {
         {!loading && !error && candles.length >= 10 && (
           <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden mb-6">
             <div className="px-5 py-4 border-b border-gray-100">
-              <h3 className="font-black text-gray-900">월봉 차트 (10MA)</h3>
-              <p className="text-xs text-gray-400 mt-1">차트의 매수/매도 마커 위에 마우스를 올려보세요</p>
+              <div className="flex items-start justify-between gap-3 flex-wrap">
+                <div>
+                  <h3 className="font-black text-gray-900">월봉 차트 (10MA)</h3>
+                  <p className="text-xs text-gray-400 mt-1">차트의 매수/매도 마커 위에 마우스를 올려보세요</p>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    onClick={() => setShowChannel(v => !v)}
+                    className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg border transition-colors ${
+                      showChannel
+                        ? 'bg-orange-500 border-orange-500 text-white'
+                        : 'bg-white border-gray-200 text-gray-400 hover:border-gray-300'
+                    }`}
+                  >
+                    <Layers className="h-3 w-3" />
+                    패러럴 채널
+                  </button>
+                  <button
+                    onClick={() => setShowSRFlip(v => !v)}
+                    className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg border transition-colors ${
+                      showSRFlip
+                        ? 'bg-rose-500 border-rose-500 text-white'
+                        : 'bg-white border-gray-200 text-gray-400 hover:border-gray-300'
+                    }`}
+                  >
+                    <Layers className="h-3 w-3" />
+                    SR 플립
+                  </button>
+                </div>
+              </div>
+              {/* 범례 */}
+              <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-[11px] text-gray-500">
+                <span className="flex items-center gap-1"><span className="inline-block w-3 h-0.5 bg-red-400" />저항선</span>
+                <span className="flex items-center gap-1"><span className="inline-block w-3 h-0.5 bg-green-600" />지지선</span>
+                <span className="flex items-center gap-1"><span className="inline-block w-3 h-0.5 bg-orange-500" />10MA</span>
+                {showChannel && <>
+                  <span className="flex items-center gap-1"><span className="inline-block w-3 h-0.5 bg-orange-400" />채널상단</span>
+                  <span className="flex items-center gap-1"><span className="inline-block w-3 h-0.5 bg-cyan-500" />채널하단</span>
+                </>}
+                {showSRFlip && <>
+                  <span className="flex items-center gap-1"><span className="inline-block w-3 h-0.5 bg-emerald-500" />SR플립 지지</span>
+                  <span className="flex items-center gap-1"><span className="inline-block w-3 h-0.5 bg-rose-500" />SR플립 저항</span>
+                </>}
+              </div>
             </div>
             <div className="p-4">
-              <MonthlyChartWithPopup candles={candles} market={market} symbol={symbol} />
+              <MonthlyChartWithPopup
+                candles={candles}
+                market={market}
+                symbol={symbol}
+                showChannel={showChannel}
+                showSRFlip={showSRFlip}
+              />
             </div>
           </div>
         )}
