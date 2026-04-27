@@ -100,12 +100,14 @@ function MonthlyChartWithPopup({
   symbol,
   showChannel,
   showSRFlip,
+  showBijag,
 }: {
   candles: MonthlyCandle[];
   market: string;
   symbol: string;
   showChannel: boolean;
   showSRFlip: boolean;
+  showBijag: boolean;
 }) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const [selectedSignal, setSelectedSignal] = useState<SignalMarker | null>(null);
@@ -529,6 +531,131 @@ function MonthlyChartWithPopup({
     }
     // ─────────────────────────────────────────────────────────────────
 
+    // ─── 빗각 채널 ───────────────────────────────────────────────────
+    if (showBijag) {
+      const BIJ_LOOKBACK = Math.min(60, sortedData.length);
+      const bijSlice = sortedData.slice(sortedData.length - BIJ_LOOKBACK);
+      const bijN = bijSlice.length;
+      const BIJ_TOUCH_TOL = 0.015;
+      const BIJ_PIVOT_W   = 3;
+
+      const bijHighs: { idx: number; price: number }[] = [];
+      const bijLows:  { idx: number; price: number }[] = [];
+
+      for (let i = BIJ_PIVOT_W; i < bijN - BIJ_PIVOT_W; i++) {
+        const h = bijSlice[i].high;
+        let isHigh = true;
+        for (let j = i - BIJ_PIVOT_W; j <= i + BIJ_PIVOT_W; j++) {
+          if (j !== i && bijSlice[j].high >= h) { isHigh = false; break; }
+        }
+        if (isHigh) bijHighs.push({ idx: i, price: h });
+
+        const l = bijSlice[i].low;
+        let isLow = true;
+        for (let j = i - BIJ_PIVOT_W; j <= i + BIJ_PIVOT_W; j++) {
+          if (j !== i && bijSlice[j].low <= l) { isLow = false; break; }
+        }
+        if (isLow) bijLows.push({ idx: i, price: l });
+      }
+
+      if (bijHighs.length > 0 && bijLows.length > 0) {
+        let bestSlope:       number | null = null;
+        let bestIntercept:   number | null = null;
+        let bestUpperOffset  = 0;
+        let bestLowerOffset  = 0;
+        let bestUpperTouches = 0;
+        let bestLowerTouches = 0;
+        let bestScore        = -Infinity;
+
+        for (const ph of bijHighs) {
+          for (const pl of bijLows) {
+            if (ph.idx === pl.idx) continue;
+            if (Math.abs(ph.idx - pl.idx) < 3) continue;
+
+            const slope     = (pl.price - ph.price) / (pl.idx - ph.idx);
+            const intercept = ph.price - slope * ph.idx;
+
+            let maxAbove = 0;
+            let minBelow = 0;
+            let valid    = true;
+
+            for (let i = 0; i < bijN; i++) {
+              const mid = slope * i + intercept;
+              if (mid <= 0) { valid = false; break; }
+              const aboveHigh = bijSlice[i].high - mid;
+              const belowLow  = bijSlice[i].low  - mid;
+              if (aboveHigh > maxAbove) maxAbove = aboveHigh;
+              if (belowLow  < minBelow) minBelow = belowLow;
+            }
+            if (!valid) continue;
+
+            const currentMid   = slope * (bijN - 1) + intercept;
+            const channelWidth = maxAbove - minBelow;
+            const widthPct     = channelWidth / currentMid;
+            if (widthPct > 0.5 || widthPct < 0.02) continue;
+
+            let upperTouches = 0;
+            let lowerTouches = 0;
+            for (let i = 0; i < bijN; i++) {
+              const mid   = slope * i + intercept;
+              const upper = mid + maxAbove;
+              const lower = mid + minBelow;
+              if (upper > 0 && Math.abs(bijSlice[i].high - upper) / upper < BIJ_TOUCH_TOL) upperTouches++;
+              if (lower > 0 && Math.abs(bijSlice[i].low  - lower) / lower < BIJ_TOUCH_TOL) lowerTouches++;
+            }
+
+            const symmetry = 1 - Math.abs(maxAbove - Math.abs(minBelow)) / channelWidth;
+            const recency  = Math.max(ph.idx, pl.idx) / bijN;
+            const score    = (upperTouches + lowerTouches) * 2 + symmetry * 3 + recency * 2;
+
+            if (score > bestScore) {
+              bestScore        = score;
+              bestSlope        = slope;
+              bestIntercept    = intercept;
+              bestUpperOffset  = maxAbove;
+              bestLowerOffset  = minBelow;
+              bestUpperTouches = upperTouches;
+              bestLowerTouches = lowerTouches;
+            }
+          }
+        }
+
+        if (bestSlope !== null && bestIntercept !== null) {
+          const bijUpperData: { time: string; value: number }[] = [];
+          const bijMidData:   { time: string; value: number }[] = [];
+          const bijLowerData: { time: string; value: number }[] = [];
+
+          const startGI = sortedData.length - BIJ_LOOKBACK;
+          for (let i = 0; i < bijN; i++) {
+            const mid   = bestSlope * i + bestIntercept;
+            const upper = mid + bestUpperOffset;
+            const lower = mid + bestLowerOffset;
+            const t = `${sortedData[startGI + i].date}-01` as string;
+            bijUpperData.push({ time: t, value: upper });
+            bijMidData.push({   time: t, value: mid   });
+            bijLowerData.push({ time: t, value: lower });
+          }
+
+          const upperW = bestUpperTouches >= 3 ? 2 : 1;
+          const lowerW = bestLowerTouches >= 3 ? 2 : 1;
+
+          chart.addSeries(LineSeries, {
+            color: '#8b5cf6', lineWidth: upperW, lineStyle: 0,
+            priceLineVisible: false, lastValueVisible: true, title: '빗각상단',
+          }).setData(bijUpperData);
+          chart.addSeries(LineSeries, {
+            color: '#a78bfa', lineWidth: 1, lineStyle: 2,
+            priceLineVisible: false, lastValueVisible: false,
+          }).setData(bijMidData);
+          chart.addSeries(LineSeries, {
+            color: '#7c3aed', lineWidth: lowerW, lineStyle: 0,
+            priceLineVisible: false, lastValueVisible: true, title: '빗각하단',
+          }).setData(bijLowerData);
+        }
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────
+
     // 클릭 이벤트 - 마커 클릭 시 4분할 구간 차트에 그리기
     chart.subscribeClick((param) => {
       if (!param.time) { clearZones(); return; }
@@ -554,7 +681,7 @@ function MonthlyChartWithPopup({
       candleSeriesRef.current = null;
       zoneLinesRef.current = [];
     };
-  }, [candles, market, showChannel, showSRFlip, clearZones, drawZones]);
+  }, [candles, market, showChannel, showSRFlip, showBijag, clearZones, drawZones]);
 
   // 현재가 기준 구간 계산 (info bar용)
   const zoneInfoBar = useMemo(() => {
@@ -652,6 +779,7 @@ export default function MonthlyMADetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [showChannel, setShowChannel] = useState(true);
   const [showSRFlip, setShowSRFlip] = useState(true);
+  const [showBijag, setShowBijag] = useState(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -918,6 +1046,17 @@ export default function MonthlyMADetailPage() {
                     <Layers className="h-3 w-3" />
                     SR 플립
                   </button>
+                  <button
+                    onClick={() => setShowBijag(v => !v)}
+                    className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg border transition-colors ${
+                      showBijag
+                        ? 'bg-violet-500 border-violet-500 text-white'
+                        : 'bg-white border-gray-200 text-gray-400 hover:border-gray-300'
+                    }`}
+                  >
+                    <Layers className="h-3 w-3" />
+                    빗각 채널
+                  </button>
                 </div>
               </div>
               {/* 범례 */}
@@ -933,6 +1072,10 @@ export default function MonthlyMADetailPage() {
                   <span className="flex items-center gap-1"><span className="inline-block w-3 h-0.5 bg-emerald-500" />SR플립 지지</span>
                   <span className="flex items-center gap-1"><span className="inline-block w-3 h-0.5 bg-rose-500" />SR플립 저항</span>
                 </>}
+                {showBijag && <>
+                  <span className="flex items-center gap-1"><span className="inline-block w-3 h-0.5 bg-violet-500" />빗각상단</span>
+                  <span className="flex items-center gap-1"><span className="inline-block w-3 h-0.5 bg-violet-700" />빗각하단</span>
+                </>}
               </div>
             </div>
             <div className="p-4">
@@ -942,6 +1085,7 @@ export default function MonthlyMADetailPage() {
                 symbol={symbol}
                 showChannel={showChannel}
                 showSRFlip={showSRFlip}
+                showBijag={showBijag}
               />
             </div>
           </div>
