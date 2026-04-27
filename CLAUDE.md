@@ -220,6 +220,45 @@ chart1.timeScale().subscribeVisibleLogicalRangeChange(range => {
 - Bar charts: 현재 월 = `#16a34a`, 나머지 = `#E5E7EB`
 - StockAvatar: US bg `#DBEAFE` / color `#2563EB`; KR bg `#DCFCE7` / color `#16a34a`
 
+---
+
+## 차트 전략 싱크 (종목 상세 페이지)
+
+`app/(dashboard)/strategies/stock-scan/[symbol]/page.tsx` 내부 `chartStrategySyncs` useMemo에서 계산.
+
+### 현재 포함된 전략 목록
+
+| 전략 | 키 | 색상 | 데이터 요구 |
+|------|----|------|------------|
+| 이평선 정배열 | `maAlignment` | green | 일봉 ≥ 120일 |
+| 이평선 역배열 돌파 | `inverseAlignment` | blue | 일봉 ≥ 448일 |
+| MTF RSI + Dual RSI | `dualRsi` | violet | 일봉 ≥ 50일 |
+| RSI 다이버전스 | `rsiDivergence` | orange | 일봉 ≥ 60일 |
+| 월봉 10이평 | `monthlyMA10` | indigo | 일봉 ≥ 220일 (월별 집계) |
+| 주봉 SR플립 + 채널 | `weeklySR` | rose | 일봉 ≥ 70일 (5거래일 = 1주봉) |
+
+### 새 전략 싱크 추가 규칙
+
+1. `chartStrategySyncs` useMemo 내부에서 계산 로직 추가
+2. return 객체에 키 추가: `{ syncRate, criteria: [{ label, pass }] }`
+3. UI 배열(`[...].map(...)`)에 항목 추가
+
+```ts
+{
+  label: '전략명',
+  sublabel: '한줄 설명',
+  href: `/strategies/{strategy-name}/${symbol}?market=${market}&name=...`,
+  color: { bar: 'bg-xxx-500', badge: 'bg-xxx-50 text-xxx-700', icon: 'text-xxx-500' },
+  data: chartStrategySyncs.{key},
+}
+```
+
+- `syncRate` 0~100%: 70↑ 높음(green), 40↑ 보통(yellow), 40↓ 낮음(gray)
+- 일봉 데이터(historyForCalc)를 주봉/월봉으로 집계할 때: 월봉 = `date.substring(0,7)` 비교, 주봉 = 5거래일 간격(`i += 5`) 근사
+- 각 전략 계산기(lib/utils/)가 있으면 import해서 사용, 없으면 useMemo 내부에 직접 구현
+
+---
+
 ## Key File Locations
 
 - `lib/api/fmp.ts` — FMP API wrapper (US stocks)

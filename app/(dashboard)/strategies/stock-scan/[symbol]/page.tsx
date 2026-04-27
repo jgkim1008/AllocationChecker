@@ -1323,6 +1323,48 @@ export default function AnalystAlphaDetailPage({ params }: { params: Promise<{ s
       };
     })();
 
+    // 주봉 SR플립 + 채널 + 10MA 전략 (일봉 5개 = 1주봉으로 근사)
+    const weeklySRResult = (() => {
+      if (historyForCalc.length < 70) return null;
+
+      // 5거래일 단위로 주봉 종가 추출 (최신순, 최대 14주)
+      const weeklyCloses: number[] = [];
+      for (let i = 0; i < historyForCalc.length && weeklyCloses.length < 14; i += 5) {
+        weeklyCloses.push(historyForCalc[i].price);
+      }
+      if (weeklyCloses.length < 11) return null;
+
+      const currentPrice = f.currentPrice;
+      // 최근 10주 MA
+      const ma10 = weeklyCloses.slice(0, 10).reduce((a, b) => a + b, 0) / 10;
+      // 1주 전 기준 10주 MA (기울기 판단)
+      const prevMA10 = weeklyCloses.slice(1, 11).reduce((a, b) => a + b, 0) / 10;
+
+      const deviation = ((currentPrice - ma10) / ma10) * 100;
+      const isAboveMA   = currentPrice >= ma10;
+      const isPullback  = isAboveMA && deviation >= 0 && deviation <= 3;
+      const isMaUptrend = ma10 > prevMA10;
+      const isNotTooFar = isAboveMA && deviation <= 10;
+
+      let syncRate = 0;
+      if (isAboveMA)   syncRate += 40;
+      if (isMaUptrend) syncRate += 25;
+      if (isPullback)  syncRate += 25;
+      if (isNotTooFar) syncRate += 10;
+
+      return {
+        syncRate,
+        ma10,
+        deviation,
+        criteria: [
+          { label: `종가 ≥ 주봉 10MA (${deviation >= 0 ? '+' : ''}${deviation.toFixed(1)}%)`, pass: isAboveMA },
+          { label: '주봉 10MA 우상향', pass: isMaUptrend },
+          { label: 'MA 눌림목 (이격 0~3%)', pass: isPullback },
+          { label: '과도한 이격 없음 (≤10%)', pass: isNotTooFar },
+        ],
+      };
+    })();
+
     return {
       maAlignment: maResult ? {
         syncRate: maResult.syncRate,
@@ -1373,6 +1415,7 @@ export default function AnalystAlphaDetailPage({ params }: { params: Promise<{ s
           { label: '신호 유지 중', pass: monthlyMA10Result.criteria.signalHold },
         ],
       } : null,
+      weeklySR: weeklySRResult,
     };
   }, [data, f]);
 
@@ -1769,6 +1812,13 @@ export default function AnalystAlphaDetailPage({ params }: { params: Promise<{ s
                       href: `/strategies/monthly-ma/${symbol}?market=${market}&name=${encodeURIComponent(f?.name ?? symbol)}`,
                       color: { bar: 'bg-indigo-500', badge: 'bg-indigo-50 text-indigo-700', icon: 'text-indigo-500' },
                       data: chartStrategySyncs.monthlyMA10,
+                    },
+                    {
+                      label: '주봉 SR플립 + 채널 전략',
+                      sublabel: '주봉 10MA 위 + 눌림목 · SR플립 지지 구간',
+                      href: `/strategies/weekly-sr-channel/${symbol}?market=${market}&name=${encodeURIComponent(f?.name ?? symbol)}`,
+                      color: { bar: 'bg-rose-500', badge: 'bg-rose-50 text-rose-700', icon: 'text-rose-500' },
+                      data: chartStrategySyncs.weeklySR,
                     },
                   ].map(({ label, sublabel, href, color, data: syncData }) => {
                     if (!syncData) return null;
