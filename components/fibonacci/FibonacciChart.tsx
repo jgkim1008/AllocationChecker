@@ -23,19 +23,33 @@ interface FibLevels {
   '1': number;
 }
 
-interface ExtTarget {
+export interface PivotPoint {
+  date: string;
+  price: number;
+  idx: number;
+}
+
+interface MethodTarget {
   ratioLabel: string;
   label: string;
   color: string;
   price: number;
-  isGolden: boolean;
+  isKey: boolean;
 }
 
-interface AbcPoints {
-  A: { date: string; price: number };
-  B: { date: string; price: number };
-  C: { date: string; price: number; isReal: boolean }; // isReal=false → C=B (되돌림 없음)
+interface P012Points {
+  P0: { date: string; price: number };
+  P1: { date: string; price: number };
+  P2: { date: string; price: number; isReal: boolean };
 }
+
+export interface CustomP012 {
+  P0?: PivotPoint;
+  P1?: PivotPoint;
+  P2?: PivotPoint;
+}
+
+export type PickStep = 'P0' | 'P1' | 'P2';
 
 interface FibonacciChartProps {
   history: PriceData[];
@@ -43,7 +57,38 @@ interface FibonacciChartProps {
   yearHigh: number;
   yearLow: number;
   market: 'US' | 'KR';
+  showProjection: boolean;
   showExtension: boolean;
+  showExpansion: boolean;
+  customP012?: CustomP012 | null;
+  pickingStep?: PickStep | null;
+  onPickPoint?: (step: PickStep, point: PivotPoint) => void;
+}
+
+// ── 피벗 탐지 유틸 (외부에서도 import 가능) ────────────────────────────────
+export function detectPivots(
+  history: PriceData[],
+  pw = 5,
+): { highs: PivotPoint[]; lows: PivotPoint[] } {
+  const sorted = [...history]
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .filter((item, idx, arr) => idx === 0 || item.date !== arr[idx - 1].date);
+  const n = sorted.length;
+
+  const highs: PivotPoint[] = [];
+  const lows: PivotPoint[] = [];
+
+  for (let i = pw; i < n - pw; i++) {
+    const h = sorted[i].high;
+    if ([...Array(pw * 2 + 1)].every((_, j) => j === pw || sorted[i - pw + j].high <= h))
+      highs.push({ idx: i, price: h, date: sorted[i].date });
+
+    const l = sorted[i].low;
+    if ([...Array(pw * 2 + 1)].every((_, j) => j === pw || sorted[i - pw + j].low >= l))
+      lows.push({ idx: i, price: l, date: sorted[i].date });
+  }
+
+  return { highs, lows };
 }
 
 const FIB_COLORS: Record<string, string> = {
@@ -70,6 +115,31 @@ const FIB_LABELS: Record<string, string> = {
   '1': '100%',
 };
 
+const PROJ_TARGETS = [
+  { ratioLabel: '0.618', label: '61.8% 확인선',        color: '#10b981', isKey: false },
+  { ratioLabel: '1.0',   label: '100% 1차',             color: '#f59e0b', isKey: false },
+  { ratioLabel: '1.13',  label: '113% 2차',             color: '#f97316', isKey: false },
+  { ratioLabel: '1.272', label: '127.2% 3차',           color: '#fb923c', isKey: false },
+  { ratioLabel: '1.414', label: '141.4% 4차',           color: '#ef4444', isKey: false },
+  { ratioLabel: '1.618', label: '161.8% 황금비',        color: '#dc2626', isKey: true  },
+];
+
+const EXT_TARGETS = [
+  { ratioLabel: '1.0',   label: '100% (연장 1차)',      color: '#c084fc', isKey: false },
+  { ratioLabel: '1.13',  label: '113% (연장 2차)',      color: '#a855f7', isKey: false },
+  { ratioLabel: '1.272', label: '127.2% (연장 3차)',    color: '#9333ea', isKey: false },
+  { ratioLabel: '1.414', label: '141.4% (연장 4차)',    color: '#7c3aed', isKey: false },
+  { ratioLabel: '1.618', label: '161.8% (연장 황금비)', color: '#6d28d9', isKey: true  },
+];
+
+const EXP_TARGETS = [
+  { ratioLabel: '1.0',   label: '100% (확대 1차)',      color: '#67e8f9', isKey: false },
+  { ratioLabel: '1.13',  label: '113% (확대 2차)',      color: '#22d3ee', isKey: false },
+  { ratioLabel: '1.272', label: '127.2% (확대 3차)',    color: '#06b6d4', isKey: false },
+  { ratioLabel: '1.414', label: '141.4% (확대 4차)',    color: '#0891b2', isKey: false },
+  { ratioLabel: '1.618', label: '161.8% (확대 황금비)', color: '#0e7490', isKey: true  },
+];
+
 function formatPrice(price: number, market: 'US' | 'KR'): string {
   if (market === 'US') {
     return `$${price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -83,107 +153,130 @@ export function FibonacciChart({
   yearHigh,
   yearLow,
   market,
+  showProjection,
   showExtension,
+  showExpansion,
+  customP012,
+  pickingStep,
+  onPickPoint,
 }: FibonacciChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
+  const anyMethod = showProjection || showExtension || showExpansion;
 
-  // ── ABC 3점 피보나치 익스텐션 계산 ───────────────────────────────
-  const { extTargets, abcPoints } = useMemo<{
-    extTargets: ExtTarget[];
-    abcPoints: AbcPoints | null;
+  // ── P0/P1/P2 계산 ───────────────────────────────────────────────────
+  const computed = useMemo<{
+    p012: P012Points | null;
+    projTargets: MethodTarget[];
+    extTargets:  MethodTarget[];
+    expTargets:  MethodTarget[];
   }>(() => {
-    const empty = { extTargets: [], abcPoints: null };
+    const empty = { p012: null, projTargets: [], extTargets: [], expTargets: [] };
     if (!history || history.length < 20) return empty;
 
     const sorted = [...history]
       .sort((a, b) => a.date.localeCompare(b.date))
       .filter((item, idx, arr) => idx === 0 || item.date !== arr[idx - 1].date);
-    const n = sorted.length;
-    const PW = 10; // 일봉 기준 ±10일 → 노이즈 피벗 제거
 
-    // 피벗 고점 / 저점 탐지
-    const pivotHighs: { idx: number; price: number; date: string }[] = [];
-    const pivotLows:  { idx: number; price: number; date: string }[] = [];
-    for (let i = PW; i < n - PW; i++) {
-      const h = sorted[i].high;
-      if ([...Array(PW * 2 + 1)].every((_, j) => j === PW || sorted[i - PW + j].high <= h))
-        pivotHighs.push({ idx: i, price: h, date: sorted[i].date });
-      const l = sorted[i].low;
-      if ([...Array(PW * 2 + 1)].every((_, j) => j === PW || sorted[i - PW + j].low >= l))
-        pivotLows.push({ idx: i, price: l, date: sorted[i].date });
-    }
+    let p0Idx: number, p0Date: string, p0Price: number;
+    let p1Idx: number, p1Date: string, p1Price: number;
+    let p2Price: number, p2Date: string, p2IsReal: boolean;
 
-    if (pivotHighs.length === 0) return empty;
+    // ── 사용자 커스텀 선택 ─────────────────────────────────────────────
+    const hasCustom = customP012?.P0 && customP012?.P1;
+    if (hasCustom) {
+      const cp0 = customP012!.P0!;
+      const cp1 = customP012!.P1!;
+      p0Idx = cp0.idx; p0Date = cp0.date; p0Price = cp0.price;
+      p1Idx = cp1.idx; p1Date = cp1.date; p1Price = cp1.price;
 
-    // 모든 유효한 (A, B) 쌍 탐색
-    // A = B 직전 피벗 저점, 조건: B > A (상승 임펄스), 상승폭 5% 이상
-    type Pivot = { idx: number; price: number; date: string };
-    let bestA: Pivot | null = null;
-    let bestB: Pivot | null = null;
-    let bestScore = -Infinity;
+      if (p1Idx <= p0Idx) return empty;
 
-    for (const ph of pivotHighs) {
-      const priorLows = pivotLows.filter(l => l.idx < ph.idx);
-      if (priorLows.length === 0) continue;
-      const a = priorLows[priorLows.length - 1]; // B 직전 가장 최근 저점
-      const rangePct = (ph.price - a.price) / a.price;
-      if (rangePct < 0.05) continue; // 5% 미만 이동은 제외
-      // 점수: 상승폭 60% + 최신성 40%
-      const score = rangePct * 0.6 + (ph.idx / n) * 0.4;
-      if (score > bestScore) {
-        bestScore = score;
-        bestA = a;
-        bestB = ph;
+      if (customP012?.P2) {
+        const cp2 = customP012!.P2!;
+        p2Price = cp2.price; p2Date = cp2.date; p2IsReal = true;
+      } else {
+        // P2 자동 탐지 (P1 이후 최저점)
+        p2Price = p1Price; p2Date = p1Date; p2IsReal = false;
+        const afterP1 = sorted.slice(p1Idx + 1);
+        if (afterP1.length >= 3) {
+          let minLow = afterP1[0].low, minDate = afterP1[0].date;
+          for (const bar of afterP1) { if (bar.low < minLow) { minLow = bar.low; minDate = bar.date; } }
+          const impulseTemp = p1Price - p0Price;
+          const retrace = impulseTemp > 0 ? (p1Price - minLow) / impulseTemp : 0;
+          if (retrace >= 0.1 && retrace <= 0.95) { p2Price = minLow; p2Date = minDate; p2IsReal = true; }
+        }
+      }
+    } else {
+      // ── 자동 탐지 ────────────────────────────────────────────────
+      // P0 = yearLow 에 가장 가까운 바 (전체 구간)
+      const LOW_TOL = yearLow * 0.005;
+      p0Idx = -1; p0Date = ''; p0Price = 0;
+      for (let i = 0; i < sorted.length; i++) {
+        if (Math.abs(sorted[i].low - yearLow) <= LOW_TOL) {
+          p0Idx = i; p0Date = sorted[i].date; p0Price = sorted[i].low; break;
+        }
+      }
+      if (p0Idx < 0) {
+        let minDiff = Infinity;
+        for (let i = 0; i < sorted.length; i++) {
+          const d = Math.abs(sorted[i].low - yearLow);
+          if (d < minDiff) { minDiff = d; p0Idx = i; p0Date = sorted[i].date; p0Price = sorted[i].low; }
+        }
+      }
+
+      // P1 = P0 이후 구간의 최고가 바 (yearHigh 여부 무관)
+      // → 상승추세: yearHigh 가 P0 이후 → P1 = yearHigh
+      // → 하락추세(yearHigh 가 P0 이전): 반등 고점을 P1 로 사용
+      p1Idx = -1; p1Date = ''; p1Price = 0;
+      for (let i = p0Idx + 1; i < sorted.length; i++) {
+        if (sorted[i].high > p1Price) {
+          p1Idx = i; p1Date = sorted[i].date; p1Price = sorted[i].high;
+        }
+      }
+
+      // P0 이후 구간이 없거나 의미있는 상승(5% 미만)이면 스킵
+      if (p1Idx < 0 || (p1Price - p0Price) / p0Price < 0.05) return empty;
+
+      p2Price = p1Price; p2Date = p1Date; p2IsReal = false;
+      const afterP1 = sorted.slice(p1Idx + 1);
+      if (afterP1.length >= 3) {
+        let minLow = afterP1[0].low, minDate = afterP1[0].date;
+        for (const bar of afterP1) { if (bar.low < minLow) { minLow = bar.low; minDate = bar.date; } }
+        const impulseTemp = p1Price - p0Price;
+        const retrace = impulseTemp > 0 ? (p1Price - minLow) / impulseTemp : 0;
+        if (retrace >= 0.1 && retrace <= 0.95) { p2Price = minLow; p2Date = minDate; p2IsReal = true; }
       }
     }
 
-    if (!bestA || !bestB) return empty;
-    const A = bestA;
-    const B = bestB;
+    const impulse = p1Price - p0Price;
+    if (impulse <= 0) return empty;
+    const correction = p1Price - p2Price;
 
-    const range = B.price - A.price;
-    if (range <= 0) return empty;
-
-    // C = B 이후 최저점 (되돌림 20~85% 사이)
-    let cPrice = B.price;
-    let cDate  = B.date;
-    let cIsReal = false;
-    const afterB = sorted.slice(B.idx + 1);
-    if (afterB.length >= 3) {
-      let minLow = afterB[0].low;
-      let minDate = afterB[0].date;
-      for (const c of afterB) {
-        if (c.low < minLow) { minLow = c.low; minDate = c.date; }
-      }
-      const retrace = (B.price - minLow) / range;
-      if (retrace >= 0.2 && retrace <= 0.85) {
-        cPrice = minLow; cDate = minDate; cIsReal = true;
-      }
-    }
-
-    const targets: ExtTarget[] = [
-      { ratioLabel: '0.618', label: '61.8% 확인선',          color: '#10b981', isGolden: false },
-      { ratioLabel: '1.0',   label: '100% 1차 목표',         color: '#f59e0b', isGolden: false },
-      { ratioLabel: '1.13',  label: '113% 2차 목표',         color: '#f97316', isGolden: false },
-      { ratioLabel: '1.272', label: '127.2% 3차 목표',       color: '#fb923c', isGolden: false },
-      { ratioLabel: '1.414', label: '141.4% 4차 목표',       color: '#ef4444', isGolden: false },
-      { ratioLabel: '1.618', label: '161.8% 목표 (황금비)',   color: '#dc2626', isGolden: true  },
-    ].map(t => ({ ...t, price: cPrice + range * parseFloat(t.ratioLabel) }));
+    const projTargets: MethodTarget[] = PROJ_TARGETS.map(t => ({
+      ...t, price: Math.round((p2Price + impulse * parseFloat(t.ratioLabel)) * 100) / 100,
+    }));
+    const extTargets: MethodTarget[] = EXT_TARGETS.map(t => ({
+      ...t, price: Math.round((p2Price + parseFloat(t.ratioLabel) * correction) * 100) / 100,
+    }));
+    const expTargets: MethodTarget[] = EXP_TARGETS.map(t => ({
+      ...t, price: Math.round((p0Price + parseFloat(t.ratioLabel) * impulse) * 100) / 100,
+    }));
 
     return {
-      extTargets: targets,
-      abcPoints: {
-        A: { date: A.date, price: A.price },
-        B: { date: B.date, price: B.price },
-        C: { date: cDate,  price: cPrice, isReal: cIsReal },
+      p012: {
+        P0: { date: p0Date, price: p0Price },
+        P1: { date: p1Date, price: p1Price },
+        P2: { date: p2Date, price: p2Price, isReal: p2IsReal },
       },
+      projTargets,
+      extTargets,
+      expTargets,
     };
-  }, [history, yearHigh, yearLow]);
+  }, [history, yearHigh, yearLow, customP012]);
 
   useEffect(() => {
     if (!chartContainerRef.current || history.length < 2) return;
 
-    // 데이터 정렬 (오래된 순) 및 중복 날짜 제거
     const sortedData = [...history]
       .sort((a, b) => a.date.localeCompare(b.date))
       .filter((item, index, arr) => index === 0 || item.date !== arr[index - 1].date);
@@ -211,7 +304,6 @@ export function FibonacciChart({
       },
     });
 
-    // 캔들스틱 차트
     const candleSeries = chart.addSeries(CandlestickSeries, {
       upColor: '#ef4444',
       downColor: '#3b82f6',
@@ -230,88 +322,111 @@ export function FibonacciChart({
     }));
     candleSeries.setData(candleData);
 
-    // 피보나치 레벨 Price Lines 추가
-    const fibLevelEntries = Object.entries(fibLevels) as [keyof FibLevels, number][];
-
-    fibLevelEntries.forEach(([level, price]) => {
-      const isGoldenRatio = level === '0.618';
-
+    // 피보나치 되돌림 레벨
+    (Object.entries(fibLevels) as [keyof FibLevels, number][]).forEach(([level, price]) => {
       candleSeries.createPriceLine({
-        price: price,
+        price,
         color: FIB_COLORS[level],
-        lineWidth: isGoldenRatio ? 2 : 1,
-        lineStyle: isGoldenRatio ? 0 : 2, // 0 = solid, 2 = dashed
+        lineWidth: level === '0.618' ? 2 : 1,
+        lineStyle: level === '0.618' ? 0 : 2,
         axisLabelVisible: true,
         title: FIB_LABELS[level],
       });
     });
 
-    // ── 피보나치 익스텐션 목표가 + ABC 마커 ──────────────────────────
-    if (showExtension && extTargets.length > 0) {
-      extTargets.forEach(t => {
-        candleSeries.createPriceLine({
-          price: t.price,
-          color: t.color,
-          lineWidth: t.isGolden ? 2 : 1,
-          lineStyle: t.isGolden ? 0 : 2,
-          axisLabelVisible: true,
-          title: t.label,
-        });
-      });
-
-      // A / B / C 마커
-      if (abcPoints) {
-        const markers: Parameters<typeof createSeriesMarkers>[1] = [];
-
-        markers.push({
-          time: abcPoints.A.date as string,
-          position: 'belowBar',
-          shape: 'arrowUp',
-          color: '#16a34a',
-          text: 'A',
-          size: 2,
-        });
-        markers.push({
-          time: abcPoints.B.date as string,
-          position: 'aboveBar',
-          shape: 'arrowDown',
-          color: '#ef4444',
-          text: 'B',
-          size: 2,
-        });
-        if (abcPoints.C.isReal) {
-          markers.push({
-            time: abcPoints.C.date as string,
-            position: 'belowBar',
-            shape: 'arrowUp',
-            color: '#3b82f6',
-            text: 'C',
-            size: 2,
+    // 목표가 Price Lines (메서드 ON일 때만)
+    if (anyMethod && computed.p012) {
+      if (showProjection) {
+        computed.projTargets.forEach(t => {
+          candleSeries.createPriceLine({
+            price: t.price, color: t.color,
+            lineWidth: t.isKey ? 2 : 1, lineStyle: t.isKey ? 0 : 2,
+            axisLabelVisible: true, title: `[확장] ${t.label}`,
           });
-        }
-
-        // 날짜 오름차순 정렬 (required by lightweight-charts)
-        markers.sort((a, b) => (a.time as string).localeCompare(b.time as string));
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        createSeriesMarkers(candleSeries as any, markers);
+        });
+      }
+      if (showExtension) {
+        computed.extTargets.forEach(t => {
+          candleSeries.createPriceLine({
+            price: t.price, color: t.color,
+            lineWidth: t.isKey ? 2 : 1, lineStyle: t.isKey ? 0 : 2,
+            axisLabelVisible: true, title: `[연장] ${t.label}`,
+          });
+        });
+      }
+      if (showExpansion) {
+        computed.expTargets.forEach(t => {
+          candleSeries.createPriceLine({
+            price: t.price, color: t.color,
+            lineWidth: t.isKey ? 2 : 1, lineStyle: t.isKey ? 0 : 2,
+            axisLabelVisible: true, title: `[확대] ${t.label}`,
+          });
+        });
       }
     }
 
-    // 리사이즈 핸들러
+    // P0/P1/P2 마커 — p012가 있으면 항상 표시
+    if (computed.p012) {
+      const { P0, P1, P2 } = computed.p012;
+      const markers: Parameters<typeof createSeriesMarkers>[1] = [
+        { time: P0.date as string, position: 'belowBar', shape: 'arrowUp',   color: '#16a34a', text: 'P0', size: 2 },
+        { time: P1.date as string, position: 'aboveBar', shape: 'arrowDown', color: '#ef4444', text: 'P1', size: 2 },
+        ...(P2.isReal ? [{ time: P2.date as string, position: 'belowBar' as const, shape: 'arrowUp' as const, color: '#3b82f6', text: 'P2', size: 2 }] : []),
+      ];
+      markers.sort((a, b) => (a.time as string).localeCompare(b.time as string));
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      createSeriesMarkers(candleSeries as any, markers);
+    }
+
+    // ── 차트 클릭으로 P0/P1/P2 직접 찍기 ──────────────────────────────
+    if (pickingStep && onPickPoint) {
+      if (chartContainerRef.current) chartContainerRef.current.style.cursor = 'crosshair';
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const clickHandler = (param: any) => {
+        if (!param.time) return;
+        const barData = param.seriesData?.get(candleSeries) as
+          | { open: number; high: number; low: number; close: number }
+          | undefined;
+        if (!barData) return;
+
+        const date = param.time as string;
+        // P1(고점) 선택 시 high, 나머지는 low
+        const price = pickingStep === 'P1' ? barData.high : barData.low;
+        const idx = sortedData.findIndex(d => d.date === date);
+        onPickPoint(pickingStep, { date, price, idx: idx >= 0 ? idx : 0 });
+      };
+
+      chart.subscribeClick(clickHandler);
+
+      const handleResize = () => {
+        if (chartContainerRef.current)
+          chart.applyOptions({ width: chartContainerRef.current.clientWidth });
+      };
+      window.addEventListener('resize', handleResize);
+      chart.timeScale().fitContent();
+
+      return () => {
+        window.removeEventListener('resize', handleResize);
+        chart.unsubscribeClick(clickHandler);
+        if (chartContainerRef.current) chartContainerRef.current.style.cursor = '';
+        chart.remove();
+      };
+    }
+
     const handleResize = () => {
-      if (chartContainerRef.current) {
+      if (chartContainerRef.current)
         chart.applyOptions({ width: chartContainerRef.current.clientWidth });
-      }
     };
     window.addEventListener('resize', handleResize);
-
     chart.timeScale().fitContent();
 
     return () => {
       window.removeEventListener('resize', handleResize);
+      if (chartContainerRef.current) chartContainerRef.current.style.cursor = '';
       chart.remove();
     };
-  }, [history, fibLevels, showExtension, extTargets, abcPoints]);
+  }, [history, fibLevels, showProjection, showExtension, showExpansion, anyMethod, computed, pickingStep, onPickPoint]);
 
   if (history.length < 2) {
     return (
@@ -320,6 +435,8 @@ export function FibonacciChart({
       </div>
     );
   }
+
+  const { p012, projTargets, extTargets, expTargets } = computed;
 
   return (
     <div className="w-full">
@@ -347,114 +464,169 @@ export function FibonacciChart({
         ))}
       </div>
 
-      {/* 피보나치 익스텐션 목표가 범례 + ABC 설명 */}
-      {showExtension && extTargets.length > 0 && abcPoints && (
-        <div className="mt-3 space-y-3">
-          {/* 목표가 범례 */}
-          <div>
-            <p className="text-[10px] font-black text-gray-400 uppercase tracking-wider mb-2">
-              Projection 확장 목표가 (ABC 3점)
-            </p>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-              {extTargets.map(t => (
-                <div
-                  key={t.ratioLabel}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${
-                    t.isGolden
-                      ? 'bg-red-50 border-red-200'
-                      : t.ratioLabel === '0.618'
-                      ? 'bg-emerald-50 border-emerald-200'
-                      : 'bg-gray-50 border-transparent'
-                  }`}
-                >
-                  <div className="w-4 h-1 shrink-0" style={{ backgroundColor: t.color }} />
-                  <div className="flex-1 min-w-0">
-                    <p className={`text-xs font-medium truncate ${
-                      t.isGolden ? 'text-red-700' : t.ratioLabel === '0.618' ? 'text-emerald-700' : 'text-gray-600'
-                    }`}>
-                      {t.label}
-                    </p>
-                    <p className={`text-xs font-bold ${
-                      t.isGolden ? 'text-red-800' : t.ratioLabel === '0.618' ? 'text-emerald-800' : 'text-gray-900'
-                    }`}>
-                      {formatPrice(t.price, market)}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+      {/* 목표가 섹션 */}
+      {anyMethod && p012 && (
+        <div className="mt-4 space-y-4">
 
-          {/* ABC 포인트 설명 */}
+          {/* P0 / P1 / P2 요약 */}
           <div className="rounded-xl border border-gray-200 overflow-hidden">
             <div className="bg-gray-50 px-4 py-2.5 border-b border-gray-100">
-              <p className="text-xs font-black text-gray-700">Projection 기법 — ABC 3점</p>
+              <p className="text-xs font-black text-gray-700">
+                기준점 (P0 → P1 → P2)
+                {customP012?.P0 && customP012?.P1 && (
+                  <span className="ml-2 text-[10px] font-medium text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">직접 설정</span>
+                )}
+              </p>
               <p className="text-[10px] text-gray-400 mt-0.5">
-                A(상승 시작) → B(고점) → C(되돌림 저점) 순으로 작도 &nbsp;·&nbsp;
-                차트 마커: <span className="text-green-600 font-bold">▲A</span>&nbsp;
-                <span className="text-red-600 font-bold">▼B</span>&nbsp;
-                {abcPoints.C.isReal && <span className="text-blue-600 font-bold">▲C</span>}
+                P0(충격파 시작 저점) → P1(충격파 고점) → P2(조정파 종료 저점)
+                &nbsp;·&nbsp; 마커: <span className="text-green-600 font-bold">▲P0</span>&nbsp;
+                <span className="text-red-600 font-bold">▼P1</span>&nbsp;
+                {p012.P2.isReal && <span className="text-blue-600 font-bold">▲P2</span>}
               </p>
             </div>
             <div className="divide-y divide-gray-100">
-              {/* A */}
               <div className="flex items-center justify-between px-4 py-3">
                 <div className="flex items-center gap-3">
-                  <div className="w-7 h-7 rounded-full bg-green-100 flex items-center justify-center text-xs font-black text-green-700">A</div>
+                  <div className="w-7 h-7 rounded-full bg-green-100 flex items-center justify-center text-xs font-black text-green-700">P0</div>
                   <div>
-                    <p className="text-xs font-bold text-gray-800">1파 시작 저점</p>
-                    <p className="text-[10px] text-gray-400">{abcPoints.A.date}</p>
+                    <p className="text-xs font-bold text-gray-800">충격파 시작 저점</p>
+                    <p className="text-[10px] text-gray-400">{p012.P0.date}</p>
                   </div>
                 </div>
-                <p className="text-sm font-black text-green-700">{formatPrice(abcPoints.A.price, market)}</p>
+                <p className="text-sm font-black text-green-700">{formatPrice(p012.P0.price, market)}</p>
               </div>
-              {/* B */}
               <div className="flex items-center justify-between px-4 py-3">
                 <div className="flex items-center gap-3">
-                  <div className="w-7 h-7 rounded-full bg-red-100 flex items-center justify-center text-xs font-black text-red-700">B</div>
+                  <div className="w-7 h-7 rounded-full bg-red-100 flex items-center justify-center text-xs font-black text-red-700">P1</div>
                   <div>
-                    <p className="text-xs font-bold text-gray-800">1파 고점</p>
-                    <p className="text-[10px] text-gray-400">{abcPoints.B.date}</p>
+                    <p className="text-xs font-bold text-gray-800">충격파 고점</p>
+                    <p className="text-[10px] text-gray-400">{p012.P1.date}</p>
                   </div>
                 </div>
-                <p className="text-sm font-black text-red-700">{formatPrice(abcPoints.B.price, market)}</p>
+                <p className="text-sm font-black text-red-700">{formatPrice(p012.P1.price, market)}</p>
               </div>
-              {/* C */}
               <div className="flex items-center justify-between px-4 py-3">
                 <div className="flex items-center gap-3">
                   <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-black ${
-                    abcPoints.C.isReal ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'
-                  }`}>C</div>
+                    p012.P2.isReal ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'
+                  }`}>P2</div>
                   <div>
                     <p className="text-xs font-bold text-gray-800">
-                      {abcPoints.C.isReal ? '2파 저점 (되돌림)' : 'C 미확정 — B 기준 연장'}
+                      {p012.P2.isReal ? '조정파 종료 저점' : 'P2 미확정 — P1 기준 연장'}
                     </p>
                     <p className="text-[10px] text-gray-400">
-                      {abcPoints.C.isReal
-                        ? `${abcPoints.C.date} · 되돌림 ${(((abcPoints.B.price - abcPoints.C.price) / (abcPoints.B.price - abcPoints.A.price)) * 100).toFixed(1)}%`
-                        : 'B 이후 유효한 되돌림(20~85%) 없음'}
+                      {p012.P2.isReal
+                        ? `${p012.P2.date} · 되돌림 ${(((p012.P1.price - p012.P2.price) / (p012.P1.price - p012.P0.price)) * 100).toFixed(1)}%`
+                        : 'P1 이후 유효한 되돌림(10~95%) 없음'}
                     </p>
                   </div>
                 </div>
-                <p className={`text-sm font-black ${abcPoints.C.isReal ? 'text-blue-700' : 'text-gray-400'}`}>
-                  {abcPoints.C.isReal ? formatPrice(abcPoints.C.price, market) : '-'}
+                <p className={`text-sm font-black ${p012.P2.isReal ? 'text-blue-700' : 'text-gray-400'}`}>
+                  {p012.P2.isReal ? formatPrice(p012.P2.price, market) : '-'}
                 </p>
               </div>
-              {/* 상승폭 + 0.618 확인선 설명 */}
               <div className="px-4 py-2.5 bg-amber-50 space-y-1">
                 <div className="flex items-center justify-between">
-                  <p className="text-[10px] text-amber-700 font-bold">1파 상승폭 (B−A)</p>
+                  <p className="text-[10px] text-amber-700 font-bold">충격파 상승폭 L = P1−P0</p>
                   <p className="text-xs font-black text-amber-800">
-                    {formatPrice(abcPoints.B.price - abcPoints.A.price, market)}
-                    &nbsp;(+{(((abcPoints.B.price - abcPoints.A.price) / abcPoints.A.price) * 100).toFixed(1)}%)
+                    {formatPrice(p012.P1.price - p012.P0.price, market)}
+                    &nbsp;(+{(((p012.P1.price - p012.P0.price) / p012.P0.price) * 100).toFixed(1)}%)
                   </p>
                 </div>
-                <p className="text-[10px] text-emerald-700">
-                  ✦ 61.8% 확인선 돌파 시 3파 확장 신뢰도 상승 (전고점 부근에 위치하는 경우가 많음)
-                </p>
+                {p012.P2.isReal && (
+                  <div className="flex items-center justify-between">
+                    <p className="text-[10px] text-blue-700 font-bold">조정 폭 = P1−P2</p>
+                    <p className="text-xs font-black text-blue-800">
+                      {formatPrice(p012.P1.price - p012.P2.price, market)}
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
           </div>
+
+          {/* 확장 (Projection) */}
+          {showProjection && projTargets.length > 0 && (
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-3 h-3 rounded-full bg-amber-400" />
+                <p className="text-xs font-black text-gray-700">확장 (Projection) — <span className="text-gray-400 font-normal">P2 + L × ratio</span></p>
+                <span className="text-[10px] text-gray-400">충격파 전체 길이를 P2에서 투영</span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {projTargets.map(t => (
+                  <div key={t.ratioLabel} className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${
+                    t.isKey ? 'bg-red-50 border-red-200' : t.ratioLabel === '0.618' ? 'bg-emerald-50 border-emerald-200' : 'bg-gray-50 border-transparent'
+                  }`}>
+                    <div className="w-4 h-1 shrink-0" style={{ backgroundColor: t.color }} />
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-xs font-medium truncate ${t.isKey ? 'text-red-700' : t.ratioLabel === '0.618' ? 'text-emerald-700' : 'text-gray-600'}`}>{t.label}</p>
+                      <p className={`text-xs font-bold ${t.isKey ? 'text-red-800' : t.ratioLabel === '0.618' ? 'text-emerald-800' : 'text-gray-900'}`}>{formatPrice(t.price, market)}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* 연장 (Extension) */}
+          {showExtension && extTargets.length > 0 && (
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-3 h-3 rounded-full bg-purple-500" />
+                <p className="text-xs font-black text-gray-700">연장 (Extension) — <span className="text-gray-400 font-normal">P2 + ratio × (P1−P2)</span></p>
+                <span className="text-[10px] text-gray-400">조정 폭 기준, P0 이탈 시 사용</span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {extTargets.map(t => (
+                  <div key={t.ratioLabel} className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${
+                    t.isKey ? 'bg-violet-50 border-violet-200' : 'bg-gray-50 border-transparent'
+                  }`}>
+                    <div className="w-4 h-1 shrink-0" style={{ backgroundColor: t.color }} />
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-xs font-medium truncate ${t.isKey ? 'text-violet-700' : 'text-gray-600'}`}>{t.label}</p>
+                      <p className={`text-xs font-bold ${t.isKey ? 'text-violet-800' : 'text-gray-900'}`}>{formatPrice(t.price, market)}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* 확대 (Expansion) */}
+          {showExpansion && expTargets.length > 0 && (
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-3 h-3 rounded-full bg-cyan-500" />
+                <p className="text-xs font-black text-gray-700">확대 (Expansion) — <span className="text-gray-400 font-normal">P0 + ratio × (P1−P0)</span></p>
+                <span className="text-[10px] text-gray-400">P0 기준 충격파 길이 투영</span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {expTargets.map(t => (
+                  <div key={t.ratioLabel} className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${
+                    t.isKey ? 'bg-cyan-50 border-cyan-200' : 'bg-gray-50 border-transparent'
+                  }`}>
+                    <div className="w-4 h-1 shrink-0" style={{ backgroundColor: t.color }} />
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-xs font-medium truncate ${t.isKey ? 'text-cyan-700' : 'text-gray-600'}`}>{t.label}</p>
+                      <p className={`text-xs font-bold ${t.isKey ? 'text-cyan-800' : 'text-gray-900'}`}>{formatPrice(t.price, market)}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* 기법 설명 */}
+          <div className="rounded-xl bg-gray-50 border border-gray-200 px-4 py-3 space-y-2">
+            <p className="text-[10px] font-black text-gray-500 uppercase tracking-wider">기법 설명</p>
+            <div className="space-y-1.5 text-[11px] text-gray-600">
+              <p><span className="font-black text-amber-600">확장 (Projection)</span> — 충격파(P0→P1)와 같은 길이를 조정 종료점(P2)에서 투영. P2 + L×ratio. 3점이 모두 있을 때 가장 정확.</p>
+              <p><span className="font-black text-purple-600">연장 (Extension)</span> — 조정 폭(P1→P2)을 기준으로 P2에서 연장. P2 + ratio×(P1−P2). P0 추세선 이탈 시 대안.</p>
+              <p><span className="font-black text-cyan-600">확대 (Expansion)</span> — 충격파(P0→P1)를 P0 원점 기준으로 연장. P0 + ratio×L. 단순 쌍봉 패턴에서 활용.</p>
+            </div>
+          </div>
+
         </div>
       )}
     </div>

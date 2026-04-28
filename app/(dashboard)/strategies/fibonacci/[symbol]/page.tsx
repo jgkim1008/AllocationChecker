@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useEffect, use, useMemo } from 'react';
+import { useState, useEffect, use, useMemo, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { ArrowLeft, RefreshCw, TrendingUp, TrendingDown, Target } from 'lucide-react';
+import { ArrowLeft, RefreshCw, TrendingUp, TrendingDown, Target, Maximize2, ArrowUpRight, SlidersHorizontal, RotateCcw } from 'lucide-react';
 import { FibonacciChart } from '@/components/fibonacci/FibonacciChart';
+import type { PivotPoint, CustomP012, PickStep } from '@/components/fibonacci/FibonacciChart';
 import { FibonacciLevelBadge } from '@/components/fibonacci/FibonacciLevelBadge';
 import { calculateFibonacciPosition, findNearestFibonacciLevel } from '@/lib/utils/fibonacci-calculator';
 import type { FibonacciLevel } from '@/types/fibonacci';
@@ -37,6 +38,7 @@ interface StockData {
   fibLevels: FibLevels;
 }
 
+
 function formatPrice(price: number, market: 'US' | 'KR'): string {
   if (market === 'US') {
     return `$${price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -59,18 +61,21 @@ export default function FibonacciDetailPage({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showFibonacci, setShowFibonacci] = useState(true);
+  const [showProjection, setShowProjection] = useState(false);
   const [showExtension, setShowExtension] = useState(false);
+  const [showExpansion, setShowExpansion] = useState(false);
+
+  // ── P0/P1/P2 차트 직접 찍기 ──────────────────────────────────────────
+  const [pickingStep, setPickingStep] = useState<PickStep | null>(null);
+  const [customP012, setCustomP012] = useState<CustomP012>({});
 
   useEffect(() => {
     async function fetchData() {
       setLoading(true);
       setError(null);
-
       try {
         const res = await fetch(`/api/fibonacci/${symbol}?market=${market}`);
-        if (!res.ok) {
-          throw new Error('Failed to fetch data');
-        }
+        if (!res.ok) throw new Error('Failed to fetch data');
         const json = await res.json();
         setData(json);
       } catch (e) {
@@ -79,16 +84,15 @@ export default function FibonacciDetailPage({
         setLoading(false);
       }
     }
-
     fetchData();
   }, [symbol, market]);
+
 
   const fibPosition = data
     ? calculateFibonacciPosition(data.currentPrice, data.yearLow, data.yearHigh)
     : 0;
   const { level: nearestLevel, distance } = findNearestFibonacciLevel(fibPosition);
 
-  // 지지선/저항선 계산
   const fibLevelList = useMemo(() => {
     if (!data) return null;
     const RAW = [
@@ -117,11 +121,35 @@ export default function FibonacciDetailPage({
   }, [data, fibPosition]);
 
   const priceChange = data && data.history.length > 1
-    ? data.currentPrice - data.history[0].price
-    : 0;
+    ? data.currentPrice - data.history[0].price : 0;
   const priceChangePercent = data && data.history.length > 1
-    ? (priceChange / data.history[0].price) * 100
-    : 0;
+    ? (priceChange / data.history[0].price) * 100 : 0;
+
+  const hasCustom = !!(customP012.P0 && customP012.P1);
+
+  const handlePickPoint = useCallback((step: PickStep, pt: PivotPoint) => {
+    if (step === 'P0') {
+      setCustomP012({ P0: pt });
+      setPickingStep('P1');
+    } else if (step === 'P1') {
+      setCustomP012(prev => ({ ...prev, P1: pt, P2: undefined }));
+      setPickingStep('P2');
+    } else if (step === 'P2') {
+      setCustomP012(prev => ({ ...prev, P2: pt }));
+      setPickingStep(null);
+    }
+  }, []);
+
+  const resetCustom = useCallback(() => {
+    setCustomP012({});
+    setPickingStep(null);
+  }, []);
+
+  const stepGuide: Record<PickStep, { label: string; color: string; desc: string }> = {
+    P0: { label: 'P0', color: 'text-green-700 bg-green-100 border-green-300',  desc: '충격파 시작 저점을 차트에서 클릭하세요' },
+    P1: { label: 'P1', color: 'text-red-700 bg-red-100 border-red-300',        desc: '충격파 고점을 차트에서 클릭하세요' },
+    P2: { label: 'P2', color: 'text-blue-700 bg-blue-100 border-blue-300',     desc: '조정파 종료 저점을 클릭하세요 (건너뛰면 자동 감지)' },
+  };
 
   return (
     <div className="min-h-screen">
@@ -175,34 +203,21 @@ export default function FibonacciDetailPage({
                   {formatPrice(data.currentPrice, market)}
                 </p>
                 <div className={`flex items-center gap-1 text-xs mt-1 ${priceChange >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                  {priceChange >= 0 ? (
-                    <TrendingUp className="h-3 w-3" />
-                  ) : (
-                    <TrendingDown className="h-3 w-3" />
-                  )}
+                  {priceChange >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
                   <span>{priceChangePercent >= 0 ? '+' : ''}{priceChangePercent.toFixed(2)}% (1Y)</span>
                 </div>
               </div>
-
               <div className="bg-white rounded-xl border border-gray-200 p-4">
                 <p className="text-xs text-gray-500 mb-1">52주 고가</p>
-                <p className="text-lg font-bold text-green-600">
-                  {formatPrice(data.yearHigh, market)}
-                </p>
+                <p className="text-lg font-bold text-green-600">{formatPrice(data.yearHigh, market)}</p>
               </div>
-
               <div className="bg-white rounded-xl border border-gray-200 p-4">
                 <p className="text-xs text-gray-500 mb-1">52주 저가</p>
-                <p className="text-lg font-bold text-red-600">
-                  {formatPrice(data.yearLow, market)}
-                </p>
+                <p className="text-lg font-bold text-red-600">{formatPrice(data.yearLow, market)}</p>
               </div>
-
               <div className="bg-white rounded-xl border border-gray-200 p-4">
                 <p className="text-xs text-gray-500 mb-1">피보나치 위치</p>
-                <p className="text-lg font-bold text-purple-600">
-                  {(fibPosition * 100).toFixed(1)}%
-                </p>
+                <p className="text-lg font-bold text-purple-600">{(fibPosition * 100).toFixed(1)}%</p>
                 {nearestLevel && (
                   <p className="text-xs text-gray-500 mt-1">
                     {(nearestLevel * 100).toFixed(1)}% 레벨에서 {distance.toFixed(2)}% 거리
@@ -213,27 +228,150 @@ export default function FibonacciDetailPage({
 
             {/* 차트 */}
             <div className="bg-white rounded-2xl border border-gray-200 p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="font-bold text-gray-900">52주 가격 차트 & 피보나치 레벨</h2>
-                <button
-                  onClick={() => setShowExtension(v => !v)}
-                  className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg border transition-colors ${
-                    showExtension
-                      ? 'bg-orange-500 border-orange-500 text-white'
-                      : 'bg-white border-gray-200 text-gray-400 hover:border-gray-300'
-                  }`}
-                >
-                  <Target className="h-3 w-3" />
-                  목표가 (익스텐션)
-                </button>
+              <div className="flex flex-col gap-3 mb-4">
+                <div className="flex items-center justify-between">
+                  <h2 className="font-bold text-gray-900">52주 가격 차트 & 피보나치 레벨</h2>
+                </div>
+
+                {/* 목표가 토글 버튼 */}
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={() => setShowProjection(v => !v)}
+                    className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg border transition-colors ${
+                      showProjection
+                        ? 'bg-amber-500 border-amber-500 text-white'
+                        : 'bg-amber-50 border-amber-200 text-amber-600 hover:bg-amber-100'
+                    }`}
+                  >
+                    <Target className="h-3 w-3" />
+                    확장 (Projection)
+                  </button>
+                  <button
+                    onClick={() => setShowExtension(v => !v)}
+                    className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg border transition-colors ${
+                      showExtension
+                        ? 'bg-purple-500 border-purple-500 text-white'
+                        : 'bg-purple-50 border-purple-200 text-purple-600 hover:bg-purple-100'
+                    }`}
+                  >
+                    <ArrowUpRight className="h-3 w-3" />
+                    연장 (Extension)
+                  </button>
+                  <button
+                    onClick={() => setShowExpansion(v => !v)}
+                    className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg border transition-colors ${
+                      showExpansion
+                        ? 'bg-cyan-500 border-cyan-500 text-white'
+                        : 'bg-cyan-50 border-cyan-200 text-cyan-600 hover:bg-cyan-100'
+                    }`}
+                  >
+                    <Maximize2 className="h-3 w-3" />
+                    확대 (Expansion)
+                  </button>
+
+                  {/* 기준점 직접 설정 버튼 */}
+                  <div className="ml-auto flex gap-1.5">
+                    {hasCustom && (
+                      <button
+                        onClick={resetCustom}
+                        className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg border border-gray-200 text-gray-400 hover:border-red-300 hover:text-red-500 transition-colors"
+                      >
+                        <RotateCcw className="h-3 w-3" />
+                        초기화
+                      </button>
+                    )}
+                    <button
+                      onClick={() => setPickingStep(prev => prev ? null : 'P0')}
+                      className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg border transition-colors ${
+                        pickingStep || hasCustom
+                          ? 'bg-indigo-500 border-indigo-500 text-white'
+                          : 'bg-white border-gray-200 text-gray-400 hover:border-gray-300'
+                      }`}
+                    >
+                      <SlidersHorizontal className="h-3 w-3" />
+                      P0/P1/P2 직접 설정
+                      {hasCustom && !pickingStep && <span className="ml-1 bg-white text-indigo-600 rounded px-1 text-[10px]">ON</span>}
+                    </button>
+                  </div>
+                </div>
+
+                {/* 찍기 진행 상태 바 */}
+                {(pickingStep || hasCustom) && (
+                  <div className={`rounded-xl border p-3 flex flex-wrap items-center gap-3 ${
+                    pickingStep ? 'border-indigo-200 bg-indigo-50' : 'border-gray-200 bg-gray-50'
+                  }`}>
+                    {/* P0 / P1 / P2 상태 뱃지 */}
+                    <div className="flex items-center gap-1.5">
+                      {(['P0', 'P1', 'P2'] as const).map((step) => {
+                        const sel = customP012[step];
+                        const isActive = pickingStep === step;
+                        return (
+                          <button
+                            key={step}
+                            onClick={() => setPickingStep(step)}
+                            title={`${step} 다시 찍기`}
+                            className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-black border transition-colors ${
+                              isActive
+                                ? 'bg-indigo-600 border-indigo-600 text-white'
+                                : sel
+                                ? stepGuide[step].color + ' border'
+                                : 'bg-white border-gray-200 text-gray-400'
+                            }`}
+                          >
+                            {step}
+                            {sel && !isActive && (
+                              <span className="text-[10px] font-normal">{sel.date}</span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {pickingStep ? (
+                      <>
+                        <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${stepGuide[pickingStep].color}`}>
+                          {stepGuide[pickingStep].label} 설정 중
+                        </span>
+                        <span className="text-xs text-indigo-700">
+                          {stepGuide[pickingStep].desc}
+                        </span>
+                        {pickingStep === 'P2' && (
+                          <button
+                            onClick={() => setPickingStep(null)}
+                            className="ml-auto text-xs text-gray-400 hover:text-gray-600 underline"
+                          >
+                            P2 자동 감지로 건너뛰기
+                          </button>
+                        )}
+                      </>
+                    ) : (
+                      <span className="text-xs text-gray-500">
+                        ✓ 설정 완료 — 뱃지를 클릭해 재설정
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
+
+              {/* P012 설정됐지만 메서드 미선택 시 힌트 */}
+              {(hasCustom || true) && !showProjection && !showExtension && !showExpansion && (
+                <div className="mb-3 flex items-center gap-2 text-xs text-gray-400 bg-gray-50 rounded-lg px-3 py-2">
+                  <span>↑ 위 버튼을 눌러 목표가 기법을 활성화하면 차트에 목표가가 표시됩니다</span>
+                </div>
+              )}
+
               <FibonacciChart
                 history={data.history}
                 fibLevels={data.fibLevels}
                 yearHigh={data.yearHigh}
                 yearLow={data.yearLow}
                 market={market}
+                showProjection={showProjection}
                 showExtension={showExtension}
+                showExpansion={showExpansion}
+                customP012={hasCustom ? customP012 : null}
+                pickingStep={pickingStep}
+                onPickPoint={handlePickPoint}
               />
             </div>
 
@@ -249,9 +387,7 @@ export default function FibonacciDetailPage({
                   <button
                     onClick={() => setShowFibonacci(!showFibonacci)}
                     className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-colors ${
-                      showFibonacci
-                        ? 'bg-indigo-100 text-indigo-700'
-                        : 'bg-gray-100 text-gray-500'
+                      showFibonacci ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-500'
                     }`}
                   >
                     차트 {showFibonacci ? 'ON' : 'OFF'}
