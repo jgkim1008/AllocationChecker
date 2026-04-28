@@ -83,35 +83,53 @@ export function FibonacciChart({
 
   // ── ABC 3점 피보나치 익스텐션 계산 ───────────────────────────────
   const extTargets = useMemo<ExtTarget[]>(() => {
-    if (!history || history.length < 10) return [];
+    if (!history || history.length < 20) return [];
 
     const sorted = [...history].sort((a, b) => a.date.localeCompare(b.date));
-    const range = yearHigh - yearLow;
-    if (range <= 0) return [];
+    const n = sorted.length;
+    const PW = 5; // 피벗 윈도우
 
-    // B = yearHigh 위치 인덱스
-    const highIdx = sorted.reduce(
-      (best, c, i) => c.high >= sorted[best].high ? i : best, 0
-    );
-
-    // C 탐지: B 이후 최저 저가
-    let swingC: number | null = null;
-    if (highIdx < sorted.length - 3) {
-      for (let i = highIdx + 1; i < sorted.length; i++) {
-        if (swingC === null || sorted[i].low < swingC) swingC = sorted[i].low;
-      }
+    // 피벗 고점 / 저점 탐지
+    const pivotHighs: { idx: number; price: number }[] = [];
+    const pivotLows:  { idx: number; price: number }[] = [];
+    for (let i = PW; i < n - PW; i++) {
+      const h = sorted[i].high;
+      if ([...Array(PW * 2 + 1)].every((_, j) => j === PW || sorted[i - PW + j].high <= h))
+        pivotHighs.push({ idx: i, price: h });
+      const l = sorted[i].low;
+      if ([...Array(PW * 2 + 1)].every((_, j) => j === PW || sorted[i - PW + j].low >= l))
+        pivotLows.push({ idx: i, price: l });
     }
 
-    // 되돌림 비율 20~85% 사이일 때만 ABC 방식 사용, 아니면 단순 2점
-    const retracePct = swingC ? (yearHigh - swingC) / range : 0;
-    const base = swingC && retracePct >= 0.2 && retracePct <= 0.85 ? swingC : yearHigh;
+    if (pivotHighs.length === 0) return [];
+
+    // B = 가장 최근 스윙 고점
+    const B = pivotHighs[pivotHighs.length - 1];
+
+    // A = B 직전 스윙 저점 (B보다 앞에 있고 가장 최근)
+    const candidateA = pivotLows.filter(l => l.idx < B.idx);
+    if (candidateA.length === 0) return [];
+    const A = candidateA[candidateA.length - 1];
+
+    const range = B.price - A.price;
+    if (range <= 0) return [];
+
+    // C = B 이후 최저 저가 (있을 경우), 없으면 B에서 연장
+    let cPrice: number = B.price; // 기본값: C 없으면 B 기준
+    const afterB = sorted.slice(B.idx + 1);
+    if (afterB.length >= 3) {
+      const lowestAfterB = afterB.reduce((m, c) => c.low < m ? c.low : m, afterB[0].low);
+      const retrace = (B.price - lowestAfterB) / range;
+      // 되돌림 20~85% 사이: 유효한 C
+      if (retrace >= 0.2 && retrace <= 0.85) cPrice = lowestAfterB;
+    }
 
     return [
-      { ratioLabel: '1.0',   label: '100% 목표',          color: '#f59e0b', isGolden: false },
-      { ratioLabel: '1.272', label: '127.2% 목표',         color: '#f97316', isGolden: false },
-      { ratioLabel: '1.618', label: '161.8% 목표 (황금비)', color: '#ef4444', isGolden: true  },
-      { ratioLabel: '2.618', label: '261.8% 목표',         color: '#dc2626', isGolden: false },
-    ].map(t => ({ ...t, price: base + range * parseFloat(t.ratioLabel) }));
+      { ratioLabel: '1.0',   label: '100% 목표',           color: '#f59e0b', isGolden: false },
+      { ratioLabel: '1.272', label: '127.2% 목표',          color: '#f97316', isGolden: false },
+      { ratioLabel: '1.618', label: '161.8% 목표 (황금비)',  color: '#ef4444', isGolden: true  },
+      { ratioLabel: '2.618', label: '261.8% 목표',          color: '#dc2626', isGolden: false },
+    ].map(t => ({ ...t, price: cPrice + range * parseFloat(t.ratioLabel) }));
   }, [history, yearHigh, yearLow]);
 
   useEffect(() => {
