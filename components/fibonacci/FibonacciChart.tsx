@@ -162,10 +162,12 @@ export function FibonacciChart({
     }
 
     const targets: ExtTarget[] = [
-      { ratioLabel: '1.0',   label: '100% 목표',           color: '#f59e0b', isGolden: false },
-      { ratioLabel: '1.272', label: '127.2% 목표',          color: '#f97316', isGolden: false },
-      { ratioLabel: '1.618', label: '161.8% 목표 (황금비)',  color: '#ef4444', isGolden: true  },
-      { ratioLabel: '2.618', label: '261.8% 목표',          color: '#dc2626', isGolden: false },
+      { ratioLabel: '0.618', label: '61.8% 확인선',          color: '#10b981', isGolden: false },
+      { ratioLabel: '1.0',   label: '100% 1차 목표',         color: '#f59e0b', isGolden: false },
+      { ratioLabel: '1.13',  label: '113% 2차 목표',         color: '#f97316', isGolden: false },
+      { ratioLabel: '1.272', label: '127.2% 3차 목표',       color: '#fb923c', isGolden: false },
+      { ratioLabel: '1.414', label: '141.4% 4차 목표',       color: '#ef4444', isGolden: false },
+      { ratioLabel: '1.618', label: '161.8% 목표 (황금비)',   color: '#dc2626', isGolden: true  },
     ].map(t => ({ ...t, price: cPrice + range * parseFloat(t.ratioLabel) }));
 
     return {
@@ -350,21 +352,31 @@ export function FibonacciChart({
         <div className="mt-3 space-y-3">
           {/* 목표가 범례 */}
           <div>
-            <p className="text-[10px] font-black text-gray-400 uppercase tracking-wider mb-2">익스텐션 목표가 (ABC 3점)</p>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <p className="text-[10px] font-black text-gray-400 uppercase tracking-wider mb-2">
+              Projection 확장 목표가 (ABC 3점)
+            </p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               {extTargets.map(t => (
                 <div
                   key={t.ratioLabel}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-lg ${
-                    t.isGolden ? 'bg-red-50 border border-red-200' : 'bg-gray-50'
+                  className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${
+                    t.isGolden
+                      ? 'bg-red-50 border-red-200'
+                      : t.ratioLabel === '0.618'
+                      ? 'bg-emerald-50 border-emerald-200'
+                      : 'bg-gray-50 border-transparent'
                   }`}
                 >
-                  <div className="w-4 h-1" style={{ backgroundColor: t.color }} />
+                  <div className="w-4 h-1 shrink-0" style={{ backgroundColor: t.color }} />
                   <div className="flex-1 min-w-0">
-                    <p className={`text-xs font-medium truncate ${t.isGolden ? 'text-red-700' : 'text-gray-600'}`}>
-                      {t.ratioLabel === '1.618' ? '161.8% (황금비)' : `${t.ratioLabel === '1.0' ? '100%' : t.ratioLabel === '1.272' ? '127.2%' : '261.8%'} 목표`}
+                    <p className={`text-xs font-medium truncate ${
+                      t.isGolden ? 'text-red-700' : t.ratioLabel === '0.618' ? 'text-emerald-700' : 'text-gray-600'
+                    }`}>
+                      {t.label}
                     </p>
-                    <p className={`text-xs font-bold ${t.isGolden ? 'text-red-800' : 'text-gray-900'}`}>
+                    <p className={`text-xs font-bold ${
+                      t.isGolden ? 'text-red-800' : t.ratioLabel === '0.618' ? 'text-emerald-800' : 'text-gray-900'
+                    }`}>
                       {formatPrice(t.price, market)}
                     </p>
                   </div>
@@ -376,11 +388,12 @@ export function FibonacciChart({
           {/* ABC 포인트 설명 */}
           <div className="rounded-xl border border-gray-200 overflow-hidden">
             <div className="bg-gray-50 px-4 py-2.5 border-b border-gray-100">
-              <p className="text-xs font-black text-gray-700">ABC 3점 기준</p>
+              <p className="text-xs font-black text-gray-700">Projection 기법 — ABC 3점</p>
               <p className="text-[10px] text-gray-400 mt-0.5">
-                차트의 <span className="text-green-600 font-bold">▲ A</span>·
-                <span className="text-red-600 font-bold">▼ B</span>
-                {abcPoints.C.isReal && <>·<span className="text-blue-600 font-bold">▲ C</span></>} 마커로 확인
+                A(상승 시작) → B(고점) → C(되돌림 저점) 순으로 작도 &nbsp;·&nbsp;
+                차트 마커: <span className="text-green-600 font-bold">▲A</span>&nbsp;
+                <span className="text-red-600 font-bold">▼B</span>&nbsp;
+                {abcPoints.C.isReal && <span className="text-blue-600 font-bold">▲C</span>}
               </p>
             </div>
             <div className="divide-y divide-gray-100">
@@ -389,7 +402,7 @@ export function FibonacciChart({
                 <div className="flex items-center gap-3">
                   <div className="w-7 h-7 rounded-full bg-green-100 flex items-center justify-center text-xs font-black text-green-700">A</div>
                   <div>
-                    <p className="text-xs font-bold text-gray-800">임펄스 시작 저점</p>
+                    <p className="text-xs font-bold text-gray-800">1파 시작 저점</p>
                     <p className="text-[10px] text-gray-400">{abcPoints.A.date}</p>
                   </div>
                 </div>
@@ -400,7 +413,7 @@ export function FibonacciChart({
                 <div className="flex items-center gap-3">
                   <div className="w-7 h-7 rounded-full bg-red-100 flex items-center justify-center text-xs font-black text-red-700">B</div>
                   <div>
-                    <p className="text-xs font-bold text-gray-800">스윙 고점</p>
+                    <p className="text-xs font-bold text-gray-800">1파 고점</p>
                     <p className="text-[10px] text-gray-400">{abcPoints.B.date}</p>
                   </div>
                 </div>
@@ -414,12 +427,12 @@ export function FibonacciChart({
                   }`}>C</div>
                   <div>
                     <p className="text-xs font-bold text-gray-800">
-                      {abcPoints.C.isReal ? '되돌림 저점' : 'C 미탐지 (B 기준 연장)'}
+                      {abcPoints.C.isReal ? '2파 저점 (되돌림)' : 'C 미확정 — B 기준 연장'}
                     </p>
                     <p className="text-[10px] text-gray-400">
                       {abcPoints.C.isReal
                         ? `${abcPoints.C.date} · 되돌림 ${(((abcPoints.B.price - abcPoints.C.price) / (abcPoints.B.price - abcPoints.A.price)) * 100).toFixed(1)}%`
-                        : 'B 이후 유효한 되돌림 없음'}
+                        : 'B 이후 유효한 되돌림(20~85%) 없음'}
                     </p>
                   </div>
                 </div>
@@ -427,12 +440,17 @@ export function FibonacciChart({
                   {abcPoints.C.isReal ? formatPrice(abcPoints.C.price, market) : '-'}
                 </p>
               </div>
-              {/* 범위 */}
-              <div className="flex items-center justify-between px-4 py-2.5 bg-amber-50">
-                <p className="text-[10px] text-amber-700 font-bold">임펄스 범위 (B−A)</p>
-                <p className="text-xs font-black text-amber-800">
-                  {formatPrice(abcPoints.B.price - abcPoints.A.price, market)}
-                  &nbsp;(+{(((abcPoints.B.price - abcPoints.A.price) / abcPoints.A.price) * 100).toFixed(1)}%)
+              {/* 상승폭 + 0.618 확인선 설명 */}
+              <div className="px-4 py-2.5 bg-amber-50 space-y-1">
+                <div className="flex items-center justify-between">
+                  <p className="text-[10px] text-amber-700 font-bold">1파 상승폭 (B−A)</p>
+                  <p className="text-xs font-black text-amber-800">
+                    {formatPrice(abcPoints.B.price - abcPoints.A.price, market)}
+                    &nbsp;(+{(((abcPoints.B.price - abcPoints.A.price) / abcPoints.A.price) * 100).toFixed(1)}%)
+                  </p>
+                </div>
+                <p className="text-[10px] text-emerald-700">
+                  ✦ 61.8% 확인선 돌파 시 3파 확장 신뢰도 상승 (전고점 부근에 위치하는 경우가 많음)
                 </p>
               </div>
             </div>
