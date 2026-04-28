@@ -2,7 +2,7 @@
 
 import { useState, useEffect, use, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { ArrowLeft, RefreshCw, TrendingUp, TrendingDown } from 'lucide-react';
+import { ArrowLeft, RefreshCw, TrendingUp, TrendingDown, Target } from 'lucide-react';
 import { FibonacciChart } from '@/components/fibonacci/FibonacciChart';
 import { FibonacciLevelBadge } from '@/components/fibonacci/FibonacciLevelBadge';
 import { calculateFibonacciPosition, findNearestFibonacciLevel } from '@/lib/utils/fibonacci-calculator';
@@ -59,6 +59,7 @@ export default function FibonacciDetailPage({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showFibonacci, setShowFibonacci] = useState(true);
+  const [showExtension, setShowExtension] = useState(false);
 
   useEffect(() => {
     async function fetchData() {
@@ -212,13 +213,27 @@ export default function FibonacciDetailPage({
 
             {/* 차트 */}
             <div className="bg-white rounded-2xl border border-gray-200 p-6">
-              <h2 className="font-bold text-gray-900 mb-4">52주 가격 차트 & 피보나치 레벨</h2>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="font-bold text-gray-900">52주 가격 차트 & 피보나치 레벨</h2>
+                <button
+                  onClick={() => setShowExtension(v => !v)}
+                  className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg border transition-colors ${
+                    showExtension
+                      ? 'bg-orange-500 border-orange-500 text-white'
+                      : 'bg-white border-gray-200 text-gray-400 hover:border-gray-300'
+                  }`}
+                >
+                  <Target className="h-3 w-3" />
+                  목표가 (익스텐션)
+                </button>
+              </div>
               <FibonacciChart
                 history={data.history}
                 fibLevels={data.fibLevels}
                 yearHigh={data.yearHigh}
                 yearLow={data.yearLow}
                 market={market}
+                showExtension={showExtension}
               />
             </div>
 

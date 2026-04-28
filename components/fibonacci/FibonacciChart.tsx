@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useMemo } from 'react';
 import { createChart, ColorType, CrosshairMode, CandlestickSeries } from 'lightweight-charts';
 
 interface PriceData {
@@ -23,12 +23,21 @@ interface FibLevels {
   '1': number;
 }
 
+interface ExtTarget {
+  ratioLabel: string;
+  label: string;
+  color: string;
+  price: number;
+  isGolden: boolean;
+}
+
 interface FibonacciChartProps {
   history: PriceData[];
   fibLevels: FibLevels;
   yearHigh: number;
   yearLow: number;
   market: 'US' | 'KR';
+  showExtension: boolean;
 }
 
 const FIB_COLORS: Record<string, string> = {
@@ -68,8 +77,42 @@ export function FibonacciChart({
   yearHigh,
   yearLow,
   market,
+  showExtension,
 }: FibonacciChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
+
+  // ── ABC 3점 피보나치 익스텐션 계산 ───────────────────────────────
+  const extTargets = useMemo<ExtTarget[]>(() => {
+    if (!history || history.length < 10) return [];
+
+    const sorted = [...history].sort((a, b) => a.date.localeCompare(b.date));
+    const range = yearHigh - yearLow;
+    if (range <= 0) return [];
+
+    // B = yearHigh 위치 인덱스
+    const highIdx = sorted.reduce(
+      (best, c, i) => c.high >= sorted[best].high ? i : best, 0
+    );
+
+    // C 탐지: B 이후 최저 저가
+    let swingC: number | null = null;
+    if (highIdx < sorted.length - 3) {
+      for (let i = highIdx + 1; i < sorted.length; i++) {
+        if (swingC === null || sorted[i].low < swingC) swingC = sorted[i].low;
+      }
+    }
+
+    // 되돌림 비율 20~85% 사이일 때만 ABC 방식 사용, 아니면 단순 2점
+    const retracePct = swingC ? (yearHigh - swingC) / range : 0;
+    const base = swingC && retracePct >= 0.2 && retracePct <= 0.85 ? swingC : yearHigh;
+
+    return [
+      { ratioLabel: '1.0',   label: '100% 목표',          color: '#f59e0b', isGolden: false },
+      { ratioLabel: '1.272', label: '127.2% 목표',         color: '#f97316', isGolden: false },
+      { ratioLabel: '1.618', label: '161.8% 목표 (황금비)', color: '#ef4444', isGolden: true  },
+      { ratioLabel: '2.618', label: '261.8% 목표',         color: '#dc2626', isGolden: false },
+    ].map(t => ({ ...t, price: base + range * parseFloat(t.ratioLabel) }));
+  }, [history, yearHigh, yearLow]);
 
   useEffect(() => {
     if (!chartContainerRef.current || history.length < 2) return;
@@ -137,6 +180,20 @@ export function FibonacciChart({
       });
     });
 
+    // ── 피보나치 익스텐션 목표가 ────────────────────────────────────
+    if (showExtension && extTargets.length > 0) {
+      extTargets.forEach(t => {
+        candleSeries.createPriceLine({
+          price: t.price,
+          color: t.color,
+          lineWidth: t.isGolden ? 2 : 1,
+          lineStyle: t.isGolden ? 0 : 2,
+          axisLabelVisible: true,
+          title: t.label,
+        });
+      });
+    }
+
     // 리사이즈 핸들러
     const handleResize = () => {
       if (chartContainerRef.current) {
@@ -151,7 +208,7 @@ export function FibonacciChart({
       window.removeEventListener('resize', handleResize);
       chart.remove();
     };
-  }, [history, fibLevels]);
+  }, [history, fibLevels, showExtension, extTargets]);
 
   if (history.length < 2) {
     return (
@@ -165,7 +222,7 @@ export function FibonacciChart({
     <div className="w-full">
       <div ref={chartContainerRef} className="w-full" />
 
-      {/* 피보나치 레벨 범례 */}
+      {/* 피보나치 되돌림 범례 */}
       <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2">
         {(['0', '0.14', '0.236', '0.382', '0.5', '0.618', '0.764', '0.854', '1'] as const).map((level) => (
           <div
@@ -174,12 +231,7 @@ export function FibonacciChart({
               level === '0.618' ? 'bg-green-50 border border-green-200' : 'bg-gray-50'
             }`}
           >
-            <div
-              className="w-4 h-1"
-              style={{
-                backgroundColor: FIB_COLORS[level],
-              }}
-            />
+            <div className="w-4 h-1" style={{ backgroundColor: FIB_COLORS[level] }} />
             <div className="flex-1 min-w-0">
               <p className={`text-xs font-medium truncate ${level === '0.618' ? 'text-green-700' : 'text-gray-600'}`}>
                 {FIB_LABELS[level]} {level === '0.618' && '(황금비)'}
@@ -191,6 +243,33 @@ export function FibonacciChart({
           </div>
         ))}
       </div>
+
+      {/* 피보나치 익스텐션 목표가 범례 */}
+      {showExtension && extTargets.length > 0 && (
+        <div className="mt-3">
+          <p className="text-[10px] font-black text-gray-400 uppercase tracking-wider mb-2">익스텐션 목표가 (ABC 3점)</p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {extTargets.map(t => (
+              <div
+                key={t.ratioLabel}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg ${
+                  t.isGolden ? 'bg-red-50 border border-red-200' : 'bg-gray-50'
+                }`}
+              >
+                <div className="w-4 h-1" style={{ backgroundColor: t.color }} />
+                <div className="flex-1 min-w-0">
+                  <p className={`text-xs font-medium truncate ${t.isGolden ? 'text-red-700' : 'text-gray-600'}`}>
+                    {t.ratioLabel === '1.618' ? '161.8% (황금비)' : `${t.ratioLabel === '1.0' ? '100%' : t.ratioLabel === '1.272' ? '127.2%' : '261.8%'} 목표`}
+                  </p>
+                  <p className={`text-xs font-bold ${t.isGolden ? 'text-red-800' : 'text-gray-900'}`}>
+                    {formatPrice(t.price, market)}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
