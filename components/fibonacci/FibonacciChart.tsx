@@ -99,7 +99,7 @@ export function FibonacciChart({
       .sort((a, b) => a.date.localeCompare(b.date))
       .filter((item, idx, arr) => idx === 0 || item.date !== arr[idx - 1].date);
     const n = sorted.length;
-    const PW = 5;
+    const PW = 10; // 일봉 기준 ±10일 → 노이즈 피벗 제거
 
     // 피벗 고점 / 저점 탐지
     const pivotHighs: { idx: number; price: number; date: string }[] = [];
@@ -115,13 +115,31 @@ export function FibonacciChart({
 
     if (pivotHighs.length === 0) return empty;
 
-    // B = 기간 내 가장 높은 스윙 고점 (최근 소폭 반등이 아닌 주요 고점)
-    const B = pivotHighs.reduce((best, p) => p.price > best.price ? p : best);
+    // 모든 유효한 (A, B) 쌍 탐색
+    // A = B 직전 피벗 저점, 조건: B > A (상승 임펄스), 상승폭 5% 이상
+    type Pivot = { idx: number; price: number; date: string };
+    let bestA: Pivot | null = null;
+    let bestB: Pivot | null = null;
+    let bestScore = -Infinity;
 
-    // A = B 직전 스윙 저점 (가장 최근)
-    const candidateA = pivotLows.filter(l => l.idx < B.idx);
-    if (candidateA.length === 0) return empty;
-    const A = candidateA[candidateA.length - 1];
+    for (const ph of pivotHighs) {
+      const priorLows = pivotLows.filter(l => l.idx < ph.idx);
+      if (priorLows.length === 0) continue;
+      const a = priorLows[priorLows.length - 1]; // B 직전 가장 최근 저점
+      const rangePct = (ph.price - a.price) / a.price;
+      if (rangePct < 0.05) continue; // 5% 미만 이동은 제외
+      // 점수: 상승폭 60% + 최신성 40%
+      const score = rangePct * 0.6 + (ph.idx / n) * 0.4;
+      if (score > bestScore) {
+        bestScore = score;
+        bestA = a;
+        bestB = ph;
+      }
+    }
+
+    if (!bestA || !bestB) return empty;
+    const A = bestA;
+    const B = bestB;
 
     const range = B.price - A.price;
     if (range <= 0) return empty;
