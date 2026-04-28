@@ -115,10 +115,10 @@ export function FibonacciChart({
 
     if (pivotHighs.length === 0) return empty;
 
-    // B = 가장 최근 스윙 고점
-    const B = pivotHighs[pivotHighs.length - 1];
+    // B = 기간 내 가장 높은 스윙 고점 (최근 소폭 반등이 아닌 주요 고점)
+    const B = pivotHighs.reduce((best, p) => p.price > best.price ? p : best);
 
-    // A = B 직전 스윙 저점
+    // A = B 직전 스윙 저점 (가장 최근)
     const candidateA = pivotLows.filter(l => l.idx < B.idx);
     if (candidateA.length === 0) return empty;
     const A = candidateA[candidateA.length - 1];
