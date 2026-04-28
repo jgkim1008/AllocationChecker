@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useEffect, useMemo } from 'react';
-import { createChart, ColorType, CrosshairMode, CandlestickSeries } from 'lightweight-charts';
+import { createChart, ColorType, CrosshairMode, CandlestickSeries, createSeriesMarkers } from 'lightweight-charts';
 
 interface PriceData {
   date: string;
@@ -29,6 +29,12 @@ interface ExtTarget {
   color: string;
   price: number;
   isGolden: boolean;
+}
+
+interface AbcPoints {
+  A: { date: string; price: number };
+  B: { date: string; price: number };
+  C: { date: string; price: number; isReal: boolean }; // isReal=false → C=B (되돌림 없음)
 }
 
 interface FibonacciChartProps {
@@ -82,54 +88,76 @@ export function FibonacciChart({
   const chartContainerRef = useRef<HTMLDivElement>(null);
 
   // ── ABC 3점 피보나치 익스텐션 계산 ───────────────────────────────
-  const extTargets = useMemo<ExtTarget[]>(() => {
-    if (!history || history.length < 20) return [];
+  const { extTargets, abcPoints } = useMemo<{
+    extTargets: ExtTarget[];
+    abcPoints: AbcPoints | null;
+  }>(() => {
+    const empty = { extTargets: [], abcPoints: null };
+    if (!history || history.length < 20) return empty;
 
-    const sorted = [...history].sort((a, b) => a.date.localeCompare(b.date));
+    const sorted = [...history]
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .filter((item, idx, arr) => idx === 0 || item.date !== arr[idx - 1].date);
     const n = sorted.length;
-    const PW = 5; // 피벗 윈도우
+    const PW = 5;
 
     // 피벗 고점 / 저점 탐지
-    const pivotHighs: { idx: number; price: number }[] = [];
-    const pivotLows:  { idx: number; price: number }[] = [];
+    const pivotHighs: { idx: number; price: number; date: string }[] = [];
+    const pivotLows:  { idx: number; price: number; date: string }[] = [];
     for (let i = PW; i < n - PW; i++) {
       const h = sorted[i].high;
       if ([...Array(PW * 2 + 1)].every((_, j) => j === PW || sorted[i - PW + j].high <= h))
-        pivotHighs.push({ idx: i, price: h });
+        pivotHighs.push({ idx: i, price: h, date: sorted[i].date });
       const l = sorted[i].low;
       if ([...Array(PW * 2 + 1)].every((_, j) => j === PW || sorted[i - PW + j].low >= l))
-        pivotLows.push({ idx: i, price: l });
+        pivotLows.push({ idx: i, price: l, date: sorted[i].date });
     }
 
-    if (pivotHighs.length === 0) return [];
+    if (pivotHighs.length === 0) return empty;
 
     // B = 가장 최근 스윙 고점
     const B = pivotHighs[pivotHighs.length - 1];
 
-    // A = B 직전 스윙 저점 (B보다 앞에 있고 가장 최근)
+    // A = B 직전 스윙 저점
     const candidateA = pivotLows.filter(l => l.idx < B.idx);
-    if (candidateA.length === 0) return [];
+    if (candidateA.length === 0) return empty;
     const A = candidateA[candidateA.length - 1];
 
     const range = B.price - A.price;
-    if (range <= 0) return [];
+    if (range <= 0) return empty;
 
-    // C = B 이후 최저 저가 (있을 경우), 없으면 B에서 연장
-    let cPrice: number = B.price; // 기본값: C 없으면 B 기준
+    // C = B 이후 최저점 (되돌림 20~85% 사이)
+    let cPrice = B.price;
+    let cDate  = B.date;
+    let cIsReal = false;
     const afterB = sorted.slice(B.idx + 1);
     if (afterB.length >= 3) {
-      const lowestAfterB = afterB.reduce((m, c) => c.low < m ? c.low : m, afterB[0].low);
-      const retrace = (B.price - lowestAfterB) / range;
-      // 되돌림 20~85% 사이: 유효한 C
-      if (retrace >= 0.2 && retrace <= 0.85) cPrice = lowestAfterB;
+      let minLow = afterB[0].low;
+      let minDate = afterB[0].date;
+      for (const c of afterB) {
+        if (c.low < minLow) { minLow = c.low; minDate = c.date; }
+      }
+      const retrace = (B.price - minLow) / range;
+      if (retrace >= 0.2 && retrace <= 0.85) {
+        cPrice = minLow; cDate = minDate; cIsReal = true;
+      }
     }
 
-    return [
+    const targets: ExtTarget[] = [
       { ratioLabel: '1.0',   label: '100% 목표',           color: '#f59e0b', isGolden: false },
       { ratioLabel: '1.272', label: '127.2% 목표',          color: '#f97316', isGolden: false },
       { ratioLabel: '1.618', label: '161.8% 목표 (황금비)',  color: '#ef4444', isGolden: true  },
       { ratioLabel: '2.618', label: '261.8% 목표',          color: '#dc2626', isGolden: false },
     ].map(t => ({ ...t, price: cPrice + range * parseFloat(t.ratioLabel) }));
+
+    return {
+      extTargets: targets,
+      abcPoints: {
+        A: { date: A.date, price: A.price },
+        B: { date: B.date, price: B.price },
+        C: { date: cDate,  price: cPrice, isReal: cIsReal },
+      },
+    };
   }, [history, yearHigh, yearLow]);
 
   useEffect(() => {
@@ -198,7 +226,7 @@ export function FibonacciChart({
       });
     });
 
-    // ── 피보나치 익스텐션 목표가 ────────────────────────────────────
+    // ── 피보나치 익스텐션 목표가 + ABC 마커 ──────────────────────────
     if (showExtension && extTargets.length > 0) {
       extTargets.forEach(t => {
         candleSeries.createPriceLine({
@@ -210,6 +238,43 @@ export function FibonacciChart({
           title: t.label,
         });
       });
+
+      // A / B / C 마커
+      if (abcPoints) {
+        const markers: Parameters<typeof createSeriesMarkers>[1] = [];
+
+        markers.push({
+          time: abcPoints.A.date as string,
+          position: 'belowBar',
+          shape: 'arrowUp',
+          color: '#16a34a',
+          text: 'A',
+          size: 2,
+        });
+        markers.push({
+          time: abcPoints.B.date as string,
+          position: 'aboveBar',
+          shape: 'arrowDown',
+          color: '#ef4444',
+          text: 'B',
+          size: 2,
+        });
+        if (abcPoints.C.isReal) {
+          markers.push({
+            time: abcPoints.C.date as string,
+            position: 'belowBar',
+            shape: 'arrowUp',
+            color: '#3b82f6',
+            text: 'C',
+            size: 2,
+          });
+        }
+
+        // 날짜 오름차순 정렬 (required by lightweight-charts)
+        markers.sort((a, b) => (a.time as string).localeCompare(b.time as string));
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        createSeriesMarkers(candleSeries as any, markers);
+      }
     }
 
     // 리사이즈 핸들러
@@ -226,7 +291,7 @@ export function FibonacciChart({
       window.removeEventListener('resize', handleResize);
       chart.remove();
     };
-  }, [history, fibLevels, showExtension, extTargets]);
+  }, [history, fibLevels, showExtension, extTargets, abcPoints]);
 
   if (history.length < 2) {
     return (
@@ -262,29 +327,97 @@ export function FibonacciChart({
         ))}
       </div>
 
-      {/* 피보나치 익스텐션 목표가 범례 */}
-      {showExtension && extTargets.length > 0 && (
-        <div className="mt-3">
-          <p className="text-[10px] font-black text-gray-400 uppercase tracking-wider mb-2">익스텐션 목표가 (ABC 3점)</p>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            {extTargets.map(t => (
-              <div
-                key={t.ratioLabel}
-                className={`flex items-center gap-2 px-3 py-2 rounded-lg ${
-                  t.isGolden ? 'bg-red-50 border border-red-200' : 'bg-gray-50'
-                }`}
-              >
-                <div className="w-4 h-1" style={{ backgroundColor: t.color }} />
-                <div className="flex-1 min-w-0">
-                  <p className={`text-xs font-medium truncate ${t.isGolden ? 'text-red-700' : 'text-gray-600'}`}>
-                    {t.ratioLabel === '1.618' ? '161.8% (황금비)' : `${t.ratioLabel === '1.0' ? '100%' : t.ratioLabel === '1.272' ? '127.2%' : '261.8%'} 목표`}
-                  </p>
-                  <p className={`text-xs font-bold ${t.isGolden ? 'text-red-800' : 'text-gray-900'}`}>
-                    {formatPrice(t.price, market)}
-                  </p>
+      {/* 피보나치 익스텐션 목표가 범례 + ABC 설명 */}
+      {showExtension && extTargets.length > 0 && abcPoints && (
+        <div className="mt-3 space-y-3">
+          {/* 목표가 범례 */}
+          <div>
+            <p className="text-[10px] font-black text-gray-400 uppercase tracking-wider mb-2">익스텐션 목표가 (ABC 3점)</p>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {extTargets.map(t => (
+                <div
+                  key={t.ratioLabel}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-lg ${
+                    t.isGolden ? 'bg-red-50 border border-red-200' : 'bg-gray-50'
+                  }`}
+                >
+                  <div className="w-4 h-1" style={{ backgroundColor: t.color }} />
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-xs font-medium truncate ${t.isGolden ? 'text-red-700' : 'text-gray-600'}`}>
+                      {t.ratioLabel === '1.618' ? '161.8% (황금비)' : `${t.ratioLabel === '1.0' ? '100%' : t.ratioLabel === '1.272' ? '127.2%' : '261.8%'} 목표`}
+                    </p>
+                    <p className={`text-xs font-bold ${t.isGolden ? 'text-red-800' : 'text-gray-900'}`}>
+                      {formatPrice(t.price, market)}
+                    </p>
+                  </div>
                 </div>
+              ))}
+            </div>
+          </div>
+
+          {/* ABC 포인트 설명 */}
+          <div className="rounded-xl border border-gray-200 overflow-hidden">
+            <div className="bg-gray-50 px-4 py-2.5 border-b border-gray-100">
+              <p className="text-xs font-black text-gray-700">ABC 3점 기준</p>
+              <p className="text-[10px] text-gray-400 mt-0.5">
+                차트의 <span className="text-green-600 font-bold">▲ A</span>·
+                <span className="text-red-600 font-bold">▼ B</span>
+                {abcPoints.C.isReal && <>·<span className="text-blue-600 font-bold">▲ C</span></>} 마커로 확인
+              </p>
+            </div>
+            <div className="divide-y divide-gray-100">
+              {/* A */}
+              <div className="flex items-center justify-between px-4 py-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-7 h-7 rounded-full bg-green-100 flex items-center justify-center text-xs font-black text-green-700">A</div>
+                  <div>
+                    <p className="text-xs font-bold text-gray-800">임펄스 시작 저점</p>
+                    <p className="text-[10px] text-gray-400">{abcPoints.A.date}</p>
+                  </div>
+                </div>
+                <p className="text-sm font-black text-green-700">{formatPrice(abcPoints.A.price, market)}</p>
               </div>
-            ))}
+              {/* B */}
+              <div className="flex items-center justify-between px-4 py-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-7 h-7 rounded-full bg-red-100 flex items-center justify-center text-xs font-black text-red-700">B</div>
+                  <div>
+                    <p className="text-xs font-bold text-gray-800">스윙 고점</p>
+                    <p className="text-[10px] text-gray-400">{abcPoints.B.date}</p>
+                  </div>
+                </div>
+                <p className="text-sm font-black text-red-700">{formatPrice(abcPoints.B.price, market)}</p>
+              </div>
+              {/* C */}
+              <div className="flex items-center justify-between px-4 py-3">
+                <div className="flex items-center gap-3">
+                  <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-black ${
+                    abcPoints.C.isReal ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'
+                  }`}>C</div>
+                  <div>
+                    <p className="text-xs font-bold text-gray-800">
+                      {abcPoints.C.isReal ? '되돌림 저점' : 'C 미탐지 (B 기준 연장)'}
+                    </p>
+                    <p className="text-[10px] text-gray-400">
+                      {abcPoints.C.isReal
+                        ? `${abcPoints.C.date} · 되돌림 ${(((abcPoints.B.price - abcPoints.C.price) / (abcPoints.B.price - abcPoints.A.price)) * 100).toFixed(1)}%`
+                        : 'B 이후 유효한 되돌림 없음'}
+                    </p>
+                  </div>
+                </div>
+                <p className={`text-sm font-black ${abcPoints.C.isReal ? 'text-blue-700' : 'text-gray-400'}`}>
+                  {abcPoints.C.isReal ? formatPrice(abcPoints.C.price, market) : '-'}
+                </p>
+              </div>
+              {/* 범위 */}
+              <div className="flex items-center justify-between px-4 py-2.5 bg-amber-50">
+                <p className="text-[10px] text-amber-700 font-bold">임펄스 범위 (B−A)</p>
+                <p className="text-xs font-black text-amber-800">
+                  {formatPrice(abcPoints.B.price - abcPoints.A.price, market)}
+                  &nbsp;(+{(((abcPoints.B.price - abcPoints.A.price) / abcPoints.A.price) * 100).toFixed(1)}%)
+                </p>
+              </div>
+            </div>
           </div>
         </div>
       )}
