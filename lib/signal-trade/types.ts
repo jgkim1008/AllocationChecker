@@ -11,6 +11,7 @@ export type SignalStrategyType =
   | 'forking'                // 월봉 포킹 전략
   | 'weekly-sr'              // 주봉 SR채널 전략
   | 'decline-box'            // 하락 박스 전략
+  | 'inbum-bijag'            // 인범 빗각채널 + 구름대 전략
   | 'infinite-buy';          // 무한매수법 (자동매매 비활성)
 
 export type ExitReason =
@@ -213,6 +214,16 @@ export const SIGNAL_STRATEGIES: SignalStrategyInfo[] = [
     autoTradeEnabled: true,
   },
 
+  // ── 주봉 기반 전략 (추가) ──
+  {
+    id: 'inbum-bijag',
+    name: '인범 빗각+구름대',
+    description: '빗각채널 하단 + 구름대 지지 동시 충족 시 매수 (N자형 리테스트 포함)',
+    requiredHistory: 70,
+    category: 'daily',
+    autoTradeEnabled: true,
+  },
+
   // ── 시스템 전략 (자동매매 비활성) ──
   {
     id: 'infinite-buy',
@@ -236,5 +247,6 @@ export const STRATEGY_ENTRY_CONDITIONS: Record<SignalStrategyType, string[]> = {
   'forking': ['isConverging', 'isBreakout'],  // 수렴 + 돌파
   'weekly-sr': ['isAboveMA', 'isMaUptrend'],  // 주봉 10MA 위 + 상승 추세
   'decline-box': ['isAtBoxBottom', 'isReboundSignal'],  // 박스 하단 + 반등 신호
+  'inbum-bijag': ['isConfluence', 'isAboveCloud'],      // 채널+구름 동시 또는 N자 리테스트
   'infinite-buy': [],  // 별도 로직 (무한매수법 모듈 사용)
 };

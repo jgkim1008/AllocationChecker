@@ -1,11 +1,21 @@
 'use client';
 
 import Link from 'next/link';
-import { TrendingUp, TrendingDown, Infinity, ChevronRight, Activity, Zap, BookOpen, CalendarDays, BarChart2, CandlestickChart, GitMerge } from 'lucide-react';
+import { TrendingUp, TrendingDown, Infinity, ChevronRight, Activity, Zap, BookOpen, CalendarDays, BarChart2, CandlestickChart, GitMerge, Layers } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { PremiumGate } from '@/components/PremiumGate';
 
 const STRATEGIES = [
+  {
+    id: 'inbum-bijag',
+    title: '인범 빗각 + 구름대 전략',
+    description: 'InbumTV 유튜브 분석 기반 — 빗각채널 하단 + 일목균형표 구름대 지지가 동시에 충족되는 고확률 매수 구간을 포착합니다. N자형 리테스트로 추세 지속 신호를 확인합니다. S&P 500 + KOSPI 200 전종목 스캔.',
+    icon: Layers,
+    href: '/strategies/inbum-bijag',
+    color: 'bg-violet-50 text-violet-600',
+    tag: '신규',
+    tagColor: 'bg-violet-100 text-violet-700',
+  },
   {
     id: 'weekly-sr-channel',
     title: '주봉 SR플립 + 채널 전략',

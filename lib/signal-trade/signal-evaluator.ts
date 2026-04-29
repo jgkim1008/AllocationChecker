@@ -7,6 +7,7 @@ import { calculateFibonacciPosition, findNearestFibonacciLevel } from '@/lib/uti
 import { detectAllPatterns } from '@/lib/utils/chart-pattern-calculator';
 import { calculateMonthlyMA, fetchMonthlyCandles } from '@/lib/utils/monthly-ma-calculator';
 import { calculateForking, fetchMonthlyCandles as fetchForkingCandles } from '@/lib/utils/forking-calculator';
+import { fetchWeeklyCandles as fetchInbumWeekly, analyzeInbumBijag } from '@/lib/utils/inbum-bijag-calculator';
 import type { SignalStrategyType, SignalResult } from './types';
 import { SIGNAL_STRATEGIES } from './types';
 
@@ -195,6 +196,42 @@ export async function evaluateSignal(
       };
       break;
     }
+    case 'inbum-bijag': {
+      // 인범 빗각채널 + 일목균형표 구름대 전략 (주봉 기반)
+      const weeklyCandles = await fetchInbumWeekly(symbol, market);
+      if (!weeklyCandles || weeklyCandles.length < 30) {
+        return {
+          isActive: false,
+          syncRate: 0,
+          criteria: { dataInsufficient: true },
+        };
+      }
+
+      const inbumResult = analyzeInbumBijag(weeklyCandles);
+      const sig = inbumResult.signal;
+
+      // 시그널별 싱크로율 매핑
+      const syncMap: Record<string, number> = {
+        CHANNEL_CLOUD_CONFLUENCE: 100,
+        N_RETEST: 80,
+        CLOUD_SUPPORT: 60,
+        CHANNEL_LOWER_TOUCH: 50,
+        ABOVE_CLOUD: 30,
+        BELOW_CLOUD: 10,
+      };
+
+      result = {
+        syncRate: syncMap[sig] ?? 0,
+        criteria: {
+          isConfluence: sig === 'CHANNEL_CLOUD_CONFLUENCE',
+          isNRetest: sig === 'N_RETEST',
+          isCloudSupport: sig === 'CLOUD_SUPPORT',
+          isChannelLower: sig === 'CHANNEL_LOWER_TOUCH',
+          isAboveCloud: inbumResult.aboveCloud,
+        },
+      };
+      break;
+    }
     case 'infinite-buy': {
       // 무한매수법은 별도 모듈에서 처리 - 여기서는 비활성
       return {
@@ -270,6 +307,11 @@ function checkEntryConditions(
       // 완전 정배열 또는 (부분 정배열 + 확대 중)
       return criteria.isFullFork === true ||
              (criteria.isPartialFork === true && criteria.isForkExpanding === true);
+
+    case 'inbum-bijag':
+      // 채널+구름 동시 또는 N자 리테스트 신호 시 진입
+      return (criteria.isConfluence === true || criteria.isNRetest === true) &&
+             criteria.isAboveCloud !== false; // 구름 아래면 진입 안 함
 
     case 'infinite-buy':
       // 무한매수법은 별도 모듈 사용

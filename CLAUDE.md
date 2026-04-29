@@ -83,19 +83,67 @@ const BENCHMARK_COLORS: Record<string, string> = {
 "이 전략을 자동매매 > 신호전략에서 사용할 수 있게 등록할까요?"
 ```
 
-**등록 시 수정할 파일:**
+사용자가 **"예"** 라고 답하면 아래 4개 파일을 **모두 자동으로 수정**한다. 별도 지시가 없어도 수행한다.
+
+**등록 시 수정할 파일 (사용자 확인 후 자동 실행):**
+
 1. `lib/signal-trade/types.ts`
-   - `SignalStrategyType`에 전략 ID 추가
-   - `SIGNAL_STRATEGIES` 배열에 전략 정보 추가 (`autoTradeEnabled: true`)
-   - `STRATEGY_ENTRY_CONDITIONS`에 진입 조건 추가
+   - `SignalStrategyType` 유니언 타입에 전략 ID 추가
+   - `SIGNAL_STRATEGIES` 배열에 전략 정보 추가 (`autoTradeEnabled: true`, `category`, `requiredHistory` 포함)
+   - `STRATEGY_ENTRY_CONDITIONS`에 핵심 진입 조건 키 추가
 
-2. `app/api/signal-trade/execute/route.ts`
-   - `getStrategyName()` 함수에 한글 이름 추가
+2. `lib/signal-trade/signal-evaluator.ts`
+   - import 상단에 전략 계산기 함수 import 추가
+   - `evaluateSignal()` switch문에 전략 케이스 추가
+     - 필요한 데이터(일봉/주봉/월봉) fetch
+     - `syncRate` 계산 (시그널 강도에 따라 0~100 매핑)
+     - `criteria` 객체 반환
+   - `checkEntryConditions()` switch문에 진입 조건 추가
 
-3. (선택) `lib/utils/chart-strategy-sync.ts`
-   - 종목 조회 & 주문 탭의 "전략 싱크" 카드에 표시하려면 `STRATEGY_META` 및 싱크율 계산 로직 추가
+3. `app/api/signal-trade/execute/route.ts`
+   - `getStrategyName()` 함수 내 `names` 객체에 한글명 추가
 
-**자동매매 제외 전략** (등록하지 않음):
+4. `app/(dashboard)/strategies/page.tsx`
+   - `STRATEGIES` 배열에 전략 카드 항목 추가 (이미 존재하면 스킵)
+
+**신호 전략 등록 패턴 (signal-evaluator.ts 케이스 예시):**
+
+```ts
+// signal-evaluator.ts switch문 내부 케이스
+case '{strategy-id}': {
+  // 1. 데이터 fetch (일봉/주봉/월봉 선택)
+  const weeklyCandles = await fetch{Strategy}Weekly(symbol, market);
+  if (!weeklyCandles || weeklyCandles.length < 30) {
+    return { isActive: false, syncRate: 0, criteria: { dataInsufficient: true } };
+  }
+
+  // 2. 전략 계산
+  const calc = analyze{Strategy}(weeklyCandles);
+
+  // 3. 시그널→싱크로율 매핑
+  const syncMap: Record<string, number> = {
+    STRONGEST_SIGNAL: 100,
+    STRONG_SIGNAL: 80,
+    MEDIUM_SIGNAL: 60,
+    WEAK_SIGNAL: 30,
+  };
+
+  result = {
+    syncRate: syncMap[calc.signal] ?? 0,
+    criteria: {
+      isEntry: calc.signal === 'STRONGEST_SIGNAL' || calc.signal === 'STRONG_SIGNAL',
+      isFavorable: calc.favorableCondition,
+    },
+  };
+  break;
+}
+
+// checkEntryConditions switch문 내부 케이스
+case '{strategy-id}':
+  return criteria.isEntry === true && criteria.isFavorable !== false;
+```
+
+**자동매매 제외 전략** (질문하지 않고 등록 생략):
 - 백테스팅, 무한매수법, 가치투자(value-scan), 배당, 2weeks 전략
 
 ### 파일 생성 위치
