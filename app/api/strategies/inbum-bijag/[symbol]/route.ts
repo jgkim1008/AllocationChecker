@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { fetchWeeklyCandles, analyzeInbumBijag, detectInbumChannel, calcIchimoku } from '../scan/route';
+import {
+  fetchWeeklyCandles,
+  detectBijagChannel,
+  calcIchimoku,
+  analyzeInbumBijag,
+} from '@/lib/utils/inbum-bijag-calculator';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -13,29 +18,19 @@ export async function GET(
   const market = (searchParams.get('market') || 'US') as 'US' | 'KR';
   const name = searchParams.get('name') || symbol;
 
-  const yahooSymbol = market === 'KR' ? `${symbol}.KS` : symbol;
-
   try {
-    const candles = await fetchWeeklyCandles(yahooSymbol);
-    if (!candles || candles.length < 30) {
-      return NextResponse.json({ error: '데이터 부족' }, { status: 404 });
+    const candles = await fetchWeeklyCandles(symbol, market);
+    if (!candles || candles.length < 50) {
+      return NextResponse.json({ error: '데이터 부족 (최소 50주 필요)' }, { status: 404 });
     }
 
-    const analysis = analyzeInbumBijag(candles);
-    const channel = detectInbumChannel(candles);
+    const channel  = detectBijagChannel(candles);
     const ichimoku = calcIchimoku(candles);
+    const analysis = analyzeInbumBijag(candles);
 
-    return NextResponse.json({
-      symbol,
-      name,
-      market,
-      candles,
-      analysis,
-      channel,
-      ichimoku,
-    });
-  } catch (error) {
-    console.error('[InbumBijag Detail Error]', error);
-    return NextResponse.json({ error: 'Failed to analyze' }, { status: 500 });
+    return NextResponse.json({ symbol, name, market, candles, channel, ichimoku, analysis });
+  } catch (err) {
+    console.error('[InbumBijag Detail]', err);
+    return NextResponse.json({ error: 'Failed' }, { status: 500 });
   }
 }

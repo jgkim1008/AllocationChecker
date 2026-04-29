@@ -4,20 +4,26 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import {
-  ArrowLeft, RefreshCw, TrendingUp, TrendingDown, Layers, Cloud, Activity,
+  ArrowLeft, RefreshCw, Crosshair, RotateCcw, Activity, Cloud, Layers,
 } from 'lucide-react';
 import {
   createChart, ColorType, CrosshairMode,
-  CandlestickSeries, LineSeries, createSeriesMarkers,
+  CandlestickSeries, LineSeries, PriceScaleMode, createSeriesMarkers,
 } from 'lightweight-charts';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, ReferenceLine,
 } from 'recharts';
-import type { InbumAnalysis, InbumChannel, IchimokuPoint } from '@/lib/utils/inbum-bijag-calculator';
-import type { InbumSignal } from '@/app/api/strategies/inbum-bijag/scan/route';
+import {
+  CHANNEL_LEVELS, priceAtLevel, calcCustomBijagChannel,
+} from '@/lib/utils/inbum-bijag-calculator';
+import type {
+  BijagChannelResult, BijagPivot, BijagType,
+  IchimokuPoint, InbumAnalysis, InbumSignal,
+} from '@/lib/utils/inbum-bijag-calculator';
 
 type Candle = { date: string; open: number; high: number; low: number; close: number };
+type PickStep = 'P1' | 'P2' | 'P3' | null;
 
 function formatPrice(price: number, market: string): string {
   if (market === 'KR') return `₩${Math.round(price).toLocaleString('ko-KR')}`;
@@ -25,171 +31,183 @@ function formatPrice(price: number, market: string): string {
   return `$${price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-const SIGNAL_META: Record<InbumSignal, { label: string; cls: string }> = {
-  CHANNEL_CLOUD_CONFLUENCE: { label: '채널+구름 동시', cls: 'bg-emerald-100 text-emerald-700' },
-  N_RETEST:                 { label: 'N자 리테스트',   cls: 'bg-violet-100 text-violet-700' },
-  CLOUD_SUPPORT:            { label: '구름 지지',      cls: 'bg-blue-100 text-blue-700' },
-  CHANNEL_LOWER_TOUCH:      { label: '채널 하단',      cls: 'bg-cyan-100 text-cyan-700' },
-  ABOVE_CLOUD:              { label: '구름 위',        cls: 'bg-gray-100 text-gray-600' },
-  BELOW_CLOUD:              { label: '구름 아래',      cls: 'bg-red-100 text-red-600' },
+const SIGNAL_META: Record<InbumSignal, { label: string; cls: string; desc: string }> = {
+  BREAKOUT_BUY:   { label: '빗각 돌파 매수', cls: 'bg-emerald-100 text-emerald-700', desc: '빗각선 상향 돌파 → 강한 매수' },
+  CHANNEL_BOTTOM: { label: '채널 하단 매수', cls: 'bg-cyan-100 text-cyan-700',     desc: 'P3 근처 채널 하단 → 매수 구간' },
+  BIJAG_TOUCH:    { label: '빗각 접촉',      cls: 'bg-blue-100 text-blue-700',     desc: '빗각선 접촉 (지지/저항 확인)' },
+  MID_CHANNEL:    { label: '채널 중단',      cls: 'bg-gray-100 text-gray-600',     desc: '채널 중간 구간' },
+  CHANNEL_TOP:    { label: '채널 상단 매도', cls: 'bg-amber-100 text-amber-700',   desc: 'P3 근처 채널 상단 → 매도 구간' },
+  EXTENSION:      { label: '채널 연장',      cls: 'bg-violet-100 text-violet-700', desc: '채널 외부 연장 구간' },
+  BREAKDOWN:      { label: '빗각 이탈',      cls: 'bg-red-100 text-red-700',       desc: '빗각선 하향 이탈 → 회피' },
 };
 
-// ── 메인 차트 ────────────────────────────────────────────────
-function InbumBijagChart({
-  candles,
-  channel,
-  ichimoku,
-  analysis,
-  showChannel,
-  showCloud,
+// 채널 레벨별 색상
+const LEVEL_COLORS: Record<string, string> = {
+  '-1.5': '#7c3aed', '-1': '#8b5cf6', '-0.5': '#a78bfa',
+  '0': '#ffffff',
+  '0.5': '#6ee7b7', '1': '#10b981', '1.5': '#059669', '2': '#047857', '2.5': '#065f46', '3': '#064e3b',
+};
+const LEVEL_WIDTHS: Record<string, number> = { '0': 2, '1': 2, '-1': 2 };
+
+// ── 빗각채널 차트 컴포넌트 ────────────────────────────────────
+function BijagChart({
+  candles, channel, ichimoku, analysis,
+  showCloud, pickStep, onPickPoint,
 }: {
   candles: Candle[];
-  channel: InbumChannel | null;
+  channel: BijagChannelResult | null;
   ichimoku: IchimokuPoint[];
   analysis: InbumAnalysis;
-  showChannel: boolean;
   showCloud: boolean;
+  pickStep: PickStep;
+  onPickPoint: (step: PickStep, pivot: BijagPivot) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!containerRef.current || candles.length < 5) return;
-
     const sorted = [...candles].sort((a, b) => a.date.localeCompare(b.date));
+    const n = sorted.length;
 
     const chart = createChart(containerRef.current, {
       width: containerRef.current.clientWidth,
-      height: 520,
+      height: 560,
       layout: {
-        background: { type: ColorType.Solid, color: '#ffffff' },
-        textColor: '#6b7280',
+        background: { type: ColorType.Solid, color: '#111827' },
+        textColor: '#9ca3af',
         fontFamily: 'Inter, system-ui, sans-serif',
       },
-      grid: { vertLines: { color: '#f3f4f6' }, horzLines: { color: '#f3f4f6' } },
+      grid: { vertLines: { color: '#1f2937' }, horzLines: { color: '#1f2937' } },
       crosshair: { mode: CrosshairMode.Normal },
-      rightPriceScale: { borderColor: '#e5e7eb', scaleMargins: { top: 0.08, bottom: 0.08 } },
-      timeScale: { borderColor: '#e5e7eb', timeVisible: false },
+      rightPriceScale: {
+        borderColor: '#374151',
+        scaleMargins: { top: 0.08, bottom: 0.08 },
+        mode: PriceScaleMode.Logarithmic, // 로그 스케일 적용
+      },
+      timeScale: { borderColor: '#374151', timeVisible: false },
     });
 
-    // ① 캔들 시리즈
+    // ① 캔들
     const candleSeries = chart.addSeries(CandlestickSeries, {
       upColor: '#ef4444', downColor: '#3b82f6',
       borderUpColor: '#ef4444', borderDownColor: '#3b82f6',
       wickUpColor: '#ef4444', wickDownColor: '#3b82f6',
-      priceLineVisible: false,
-      lastValueVisible: false,
+      priceLineVisible: false, lastValueVisible: false,
     });
     candleSeries.setData(sorted.map(c => ({
       time: c.date as string, open: c.open, high: c.high, low: c.low, close: c.close,
     })));
 
-    // ② 빗각채널 (인범TV 방식: 상단=주황, 중간=회색점선, 하단=청록)
-    if (showChannel && channel) {
-      const lookback = Math.min(52, sorted.length - 1);
-      const startIdx = sorted.length - 1 - lookback;
+    // ② 빗각채널 라인 (로그 공간에서 등간격)
+    if (channel) {
+      for (const level of CHANNEL_LEVELS) {
+        const key = String(level);
+        const color = LEVEL_COLORS[key] ?? '#4b5563';
+        const lineWidth = (LEVEL_WIDTHS[key] ?? 1) as 1 | 2 | 3 | 4;
 
-      const upperData: { time: string; value: number }[] = [];
-      const midData:   { time: string; value: number }[] = [];
-      const lowerData: { time: string; value: number }[] = [];
+        const lineData: { time: string; value: number }[] = [];
+        for (let i = 0; i < n; i++) {
+          const price = priceAtLevel(i, level, channel);
+          if (price > 0 && isFinite(price)) {
+            lineData.push({ time: sorted[i].date, value: price });
+          }
+        }
+        if (lineData.length === 0) continue;
 
-      for (let i = 0; i <= lookback; i++) {
-        const gIdx = startIdx + i;
-        if (gIdx >= sorted.length) break;
-        const upper = channel.slope * i + channel.intercept;
-        const lower = upper + channel.lowerOffset;
-        const mid   = (upper + lower) / 2;
-        upperData.push({ time: sorted[gIdx].date, value: upper });
-        midData.push({   time: sorted[gIdx].date, value: mid   });
-        lowerData.push({ time: sorted[gIdx].date, value: lower });
+        const series = chart.addSeries(LineSeries, {
+          color,
+          lineWidth,
+          lineStyle: level === 0 ? 0 : (Math.abs(level % 1) === 0.5 ? 2 : 0),
+          priceLineVisible: false,
+          lastValueVisible: level === 0,
+          title: level === 0 ? '빗각(0)' : level === 1 ? 'P3(1)' : undefined,
+        });
+        series.setData(lineData);
       }
 
-      const upperWidth = channel.thirdTouchWarning === 'upper' ? 2 : 1;
-      const lowerWidth = channel.thirdTouchWarning === 'lower' ? 2 : 1;
+      // P1, P2, P3 마커 표시
+      const markers: {
+        time: string; position: 'aboveBar' | 'belowBar';
+        shape: 'circle'; color: string; text: string; size: number;
+      }[] = [];
 
-      chart.addSeries(LineSeries, {
-        color: '#f97316', lineWidth: upperWidth, lineStyle: 0,
-        priceLineVisible: false, lastValueVisible: true,
-        title: '채널상단',
-      }).setData(upperData);
+      const addMarker = (p: BijagPivot, label: string, isHigh: boolean) => {
+        if (p.idx < sorted.length) {
+          markers.push({
+            time: p.date,
+            position: isHigh ? 'aboveBar' : 'belowBar',
+            shape: 'circle',
+            color: label === 'P3' ? '#10b981' : '#f59e0b',
+            text: label,
+            size: 1,
+          });
+        }
+      };
 
-      chart.addSeries(LineSeries, {
-        color: '#9ca3af', lineWidth: 1, lineStyle: 2,
-        priceLineVisible: false, lastValueVisible: false,
-      }).setData(midData);
-
-      chart.addSeries(LineSeries, {
-        color: '#06b6d4', lineWidth: lowerWidth, lineStyle: 0,
-        priceLineVisible: false, lastValueVisible: true,
-        title: '채널하단',
-      }).setData(lowerData);
+      const isHHLType = channel.type === 'HHL';
+      addMarker(channel.p1, 'P1', isHHLType);
+      addMarker(channel.p2, 'P2', isHHLType);
+      addMarker(channel.p3, 'P3', !isHHLType);
+      if (markers.length > 0) createSeriesMarkers(candleSeries as any, markers);
     }
 
-    // ③ 구름대: SpanA(초록), SpanB(빨강) 라인으로 구름 영역 표시
+    // ③ 구름대 SpanA/B
     if (showCloud && ichimoku.length > 0) {
       const spanAData: { time: string; value: number }[] = [];
       const spanBData: { time: string; value: number }[] = [];
-
-      // 전체 캔들과 Ichimoku 포인트 매핑
-      sorted.forEach((c) => {
+      sorted.forEach(c => {
         const ich = ichimoku.find(p => p.date === c.date);
         if (ich?.spanA != null) spanAData.push({ time: c.date, value: ich.spanA });
         if (ich?.spanB != null) spanBData.push({ time: c.date, value: ich.spanB });
       });
-
-      if (spanAData.length > 0) {
-        chart.addSeries(LineSeries, {
-          color: '#16a34a', lineWidth: 2, lineStyle: 0,
-          priceLineVisible: false, lastValueVisible: true,
-          title: 'SpanA',
-        }).setData(spanAData);
-      }
-
-      if (spanBData.length > 0) {
-        chart.addSeries(LineSeries, {
-          color: '#dc2626', lineWidth: 2, lineStyle: 0,
-          priceLineVisible: false, lastValueVisible: true,
-          title: 'SpanB',
-        }).setData(spanBData);
-      }
+      if (spanAData.length > 0)
+        chart.addSeries(LineSeries, { color: '#16a34a', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: true, title: 'SpanA' }).setData(spanAData);
+      if (spanBData.length > 0)
+        chart.addSeries(LineSeries, { color: '#dc2626', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: true, title: 'SpanB' }).setData(spanBData);
     }
 
-    // ④ 시그널 마커
-    const lastDate = sorted[sorted.length - 1].date;
-    const sig = analysis.signal;
-    const markers: {
-      time: string;
-      position: 'aboveBar' | 'belowBar';
-      shape: 'arrowUp' | 'arrowDown' | 'circle';
-      color: string;
-      text: string;
-      size: number;
-    }[] = [];
-
-    if (sig === 'CHANNEL_CLOUD_CONFLUENCE') {
-      markers.push({ time: lastDate, position: 'belowBar', shape: 'arrowUp', color: '#10b981', text: '채널+구름 동시', size: 2 });
-    } else if (sig === 'N_RETEST') {
-      markers.push({ time: lastDate, position: 'belowBar', shape: 'arrowUp', color: '#7c3aed', text: 'N자 리테스트', size: 2 });
-    } else if (sig === 'CLOUD_SUPPORT') {
-      markers.push({ time: lastDate, position: 'belowBar', shape: 'arrowUp', color: '#3b82f6', text: '구름 지지', size: 1 });
-    } else if (sig === 'CHANNEL_LOWER_TOUCH') {
-      markers.push({ time: lastDate, position: 'belowBar', shape: 'arrowUp', color: '#06b6d4', text: '채널 하단', size: 1 });
-    } else if (sig === 'BELOW_CLOUD') {
-      markers.push({ time: lastDate, position: 'aboveBar', shape: 'arrowDown', color: '#ef4444', text: '구름 아래', size: 1 });
+    // ④ 현재가 시그널 마커
+    if (analysis.signal !== 'MID_CHANNEL') {
+      const lastDate = sorted[sorted.length - 1].date;
+      const sig = analysis.signal;
+      const isBuy = sig === 'BREAKOUT_BUY' || sig === 'CHANNEL_BOTTOM' || sig === 'BIJAG_TOUCH';
+      createSeriesMarkers(candleSeries as any, [{
+        time: lastDate,
+        position: isBuy ? 'belowBar' : 'aboveBar',
+        shape: isBuy ? 'arrowUp' : 'arrowDown',
+        color: isBuy ? '#10b981' : sig === 'BREAKDOWN' ? '#ef4444' : '#f59e0b',
+        text: SIGNAL_META[sig].label,
+        size: 2,
+      }]);
     }
 
-    if (markers.length > 0) createSeriesMarkers(candleSeries as any, markers);
+    // ⑤ 수동 피벗 선택 모드
+    if (pickStep) {
+      containerRef.current.style.cursor = 'crosshair';
+      const handler = (param: any) => {
+        if (!param.time) return;
+        const barData = param.seriesData?.get(candleSeries);
+        if (!barData) return;
+        const date = param.time as string;
+        const idx = sorted.findIndex(c => c.date === date);
+        if (idx < 0) return;
+        // P1/P2: HHL→고가, LLH→저가 / P3: HHL→저가, LLH→고가
+        const price = pickStep === 'P3'
+          ? barData.low
+          : barData.high;
+        onPickPoint(pickStep, { date, price, idx });
+      };
+      chart.subscribeClick(handler);
+      return () => { chart.unsubscribeClick(handler); chart.remove(); };
+    }
 
     const handleResize = () => {
       if (containerRef.current) chart.applyOptions({ width: containerRef.current.clientWidth });
     };
     window.addEventListener('resize', handleResize);
     chart.timeScale().fitContent();
-
-    return () => {
-      window.removeEventListener('resize', handleResize);
-      chart.remove();
-    };
-  }, [candles, channel, ichimoku, analysis, showChannel, showCloud]);
+    return () => { window.removeEventListener('resize', handleResize); chart.remove(); };
+  }, [candles, channel, ichimoku, analysis, showCloud, pickStep, onPickPoint]);
 
   return <div ref={containerRef} className="w-full" />;
 }
@@ -200,17 +218,13 @@ interface BenchmarkSeries {
   data: { date: string; value: number }[];
 }
 
-function BenchmarkTooltip({ active, payload, label }: {
-  active?: boolean;
-  payload?: { color: string; name: string; value: number | null }[];
-  label?: string;
-}) {
-  if (!active || !payload || payload.length === 0) return null;
-  const sorted = [...payload].filter(p => p.value != null).sort((a, b) => (b.value ?? 0) - (a.value ?? 0));
+function BenchmarkTooltip({ active, payload, label }: any) {
+  if (!active || !payload?.length) return null;
+  const s = [...payload].filter(p => p.value != null).sort((a, b) => (b.value ?? 0) - (a.value ?? 0));
   return (
     <div className="bg-white border border-gray-200 rounded-xl shadow-lg p-3 min-w-[160px]">
-      <p className="text-xs text-gray-500 mb-2 font-medium">{label}</p>
-      {sorted.map(p => (
+      <p className="text-xs text-gray-500 mb-2">{label}</p>
+      {s.map(p => (
         <div key={p.name} className="flex items-center justify-between gap-4 py-0.5">
           <div className="flex items-center gap-1.5">
             <div className="w-2 h-2 rounded-full" style={{ backgroundColor: p.color }} />
@@ -225,9 +239,7 @@ function BenchmarkTooltip({ active, payload, label }: {
   );
 }
 
-function BenchmarkChart({
-  stockCandles, benchmarks, stockName,
-}: {
+function BenchmarkChart({ stockCandles, benchmarks, stockName }: {
   stockCandles: Candle[]; benchmarks: BenchmarkSeries[]; stockName: string;
 }) {
   const [hidden, setHidden] = useState<Set<string>>(new Set());
@@ -255,44 +267,29 @@ function BenchmarkChart({
   ];
 
   const toggle = (id: string) => setHidden(prev => {
-    const next = new Set(prev);
-    next.has(id) ? next.delete(id) : next.add(id);
-    return next;
+    const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next;
   });
-
-  const xTick = (v: string) => {
-    if (!v) return '';
-    const [year, month] = v.split('-');
-    return month === '01' || month === '07' ? year : '';
-  };
 
   return (
     <div className="bg-white rounded-2xl border border-gray-200 p-5">
-      <div className="mb-4">
-        <p className="text-sm font-bold text-gray-900">5대 지수 수익률 비교</p>
-        <p className="text-xs text-gray-400 mt-0.5">기준일(첫 주봉) = 0% · 주봉 기준</p>
-      </div>
+      <p className="text-sm font-bold text-gray-900 mb-1">5대 지수 수익률 비교</p>
+      <p className="text-xs text-gray-400 mb-3">기준일(첫 주봉) = 0%</p>
       <div className="flex flex-wrap gap-2 mb-4">
-        {allSeries.map(s => {
-          const isHidden = hidden.has(s.id);
-          return (
-            <button key={s.id} onClick={() => toggle(s.id)}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
-                isHidden ? 'border-gray-200 text-gray-400 bg-gray-50' : 'border-transparent text-gray-700'
-              }`}
-              style={isHidden ? {} : { backgroundColor: `${s.color}18`, borderColor: `${s.color}40` }}
-            >
-              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: isHidden ? '#D1D5DB' : s.color }} />
-              {s.name}
-            </button>
-          );
-        })}
+        {allSeries.map(s => (
+          <button key={s.id} onClick={() => toggle(s.id)}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${hidden.has(s.id) ? 'border-gray-200 text-gray-400 bg-gray-50' : 'border-transparent text-gray-700'}`}
+            style={hidden.has(s.id) ? {} : { backgroundColor: `${s.color}18`, borderColor: `${s.color}40` }}>
+            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: hidden.has(s.id) ? '#D1D5DB' : s.color }} />
+            {s.name}
+          </button>
+        ))}
       </div>
       <div className="h-72">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={chartData} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" />
-            <XAxis dataKey="date" tickFormatter={xTick} tick={{ fontSize: 11, fill: '#9CA3AF' }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+            <XAxis dataKey="date" tickFormatter={v => { const [y, m] = v.split('-'); return m === '01' || m === '07' ? y : ''; }}
+              tick={{ fontSize: 11, fill: '#9CA3AF' }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
             <YAxis tickFormatter={v => `${(v - 100).toFixed(0)}%`} tick={{ fontSize: 11, fill: '#9CA3AF' }} axisLine={false} tickLine={false} width={52} />
             <ReferenceLine y={100} stroke="#D1D5DB" strokeDasharray="4 4" />
             <Tooltip content={<BenchmarkTooltip />} />
@@ -311,67 +308,105 @@ function BenchmarkChart({
 export default function InbumBijagDetailPage() {
   const params = useParams();
   const searchParams = useSearchParams();
-
   const symbol = decodeURIComponent(params.symbol as string);
   const market = searchParams.get('market') || 'US';
   const name   = searchParams.get('name')   || symbol;
 
-  const [candles,     setCandles]     = useState<Candle[]>([]);
-  const [analysis,    setAnalysis]    = useState<InbumAnalysis | null>(null);
-  const [channel,     setChannel]     = useState<InbumChannel | null>(null);
-  const [ichimoku,    setIchimoku]    = useState<IchimokuPoint[]>([]);
-  const [showChannel, setShowChannel] = useState(true);
+  // 데이터 상태
+  const [candles,    setCandles]    = useState<Candle[]>([]);
+  const [channel,    setChannel]    = useState<BijagChannelResult | null>(null);
+  const [ichimoku,   setIchimoku]   = useState<IchimokuPoint[]>([]);
+  const [analysis,   setAnalysis]   = useState<InbumAnalysis | null>(null);
+  const [loading,    setLoading]    = useState(true);
+  const [error,      setError]      = useState<string | null>(null);
+  const [benchmarks, setBenchmarks] = useState<BenchmarkSeries[]>([]);
+
+  // UI 상태
   const [showCloud,   setShowCloud]   = useState(true);
-  const [loading,     setLoading]     = useState(true);
-  const [error,       setError]       = useState<string | null>(null);
-  const [benchmarks,  setBenchmarks]  = useState<BenchmarkSeries[]>([]);
-  const [benchLoading, setBenchLoading] = useState(false);
+  const [pickMode,    setPickMode]    = useState<'auto' | 'manual'>('auto');
+  const [pickStep,    setPickStep]    = useState<PickStep>(null);
+  const [bijagType,   setBijagType]   = useState<BijagType>('HHL');
+  const [customP1,    setCustomP1]    = useState<BijagPivot | null>(null);
+  const [customP2,    setCustomP2]    = useState<BijagPivot | null>(null);
+  const [customP3,    setCustomP3]    = useState<BijagPivot | null>(null);
+  const [customChannel, setCustomChannel] = useState<BijagChannelResult | null>(null);
 
   const fetchData = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    setBenchmarks([]);
+    setLoading(true); setError(null); setBenchmarks([]);
     try {
-      const res = await fetch(
-        `/api/strategies/inbum-bijag/${encodeURIComponent(symbol)}?market=${market}&name=${encodeURIComponent(name)}`
-      );
+      const res = await fetch(`/api/strategies/inbum-bijag/${encodeURIComponent(symbol)}?market=${market}&name=${encodeURIComponent(name)}`);
       if (!res.ok) throw new Error('데이터를 불러오는 중 오류가 발생했습니다.');
       const data = await res.json();
-
       const fetchedCandles: Candle[] = data.candles || [];
       setCandles(fetchedCandles);
-      setAnalysis(data.analysis || null);
       setChannel(data.channel || null);
       setIchimoku(data.ichimoku || []);
+      setAnalysis(data.analysis || null);
+      setCustomP1(null); setCustomP2(null); setCustomP3(null); setCustomChannel(null); setPickMode('auto');
 
       if (fetchedCandles.length > 0) {
         const from = fetchedCandles[0].date;
-        setBenchLoading(true);
         fetch(`/api/strategies/benchmark?from=${from}`)
           .then(r => r.ok ? r.json() : null)
           .then(d => { if (d?.benchmarks) setBenchmarks(d.benchmarks); })
-          .catch(() => {})
-          .finally(() => setBenchLoading(false));
+          .catch(() => {});
       }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : '오류가 발생했습니다.');
-    } finally {
-      setLoading(false);
-    }
+    } catch (e) { setError(e instanceof Error ? e.message : '오류'); }
+    finally { setLoading(false); }
   }, [symbol, market, name]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  const signalMeta = analysis ? SIGNAL_META[analysis.signal] : null;
+  // 수동 피벗 선택 핸들러
+  const handlePickPoint = useCallback((step: PickStep, pivot: BijagPivot) => {
+    if (step === 'P1') { setCustomP1(pivot); setPickStep('P2'); }
+    else if (step === 'P2') { setCustomP2(pivot); setPickStep('P3'); }
+    else if (step === 'P3') {
+      setCustomP3(pivot);
+      setPickStep(null);
+      // 직접 채널 계산
+      setCustomP1(prev => {
+        setCustomP2(prev2 => {
+          if (prev && prev2) {
+            const result = calcCustomBijagChannel(candles, prev, prev2, pivot, bijagType);
+            setCustomChannel(result);
+          }
+          return prev2;
+        });
+        return prev;
+      });
+    }
+  }, [candles, bijagType]);
+
+  // customP1/P2/P3 모두 설정되면 채널 계산
+  useEffect(() => {
+    if (customP1 && customP2 && customP3) {
+      const result = calcCustomBijagChannel(candles, customP1, customP2, customP3, bijagType);
+      setCustomChannel(result);
+    }
+  }, [customP1, customP2, customP3, candles, bijagType]);
+
+  const resetCustom = useCallback(() => {
+    setCustomP1(null); setCustomP2(null); setCustomP3(null);
+    setCustomChannel(null); setPickStep(null); setPickMode('auto');
+  }, []);
+
+  const activeChannel = pickMode === 'manual' && customChannel ? customChannel : channel;
+  const activeAnalysis = analysis;
+  const signalMeta = activeAnalysis ? SIGNAL_META[activeAnalysis.signal] : null;
+
+  const levelLabel = (level: number) => {
+    if (level === 0) return '빗각(0)';
+    if (level === 1) return 'P3(1)';
+    return `${level > 0 ? '+' : ''}${level}`;
+  };
 
   return (
     <div className="min-h-screen bg-gray-50/50">
       <div className="max-w-5xl mx-auto px-4 pt-10 pb-20">
 
-        <Link
-          href="/strategies/inbum-bijag"
-          className="flex items-center gap-2 text-sm font-bold text-gray-400 hover:text-gray-900 mb-10 transition-colors group"
-        >
+        <Link href="/strategies/inbum-bijag"
+          className="flex items-center gap-2 text-sm font-bold text-gray-400 hover:text-gray-900 mb-10 transition-colors group">
           <div className="p-1.5 bg-white rounded-lg border border-gray-100 group-hover:border-gray-300">
             <ArrowLeft className="h-3.5 w-3.5" />
           </div>
@@ -382,23 +417,16 @@ export default function InbumBijagDetailPage() {
         <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-6 mb-8">
           <div className="space-y-2">
             <div className="flex items-center gap-2">
-              <span className={`text-xs font-bold px-2 py-1 rounded ${
-                market === 'US' ? 'bg-blue-50 text-blue-600' : 'bg-emerald-50 text-emerald-600'
-              }`}>{market}</span>
+              <span className={`text-xs font-bold px-2 py-1 rounded ${market === 'US' ? 'bg-blue-50 text-blue-600' : 'bg-emerald-50 text-emerald-600'}`}>{market}</span>
               {signalMeta && (
-                <span className={`inline-flex items-center text-xs font-black px-2.5 py-1 rounded-lg ${signalMeta.cls}`}>
-                  {signalMeta.label}
-                </span>
+                <span className={`text-xs font-black px-2.5 py-1 rounded-lg ${signalMeta.cls}`}>{signalMeta.label}</span>
               )}
             </div>
             <h1 className="text-3xl font-black text-gray-900 tracking-tight">{symbol}</h1>
             <p className="text-gray-500">{name}</p>
           </div>
-          <button
-            onClick={fetchData}
-            disabled={loading}
-            className="group bg-gray-900 hover:bg-violet-600 disabled:bg-gray-200 text-white font-black px-6 py-3 rounded-xl transition-all shadow-lg active:scale-95 flex items-center gap-2 whitespace-nowrap shrink-0"
-          >
+          <button onClick={fetchData} disabled={loading}
+            className="group bg-gray-900 hover:bg-violet-600 disabled:bg-gray-200 text-white font-black px-6 py-3 rounded-xl transition-all shadow-lg active:scale-95 flex items-center gap-2 whitespace-nowrap shrink-0">
             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
             새로고침
           </button>
@@ -407,34 +435,34 @@ export default function InbumBijagDetailPage() {
         {loading && (
           <div className="bg-white rounded-2xl border border-gray-200 p-16 text-center">
             <RefreshCw className="h-8 w-8 text-gray-400 mx-auto animate-spin" />
-            <p className="text-sm text-gray-500 mt-3">주봉 데이터를 불러오는 중...</p>
+            <p className="text-sm text-gray-500 mt-3">5년 주봉 데이터 로딩 중...</p>
           </div>
         )}
+        {error && <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6"><p className="text-sm text-red-700">{error}</p></div>}
 
-        {error && (
-          <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6">
-            <p className="text-sm text-red-700">{error}</p>
-          </div>
-        )}
-
-        {!loading && !error && analysis && (
+        {!loading && !error && activeAnalysis && (
           <>
-            {/* 전략 개요 */}
+            {/* 채널 상태 요약 */}
             <div className="bg-white rounded-2xl border border-gray-200 p-5 mb-6">
-              <div className="flex items-center gap-2 mb-3">
+              <div className="flex items-center gap-2 mb-4">
                 <div className="px-2 py-1 bg-violet-600 text-white text-[10px] font-black rounded uppercase tracking-widest">InbumTV</div>
-                <span className="text-sm font-black text-gray-900">인범 빗각 + 구름대 전략</span>
+                <span className="text-sm font-black text-gray-900">빗각채널 분석</span>
+                {activeChannel && (
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${activeChannel.type === 'HHL' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>
+                    {activeChannel.type} 패턴
+                  </span>
+                )}
               </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 {[
-                  { label: '현재가',     value: formatPrice(candles[candles.length - 1]?.close ?? 0, market) },
-                  { label: '채널 위치', value: analysis.channelPositionPct !== null ? `${analysis.channelPositionPct}%` : '-',
-                    color: analysis.channelPositionPct !== null && analysis.channelPositionPct <= 20 ? 'text-cyan-600' :
-                           analysis.channelPositionPct !== null && analysis.channelPositionPct >= 80 ? 'text-amber-600' : undefined },
-                  { label: '구름 두께', value: analysis.cloudThicknessPct !== null ? `${analysis.cloudThicknessPct}%` : '-',
-                    color: analysis.cloudThicknessPct !== null && analysis.cloudThicknessPct >= 5 ? 'text-emerald-600' : undefined },
-                  { label: '구름 위치', value: analysis.aboveCloud ? '구름 위 ▲' : '구름 아래 ▼',
-                    color: analysis.aboveCloud ? 'text-emerald-600' : 'text-red-600' },
+                  { label: '현재가', value: formatPrice(candles[candles.length - 1]?.close ?? 0, market) },
+                  { label: '채널 레벨',
+                    value: activeAnalysis.channelLevel !== null ? `${activeAnalysis.channelLevel.toFixed(2)}` : '-',
+                    color: activeAnalysis.channelLevel !== null && activeAnalysis.channelLevel < 0 ? 'text-violet-600' :
+                           activeAnalysis.channelLevel !== null && activeAnalysis.channelLevel > 0.8 ? 'text-cyan-600' : undefined },
+                  { label: '구름 구조', value: activeAnalysis.aboveCloud ? '구름 위 ▲' : '구름 아래 ▼',
+                    color: activeAnalysis.aboveCloud ? 'text-emerald-600' : 'text-red-600' },
+                  { label: '구름 두께', value: activeAnalysis.cloudThicknessPct !== null ? `${activeAnalysis.cloudThicknessPct}%` : '-' },
                 ].map(item => (
                   <div key={item.label} className="bg-gray-50 rounded-xl p-3">
                     <p className="text-xs text-gray-400 mb-1">{item.label}</p>
@@ -442,174 +470,181 @@ export default function InbumBijagDetailPage() {
                   </div>
                 ))}
               </div>
-              {analysis.nRetestDetected && (
-                <div className="mt-3 bg-violet-50 border border-violet-200 rounded-xl p-3">
-                  <p className="text-sm font-bold text-violet-800">N자형 리테스트 감지 — 구름/채널 돌파 후 지지 확인 중</p>
-                </div>
-              )}
-              {channel?.thirdTouchWarning && (
-                <div className="mt-3 bg-amber-50 border border-amber-200 rounded-xl p-3">
-                  <p className="text-sm font-bold text-amber-800">
-                    채널 {channel.thirdTouchWarning === 'upper' ? '상단' : '하단'} 3차 터치 — 돌파 가능성 높음
-                  </p>
+              {activeChannel && (
+                <div className="mt-4 text-xs text-gray-500 grid grid-cols-3 gap-2">
+                  {[
+                    { label: 'P1', v: `${activeChannel.p1.date} / ${formatPrice(activeChannel.p1.price, market)}` },
+                    { label: 'P2', v: `${activeChannel.p2.date} / ${formatPrice(activeChannel.p2.price, market)}` },
+                    { label: 'P3', v: `${activeChannel.p3.date} / ${formatPrice(activeChannel.p3.price, market)}` },
+                  ].map(p => (
+                    <div key={p.label} className="bg-gray-100 rounded-lg p-2">
+                      <span className="font-black text-gray-700">{p.label}: </span>{p.v}
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
 
             {/* 차트 섹션 */}
-            <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden mb-6">
-              <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between flex-wrap gap-3">
+            <div className="bg-gray-900 rounded-2xl overflow-hidden mb-6">
+              {/* 차트 상단 컨트롤 */}
+              <div className="px-5 py-4 flex items-center justify-between flex-wrap gap-3 border-b border-gray-700">
                 <div>
-                  <p className="text-sm font-black text-gray-900">빗각채널 + 구름대 차트</p>
-                  <p className="text-[10px] text-gray-400 mt-0.5">주봉 · SpanA(초록) / SpanB(빨강) 사이가 구름대</p>
+                  <p className="text-sm font-black text-white">빗각채널 차트 <span className="text-gray-500 text-xs ml-1">로그 스케일 · 5년 주봉</span></p>
+                  <p className="text-[10px] text-gray-500 mt-0.5">
+                    {CHANNEL_LEVELS.map(l => <span key={l} style={{ color: LEVEL_COLORS[String(l)] ?? '#6b7280' }} className="mr-1.5">{levelLabel(l)}</span>)}
+                  </p>
                 </div>
                 <div className="flex gap-2 flex-wrap">
-                  <button
-                    onClick={() => setShowChannel(v => !v)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors ${
-                      showChannel ? 'bg-orange-500 border-orange-500 text-white' : 'bg-orange-50 border-orange-200 text-orange-600'
-                    }`}
-                  >
-                    빗각채널
+                  <button onClick={() => setShowCloud(v => !v)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors ${showCloud ? 'bg-emerald-600 border-emerald-600 text-white' : 'bg-transparent border-gray-600 text-gray-400'}`}>
+                    <Cloud className="h-3 w-3 inline mr-1" />구름대
                   </button>
+
+                  {/* 모드 전환 */}
                   <button
-                    onClick={() => setShowCloud(v => !v)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors ${
-                      showCloud ? 'bg-emerald-600 border-emerald-600 text-white' : 'bg-emerald-50 border-emerald-200 text-emerald-600'
-                    }`}
-                  >
-                    구름대
+                    onClick={() => { setPickMode(m => m === 'auto' ? 'manual' : 'auto'); setPickStep(null); }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors ${pickMode === 'manual' ? 'bg-violet-600 border-violet-600 text-white' : 'bg-transparent border-gray-600 text-gray-400'}`}>
+                    <Crosshair className="h-3 w-3 inline mr-1" />수동 설정
                   </button>
                 </div>
               </div>
-              <div className="p-4">
-                <InbumBijagChart
+
+              {/* 수동 모드 UI */}
+              {pickMode === 'manual' && (
+                <div className="px-5 py-3 bg-gray-800 border-b border-gray-700 flex flex-wrap items-center gap-3">
+                  {/* 채널 타입 선택 */}
+                  <div className="flex gap-1">
+                    {(['HHL', 'LLH'] as BijagType[]).map(t => (
+                      <button key={t} onClick={() => setBijagType(t)}
+                        className={`px-2.5 py-1 rounded text-xs font-bold transition-colors ${bijagType === t ? 'bg-orange-500 text-white' : 'bg-gray-700 text-gray-300'}`}>
+                        {t}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* 스텝 표시 */}
+                  <div className="flex items-center gap-2">
+                    {(['P1', 'P2', 'P3'] as const).map(s => {
+                      const pivot = s === 'P1' ? customP1 : s === 'P2' ? customP2 : customP3;
+                      const isActive = pickStep === s;
+                      const isDone = pivot !== null;
+                      const desc = s === 'P3'
+                        ? (bijagType === 'HHL' ? '저점' : '고점')
+                        : (bijagType === 'HHL' ? '고점' : '저점');
+                      return (
+                        <button key={s} onClick={() => setPickStep(s)}
+                          className={`px-2.5 py-1.5 rounded-lg text-xs font-bold border transition-colors ${
+                            isActive ? 'bg-yellow-400 border-yellow-400 text-gray-900' :
+                            isDone   ? 'bg-gray-600 border-gray-600 text-white' :
+                                       'bg-gray-700 border-gray-600 text-gray-400'}`}>
+                          {s} <span className="opacity-60 font-normal">({desc})</span>
+                          {isDone && <span className="ml-1 text-emerald-400">✓</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* 리셋 */}
+                  <button onClick={resetCustom}
+                    className="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-gray-700 border border-gray-600 text-gray-300 hover:text-white">
+                    <RotateCcw className="h-3 w-3 inline mr-1" />초기화
+                  </button>
+
+                  {pickStep && (
+                    <span className="text-xs text-yellow-400 font-bold animate-pulse">
+                      차트에서 {pickStep} {pickStep === 'P3' ? (bijagType === 'HHL' ? '저점' : '고점') : (bijagType === 'HHL' ? '고점' : '저점')}을 클릭하세요
+                    </span>
+                  )}
+                </div>
+              )}
+
+              <div className="p-2">
+                <BijagChart
                   candles={candles}
-                  channel={channel}
+                  channel={activeChannel}
                   ichimoku={ichimoku}
-                  analysis={analysis}
-                  showChannel={showChannel}
+                  analysis={activeAnalysis}
                   showCloud={showCloud}
+                  pickStep={pickStep}
+                  onPickPoint={handlePickPoint}
                 />
               </div>
             </div>
 
-            {/* 전략 상세 설명 */}
-            <div className="bg-violet-50 border border-violet-100 rounded-2xl p-5 mb-6 space-y-4">
-              <h3 className="font-black text-violet-900 text-sm">전략 원리 — 인범 빗각 + 구름대</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                <div className="bg-white rounded-xl p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Layers className="h-4 w-4 text-orange-500" />
-                    <p className="font-black text-gray-900">빗각채널 (Bijag Channel)</p>
-                  </div>
-                  <p className="text-gray-500 leading-relaxed">
-                    두 피벗 고점을 연결한 상단 추세선을 그리고, 동일한 기울기를 복사해 주요 저점에 맞춘 하단선을 생성합니다.
-                    가격은 채널 상·하단 사이를 진동하며, <strong>하단 근접 시 반등 가능성이 높습니다.</strong>
-                  </p>
-                  <div className="mt-2 p-2 bg-orange-50 rounded-lg">
-                    <p className="text-[10px] text-orange-700 font-bold">진입: 채널 하단 20% 이내</p>
-                    <p className="text-[10px] text-orange-700">손절: 채널 하단선 이탈 확인</p>
-                  </div>
-                </div>
-                <div className="bg-white rounded-xl p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Cloud className="h-4 w-4 text-emerald-600" />
-                    <p className="font-black text-gray-900">일목균형표 구름대</p>
-                  </div>
-                  <p className="text-gray-500 leading-relaxed">
-                    선행스팬A(초록)와 선행스팬B(빨강) 사이 구간 = 구름대. <strong>두꺼운 구름 = 강한 지지/저항</strong>
-                    (세력의 매물대). 가격이 구름대 위 = 강세, 아래 = 약세 구조.
-                  </p>
-                  <div className="mt-2 p-2 bg-emerald-50 rounded-lg">
-                    <p className="text-[10px] text-emerald-700 font-bold">SpanA(초록선) 위: 단기 강세</p>
-                    <p className="text-[10px] text-emerald-700">SpanB(빨강선) 아래: 약세 구조</p>
-                  </div>
-                </div>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-                <div className="bg-white rounded-xl p-3">
-                  <p className="font-black text-gray-900 mb-1">진입 조건</p>
-                  <ul className="text-gray-500 space-y-0.5">
-                    <li>① 채널 하단 20% 이내</li>
-                    <li>② 구름대 상단 ±3% 또는 구름 내</li>
-                    <li>③ 두 조건 동시 = 최우선 진입</li>
-                  </ul>
-                </div>
-                <div className="bg-white rounded-xl p-3">
-                  <p className="font-black text-gray-900 mb-1">N자형 리테스트</p>
-                  <ul className="text-gray-500 space-y-0.5">
-                    <li>① 구름/채널 상향 돌파</li>
-                    <li>② 다시 해당 레벨로 되돌림</li>
-                    <li>③ 지지 확인 후 진입 (발로 밟기)</li>
-                  </ul>
-                </div>
-                <div className="bg-white rounded-xl p-3">
-                  <p className="font-black text-gray-900 mb-1">파라미터</p>
-                  <table className="w-full text-[10px]">
+            {/* 채널 레벨 현황표 */}
+            {activeChannel && (
+              <div className="bg-white rounded-2xl border border-gray-200 p-5 mb-6">
+                <h3 className="font-black text-gray-900 text-sm mb-4">채널 레벨별 가격</h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-gray-100">
+                        <th className="py-2 px-3 text-left text-gray-400 font-black">레벨</th>
+                        <th className="py-2 px-3 text-right text-gray-400 font-black">현재 가격</th>
+                        <th className="py-2 px-3 text-right text-gray-400 font-black">현재가 대비</th>
+                        <th className="py-2 px-3 text-left text-gray-400 font-black">의미</th>
+                      </tr>
+                    </thead>
                     <tbody>
-                      <tr><td className="text-gray-400">전환선</td><td className="text-right font-bold">9봉</td></tr>
-                      <tr><td className="text-gray-400">기준선</td><td className="text-right font-bold">26봉</td></tr>
-                      <tr><td className="text-gray-400">선행스팬B</td><td className="text-right font-bold">52봉</td></tr>
-                      <tr><td className="text-gray-400">채널 터치허용</td><td className="text-right font-bold">±1.5%</td></tr>
+                      {CHANNEL_LEVELS.map(level => {
+                        const levelPrice = priceAtLevel(candles.length - 1, level, activeChannel);
+                        const currentPrice = candles[candles.length - 1].close;
+                        const diffPct = ((levelPrice - currentPrice) / currentPrice) * 100;
+                        const isCurrentLevel = Math.abs((activeAnalysis.channelLevel ?? 999) - level) < 0.25;
+                        const label = level === 0 ? '빗각 (기준선)' : level === 1 ? 'P3 (채널 폭 기준)' : '';
+
+                        return (
+                          <tr key={level}
+                            className={`border-b border-gray-50 ${isCurrentLevel ? 'bg-violet-50' : ''}`}>
+                            <td className="py-2 px-3">
+                              <div className="flex items-center gap-2">
+                                <div className="w-3 h-1 rounded" style={{ backgroundColor: LEVEL_COLORS[String(level)] ?? '#6b7280' }} />
+                                <span className="font-bold" style={{ color: LEVEL_COLORS[String(level)] ?? '#6b7280' }}>
+                                  {levelLabel(level)}
+                                </span>
+                                {isCurrentLevel && <span className="text-[9px] bg-violet-200 text-violet-700 px-1 rounded font-bold">현재</span>}
+                              </div>
+                            </td>
+                            <td className="py-2 px-3 text-right font-bold text-gray-900">
+                              {formatPrice(levelPrice, market)}
+                            </td>
+                            <td className={`py-2 px-3 text-right font-bold ${diffPct > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                              {diffPct > 0 ? '+' : ''}{diffPct.toFixed(1)}%
+                            </td>
+                            <td className="py-2 px-3 text-gray-500">{label}</td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
               </div>
+            )}
+
+            {/* 전략 설명 */}
+            <div className="bg-violet-50 border border-violet-100 rounded-2xl p-5 mb-6 space-y-3">
+              <h3 className="font-black text-violet-900 text-sm">전략 원리</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                <div className="bg-white rounded-xl p-3">
+                  <p className="font-black text-orange-700 mb-1">① H-H-L 패턴 (빗각 = 저항선)</p>
+                  <p className="text-gray-500 leading-relaxed">변곡 고점 2개(H1→H2)를 연결 = 빗각(0). P3(저점)으로 D를 결정. 0~1D 사이를 오가며, 빗각 하향 = 매수, 빗각 상향 돌파 = 강한 매수.</p>
+                </div>
+                <div className="bg-white rounded-xl p-3">
+                  <p className="font-black text-blue-700 mb-1">② L-L-H 패턴 (빗각 = 지지선)</p>
+                  <p className="text-gray-500 leading-relaxed">변곡 저점 2개(L1→L2)를 연결 = 빗각(0). P3(고점)으로 D를 결정. 빗각 접촉 = 매수, 1D 이상 = 매도 구간.</p>
+                </div>
+                <div className="bg-white rounded-xl p-3">
+                  <p className="font-black text-emerald-700 mb-1">③ 채널 읽는 법</p>
+                  <p className="text-gray-500 leading-relaxed">로그 스케일로 0.5D 단위의 등비 채널. 레벨 0 = 빗각, 레벨 1 = P3. 레벨이 낮을수록(0에 가까울수록) 상단, 높을수록 하단.</p>
+                </div>
+              </div>
             </div>
 
-            {/* 채널 상세 */}
-            {channel && (
-              <div className="bg-white rounded-2xl border border-gray-200 p-5 mb-6">
-                <h3 className="font-black text-gray-900 text-sm mb-4">채널 분석</h3>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  {[
-                    { label: '채널 위치', value: analysis.channelPositionPct !== null ? `${analysis.channelPositionPct}%` : '-' },
-                    { label: '상단 터치', value: `${channel.upperTouches}회` },
-                    { label: '하단 터치', value: `${channel.lowerTouches}회` },
-                    { label: '돌파 경고', value: channel.thirdTouchWarning
-                        ? `${channel.thirdTouchWarning === 'upper' ? '상단' : '하단'} 3차`
-                        : '없음' },
-                  ].map(item => (
-                    <div key={item.label} className="bg-gray-50 rounded-xl p-3">
-                      <p className="text-xs text-gray-400 mb-1">{item.label}</p>
-                      <p className="text-lg font-black text-gray-900">{item.value}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* 구름대 상세 */}
-            {(analysis.cloudTop !== null || analysis.cloudBottom !== null) && (
-              <div className="bg-white rounded-2xl border border-gray-200 p-5 mb-6">
-                <h3 className="font-black text-gray-900 text-sm mb-4">구름대 분석</h3>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  {[
-                    { label: 'SpanA (초록)', value: analysis.currentSpanA !== null ? formatPrice(analysis.currentSpanA, market) : '-', color: 'text-emerald-600' },
-                    { label: 'SpanB (빨강)', value: analysis.currentSpanB !== null ? formatPrice(analysis.currentSpanB, market) : '-', color: 'text-red-600' },
-                    { label: '구름 두께', value: analysis.cloudThicknessPct !== null ? `${analysis.cloudThicknessPct}%` : '-',
-                      color: analysis.cloudThicknessPct !== null && analysis.cloudThicknessPct >= 5 ? 'text-emerald-600' : undefined },
-                    { label: '구름 구조', value: analysis.aboveCloud ? '강세 (구름 위)' : '약세 (구름 아래)',
-                      color: analysis.aboveCloud ? 'text-emerald-600' : 'text-red-600' },
-                  ].map(item => (
-                    <div key={item.label} className="bg-gray-50 rounded-xl p-3">
-                      <p className="text-xs text-gray-400 mb-1">{item.label}</p>
-                      <p className={`text-sm font-black ${item.color ?? 'text-gray-900'}`}>{item.value}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* 벤치마크 비교 */}
-            {!benchLoading && benchmarks.length > 0 && (
+            {/* 벤치마크 */}
+            {benchmarks.length > 0 && (
               <div className="mb-6">
-                <BenchmarkChart
-                  stockCandles={candles}
-                  benchmarks={benchmarks}
-                  stockName={symbol}
-                />
+                <BenchmarkChart stockCandles={candles} benchmarks={benchmarks} stockName={symbol} />
               </div>
             )}
 
@@ -617,14 +652,13 @@ export default function InbumBijagDetailPage() {
             <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5">
               <div className="flex items-center gap-2 mb-3">
                 <Activity className="h-4 w-4 text-amber-600" />
-                <h3 className="font-black text-amber-900 text-sm">전략 한계 및 주의사항</h3>
+                <h3 className="font-black text-amber-900 text-sm">주의사항</h3>
               </div>
               <ul className="space-y-1.5 text-xs text-amber-800">
-                <li>• <strong>구름 두께가 얇아질 때</strong> 대형 돌파(하락 포함) 가능성 높음 — 기간조정 후 주목</li>
-                <li>• 채널 하단 3차 터치 감지 시 하향 돌파 가능성 증가 — 진입 신중히</li>
-                <li>• 구름 아래(BELOW_CLOUD) 종목은 채널 하단 터치라도 강세 신호 아님</li>
-                <li>• 이 전략은 <strong>주봉 기반</strong>으로 최소 수주~수개월 호흡의 스윙 매매에 적합</li>
-                <li>• 실전 진입 시 일봉 확인 + 거래량 동반 여부 검증 필수</li>
+                <li>• 빗각채널은 <strong>장기 변곡점</strong>이 필요하므로 5년 이상 데이터가 적합합니다</li>
+                <li>• 자동 감지가 부정확할 경우 <strong>수동 설정(HHL/LLH 선택 → P1→P2→P3 클릭)</strong>으로 직접 지정하세요</li>
+                <li>• 채널 레벨 0.5D 마다 1개 라인 — 실선은 0.5 단위, 점선은 중간선입니다</li>
+                <li>• 일봉/주봉 <strong>종가 기준</strong>으로 채널 돌파 여부를 판단하세요</li>
               </ul>
             </div>
           </>

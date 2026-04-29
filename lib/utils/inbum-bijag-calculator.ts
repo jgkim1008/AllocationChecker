@@ -1,12 +1,53 @@
 // 인범 빗각채널 + 일목균형표 구름대 계산기
+// 빗각채널: 로그 스케일 기반 등비 간격 채널 (0.5D 단위)
+// H-H-L: 두 변곡 고점 연결 → 빗각선, P3(저점)으로 D 결정
+// L-L-H: 두 변곡 저점 연결 → 빗각선, P3(고점)으로 D 결정
 
 export type Candle = { date: string; open: number; high: number; low: number; close: number };
 
-// ── Yahoo Finance 주봉 데이터 fetch (signal-evaluator에서 재사용) ─
+export type BijagType = 'HHL' | 'LLH';
+
+export type InbumSignal =
+  | 'BREAKOUT_BUY'    // 빗각 상향 돌파 마감 (HHL에서 가격이 빗각 위로)
+  | 'CHANNEL_BOTTOM'  // 채널 하단 매수 (P3 근처)
+  | 'BIJAG_TOUCH'     // 빗각 접촉 (지지/저항)
+  | 'MID_CHANNEL'     // 채널 중단
+  | 'CHANNEL_TOP'     // 채널 상단 매도
+  | 'EXTENSION'       // 채널 외부 연장
+  | 'BREAKDOWN';      // 빗각 하향 이탈
+
+export interface BijagPivot {
+  date: string;
+  price: number;
+  idx: number;
+}
+
+export interface BijagChannelResult {
+  type: BijagType;
+  p1: BijagPivot;
+  p2: BijagPivot;
+  p3: BijagPivot;
+  logSlope: number;     // 로그 공간 기울기 (per bar)
+  logIntercept: number; // 로그 공간 y절편 (idx=0 기준)
+  D: number;            // 단위 거리 (로그 공간, 항상 양수)
+  currentLevel: number; // 현재가의 채널 레벨 (0=빗각, 1=P3, 음수=빗각 반대편)
+  signal: InbumSignal;
+}
+
+export interface IchimokuPoint {
+  date: string;
+  spanA: number | null;
+  spanB: number | null;
+}
+
+// 차트에 표시할 채널 레벨
+export const CHANNEL_LEVELS = [-1.5, -1, -0.5, 0, 0.5, 1, 1.5, 2, 2.5, 3];
+
+// ── Yahoo Finance 5년 주봉 fetch ────────────────────────────────
 export async function fetchWeeklyCandles(symbol: string, market: 'US' | 'KR'): Promise<Candle[] | null> {
   try {
     const yahooSymbol = market === 'KR' ? `${symbol}.KS` : symbol;
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSymbol}?interval=1wk&range=2y`;
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSymbol}?interval=1wk&range=5y`;
     const res = await fetch(url, {
       headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
     });
@@ -32,44 +73,261 @@ export async function fetchWeeklyCandles(symbol: string, market: 'US' | 'KR'): P
   } catch { return null; }
 }
 
-export type InbumSignal =
-  | 'CHANNEL_CLOUD_CONFLUENCE'  // 채널 하단 + 구름 지지 동시 (최강)
-  | 'N_RETEST'                  // N자형 리테스트 확인
-  | 'CLOUD_SUPPORT'             // 구름 상단/내부 접촉
-  | 'CHANNEL_LOWER_TOUCH'       // 채널 하단 접촉
-  | 'ABOVE_CLOUD'               // 구름 위 강세 구조
-  | 'BELOW_CLOUD';              // 구름 아래 약세 구조
-
-export interface IchimokuPoint {
-  date: string;
-  spanA: number | null;
-  spanB: number | null;
+// ── 피벗 고점/저점 탐지 ────────────────────────────────────────
+function findPivotHighs(candles: Candle[], w: number): BijagPivot[] {
+  const pivots: BijagPivot[] = [];
+  for (let i = w; i < candles.length - w; i++) {
+    const h = candles[i].high;
+    let ok = true;
+    for (let j = i - w; j <= i + w; j++) {
+      if (j !== i && candles[j].high >= h) { ok = false; break; }
+    }
+    if (ok) pivots.push({ date: candles[i].date, price: h, idx: i });
+  }
+  return pivots;
 }
 
-export interface InbumChannel {
-  slope: number;
-  intercept: number;
-  lowerOffset: number;   // 음수: 하단선 = 상단선 + lowerOffset
-  upperTouches: number;
-  lowerTouches: number;
-  thirdTouchWarning: 'upper' | 'lower' | null;
-  startDate: string;
-  endDate: string;
+function findPivotLows(candles: Candle[], w: number): BijagPivot[] {
+  const pivots: BijagPivot[] = [];
+  for (let i = w; i < candles.length - w; i++) {
+    const l = candles[i].low;
+    let ok = true;
+    for (let j = i - w; j <= i + w; j++) {
+      if (j !== i && candles[j].low <= l) { ok = false; break; }
+    }
+    if (ok) pivots.push({ date: candles[i].date, price: l, idx: i });
+  }
+  return pivots;
 }
 
-export interface InbumAnalysis {
-  signal: InbumSignal;
-  channelPositionPct: number | null;
-  cloudTop: number | null;
-  cloudBottom: number | null;
-  cloudThicknessPct: number | null;
-  nRetestDetected: boolean;
-  aboveCloud: boolean;
-  currentSpanA: number | null;
-  currentSpanB: number | null;
+// ── 현재 레벨 → 시그널 변환 ───────────────────────────────────
+function calcSignal(type: BijagType, level: number): InbumSignal {
+  if (type === 'HHL') {
+    // 빗각이 상단 (저항선)
+    // level > 0: 빗각 아래 (정상 구간), level < 0: 빗각 위 (돌파)
+    if (level < -0.3)          return 'EXTENSION';     // 빗각 크게 위
+    if (level < 0.05)          return 'BREAKOUT_BUY';  // 빗각 상향 돌파
+    if (level < 0.3)           return 'BIJAG_TOUCH';   // 빗각 접촉 (저항 근처)
+    if (level < 0.7)           return 'MID_CHANNEL';
+    if (level <= 1.3)          return 'CHANNEL_BOTTOM'; // P3 근처 매수
+    return 'BREAKDOWN';
+  } else {
+    // 빗각이 하단 (지지선)
+    // level > 0: 빗각 위 (정상 구간), level < 0: 빗각 아래 (이탈)
+    if (level < -0.2)          return 'BREAKDOWN';
+    if (level < 0.25)          return 'BIJAG_TOUCH';   // 빗각 지지 접촉 → 매수
+    if (level < 0.7)           return 'MID_CHANNEL';
+    if (level <= 1.3)          return 'CHANNEL_TOP';   // P3 근처 → 매도
+    return 'EXTENSION';
+  }
 }
 
-// ── 기간 내 최고가 / 최저가 ────────────────────────────────────
+// ── H-H-L 빗각채널 탐지 ────────────────────────────────────────
+// P1, P2: 변곡 고점 2개 → 빗각(상단 저항선)
+// P3: 빗각 아래 가장 깊은 저점 → 채널 폭(D) 결정
+function detectHHL(candles: Candle[], pivotW = 10): BijagChannelResult | null {
+  const n = candles.length;
+  const pivotHighs = findPivotHighs(candles, pivotW);
+  if (pivotHighs.length < 2) return null;
+
+  let best: BijagChannelResult | null = null;
+  let bestScore = -Infinity;
+
+  for (let a = 0; a < pivotHighs.length - 1; a++) {
+    for (let b = a + 1; b < pivotHighs.length; b++) {
+      const p1 = pivotHighs[a];
+      const p2 = pivotHighs[b];
+      if (p2.idx - p1.idx < pivotW * 2) continue; // 너무 가까운 쌍 제외
+
+      const logP1 = Math.log(p1.price);
+      const logP2 = Math.log(p2.price);
+      const logSlope = (logP2 - logP1) / (p2.idx - p1.idx);
+      const logIntercept = logP1 - logSlope * p1.idx;
+
+      // 검증: p1 이후 모든 고가가 빗각선 위를 2% 이상 넘지 않아야 함
+      let valid = true;
+      let bijagTouches = 0;
+      for (let i = p1.idx; i < n; i++) {
+        const bijagLog = logSlope * i + logIntercept;
+        const highLog = Math.log(candles[i].high);
+        if (highLog > bijagLog + 0.025) { valid = false; break; } // 2.5% 위반
+        if (Math.abs(highLog - bijagLog) < 0.02) bijagTouches++;  // 2% 이내 = 터치
+      }
+      if (!valid) continue;
+
+      // P3: 빗각 아래 최저 저점
+      let p3Idx = p1.idx, p3Price = Infinity;
+      for (let i = p1.idx; i < n; i++) {
+        if (candles[i].low < p3Price) { p3Price = candles[i].low; p3Idx = i; }
+      }
+
+      // D 계산: 빗각에서 P3까지 로그 거리
+      const bijagAtP3 = logSlope * p3Idx + logIntercept;
+      const D = bijagAtP3 - Math.log(p3Price);
+      if (D < 0.05) continue; // 채널 폭이 너무 좁음 (5% 미만)
+
+      // 현재 레벨
+      const bijagAtCurrent = logSlope * (n - 1) + logIntercept;
+      const currentLevel = (bijagAtCurrent - Math.log(candles[n - 1].close)) / D;
+
+      const recency = p2.idx / n;
+      const span = (p2.idx - p1.idx) / n;
+      const score = bijagTouches * 2 + recency * 5 + span * 3;
+
+      if (score > bestScore) {
+        bestScore = score;
+        best = {
+          type: 'HHL',
+          p1: { ...p1 },
+          p2: { ...p2 },
+          p3: { date: candles[p3Idx].date, price: p3Price, idx: p3Idx },
+          logSlope, logIntercept, D, currentLevel,
+          signal: calcSignal('HHL', currentLevel),
+        };
+      }
+    }
+  }
+
+  return best;
+}
+
+// ── L-L-H 빗각채널 탐지 ────────────────────────────────────────
+// P1, P2: 변곡 저점 2개 → 빗각(하단 지지선)
+// P3: 빗각 위 가장 높은 고점 → 채널 폭(D) 결정
+function detectLLH(candles: Candle[], pivotW = 10): BijagChannelResult | null {
+  const n = candles.length;
+  const pivotLows = findPivotLows(candles, pivotW);
+  if (pivotLows.length < 2) return null;
+
+  let best: BijagChannelResult | null = null;
+  let bestScore = -Infinity;
+
+  for (let a = 0; a < pivotLows.length - 1; a++) {
+    for (let b = a + 1; b < pivotLows.length; b++) {
+      const p1 = pivotLows[a];
+      const p2 = pivotLows[b];
+      if (p2.idx - p1.idx < pivotW * 2) continue;
+
+      const logP1 = Math.log(p1.price);
+      const logP2 = Math.log(p2.price);
+      const logSlope = (logP2 - logP1) / (p2.idx - p1.idx);
+      const logIntercept = logP1 - logSlope * p1.idx;
+
+      // 검증: p1 이후 모든 저가가 빗각선 아래를 2.5% 이상 넘지 않아야 함
+      let valid = true;
+      let bijagTouches = 0;
+      for (let i = p1.idx; i < n; i++) {
+        const bijagLog = logSlope * i + logIntercept;
+        const lowLog = Math.log(candles[i].low);
+        if (lowLog < bijagLog - 0.025) { valid = false; break; }
+        if (Math.abs(lowLog - bijagLog) < 0.02) bijagTouches++;
+      }
+      if (!valid) continue;
+
+      // P3: 빗각 위 최고 고점
+      let p3Idx = p1.idx, p3Price = -Infinity;
+      for (let i = p1.idx; i < n; i++) {
+        if (candles[i].high > p3Price) { p3Price = candles[i].high; p3Idx = i; }
+      }
+
+      // D
+      const bijagAtP3 = logSlope * p3Idx + logIntercept;
+      const D = Math.log(p3Price) - bijagAtP3;
+      if (D < 0.05) continue;
+
+      // 현재 레벨 (양수 = 빗각 위)
+      const bijagAtCurrent = logSlope * (n - 1) + logIntercept;
+      const currentLevel = (Math.log(candles[n - 1].close) - bijagAtCurrent) / D;
+
+      const recency = p2.idx / n;
+      const span = (p2.idx - p1.idx) / n;
+      const score = bijagTouches * 2 + recency * 5 + span * 3;
+
+      if (score > bestScore) {
+        bestScore = score;
+        best = {
+          type: 'LLH',
+          p1: { ...p1 },
+          p2: { ...p2 },
+          p3: { date: candles[p3Idx].date, price: p3Price, idx: p3Idx },
+          logSlope, logIntercept, D, currentLevel,
+          signal: calcSignal('LLH', currentLevel),
+        };
+      }
+    }
+  }
+
+  return best;
+}
+
+// ── 자동 빗각채널 탐지 (HHL / LLH 중 더 나은 것 선택) ──────────
+export function detectBijagChannel(candles: Candle[], pivotW = 10): BijagChannelResult | null {
+  const hhl = detectHHL(candles, pivotW);
+  const llh = detectLLH(candles, pivotW);
+
+  if (!hhl && !llh) return null;
+  if (!hhl) return llh;
+  if (!llh) return hhl;
+
+  // 더 최근 P2를 가진 채널 선택 (더 현재에 맞는 채널)
+  return hhl.p2.idx >= llh.p2.idx ? hhl : llh;
+}
+
+// ── 사용자 지정 피벗으로 빗각채널 계산 ────────────────────────
+export function calcCustomBijagChannel(
+  candles: Candle[],
+  p1: BijagPivot,
+  p2: BijagPivot,
+  p3: BijagPivot,
+  type: BijagType,
+): BijagChannelResult | null {
+  if (p1.idx === p2.idx) return null;
+
+  const logP1 = Math.log(p1.price);
+  const logP2 = Math.log(p2.price);
+  const logSlope = (logP2 - logP1) / (p2.idx - p1.idx);
+  const logIntercept = logP1 - logSlope * p1.idx;
+
+  const bijagAtP3 = logSlope * p3.idx + logIntercept;
+  let D: number;
+
+  if (type === 'HHL') {
+    D = bijagAtP3 - Math.log(p3.price); // 빗각 아래 = 양수
+  } else {
+    D = Math.log(p3.price) - bijagAtP3; // 빗각 위 = 양수
+  }
+
+  if (D <= 0) return null;
+
+  const n = candles.length;
+  const bijagAtCurrent = logSlope * (n - 1) + logIntercept;
+  const currentLevel = type === 'HHL'
+    ? (bijagAtCurrent - Math.log(candles[n - 1].close)) / D
+    : (Math.log(candles[n - 1].close) - bijagAtCurrent) / D;
+
+  return {
+    type, p1, p2, p3,
+    logSlope, logIntercept, D, currentLevel,
+    signal: calcSignal(type, currentLevel),
+  };
+}
+
+// ── 채널 레벨에서 가격 계산 ────────────────────────────────────
+// level 0 = 빗각, level 1 = P3, level 0.5 = 중간
+export function priceAtLevel(
+  barIdx: number,
+  level: number,
+  channel: BijagChannelResult,
+): number {
+  const bijagLog = channel.logSlope * barIdx + channel.logIntercept;
+  if (channel.type === 'HHL') {
+    return Math.exp(bijagLog - level * channel.D);
+  } else {
+    return Math.exp(bijagLog + level * channel.D);
+  }
+}
+
+// ── 일목균형표 (26봉 선행) ────────────────────────────────────
 function highest(candles: Candle[], endIdx: number, period: number): number {
   let max = -Infinity;
   for (let i = Math.max(0, endIdx - period + 1); i <= endIdx; i++) {
@@ -86,8 +344,6 @@ function lowest(candles: Candle[], endIdx: number, period: number): number {
   return min;
 }
 
-// ── 일목균형표: 현재봉 기준 구름대 계산 ─────────────────────────
-// SpanA/SpanB는 26봉 미래에 그려지므로, 현재봉 i의 구름은 i-26 시점의 계산값
 export function calcIchimoku(candles: Candle[]): IchimokuPoint[] {
   const n = candles.length;
   const DISPLACEMENT = 26;
@@ -95,10 +351,7 @@ export function calcIchimoku(candles: Candle[]): IchimokuPoint[] {
 
   for (let i = 0; i < n; i++) {
     const srcIdx = i - DISPLACEMENT;
-    if (srcIdx < 0) {
-      result.push({ date: candles[i].date, spanA: null, spanB: null });
-      continue;
-    }
+    if (srcIdx < 0) { result.push({ date: candles[i].date, spanA: null, spanB: null }); continue; }
 
     const tenkan = srcIdx >= 8
       ? (highest(candles, srcIdx, 9) + lowest(candles, srcIdx, 9)) / 2
@@ -113,208 +366,49 @@ export function calcIchimoku(candles: Candle[]): IchimokuPoint[] {
 
     result.push({ date: candles[i].date, spanA, spanB });
   }
-
   return result;
 }
 
-// ── 빗각채널 감지 (인범TV 방식: 두 피벗 고점 → 상단선, 평행 복사 → 하단선) ──
-export function detectInbumChannel(candles: Candle[], lookback = 52): InbumChannel | null {
-  const slice = candles.slice(Math.max(0, candles.length - lookback));
-  const n = slice.length;
-  if (n < 20) return null;
-
-  const TOUCH_TOL = 0.015; // 1.5% 이내 = 터치
-  const BREAK_TOL = 0.005; // 0.5% 초과 = 라인 위반
-  const PIVOT_W = 3;
-
-  // 피벗 고점 탐지
-  const pivotHighs: { idx: number; price: number }[] = [];
-  for (let i = PIVOT_W; i < n - PIVOT_W; i++) {
-    const h = slice[i].high;
-    let ok = true;
-    for (let j = i - PIVOT_W; j <= i + PIVOT_W; j++) {
-      if (j !== i && slice[j].high >= h) { ok = false; break; }
-    }
-    if (ok) pivotHighs.push({ idx: i, price: h });
-  }
-
-  if (pivotHighs.length < 2) return null;
-
-  let bestSlope: number | null = null;
-  let bestIntercept: number | null = null;
-  let bestLowerOffset = 0;
-  let bestUpperTouches = 0;
-  let bestLowerTouches = 0;
-  let bestScore = -Infinity;
-
-  for (let a = 0; a < pivotHighs.length - 1; a++) {
-    for (let b = a + 1; b < pivotHighs.length; b++) {
-      const { idx: ia, price: ya } = pivotHighs[a];
-      const { idx: ib, price: yb } = pivotHighs[b];
-      if (Math.abs(ia - ib) < 3) continue;
-
-      const slope = (yb - ya) / (ib - ia);
-      const intercept = ya - slope * ia;
-
-      // 상단선 검증: ia 이후 모든 캔들 high가 선을 위반하지 않아야 함
-      let valid = true;
-      let upperTouches = 0;
-      for (let k = ia; k < n; k++) {
-        const lineVal = slope * k + intercept;
-        if (lineVal <= 0) { valid = false; break; }
-        if (slice[k].high > lineVal * (1 + BREAK_TOL)) { valid = false; break; }
-        if (Math.abs(slice[k].high - lineVal) / lineVal < TOUCH_TOL) upperTouches++;
-      }
-      if (!valid) continue;
-
-      // 하단선: 동일 기울기, 최저 저가에 맞춤
-      let lowerOffset = 0;
-      for (let k = 0; k < n; k++) {
-        const upperVal = slope * k + intercept;
-        const diff = slice[k].low - upperVal;
-        if (diff < lowerOffset) lowerOffset = diff;
-      }
-
-      // 채널 폭 유효성 (현재가 기준 3%~50%)
-      const currentUpper = slope * (n - 1) + intercept;
-      const channelWidth = Math.abs(lowerOffset);
-      const widthPct = channelWidth / currentUpper;
-      if (widthPct < 0.03 || widthPct > 0.5) continue;
-
-      // 하단선 터치 횟수
-      let lowerTouches = 0;
-      for (let k = 0; k < n; k++) {
-        const lower = slope * k + intercept + lowerOffset;
-        if (lower > 0 && Math.abs(slice[k].low - lower) / lower < TOUCH_TOL) lowerTouches++;
-      }
-
-      const recency = ib / n;
-      const score = (upperTouches + lowerTouches) * 2 + recency * 3;
-
-      if (score > bestScore) {
-        bestScore = score;
-        bestSlope = slope;
-        bestIntercept = intercept;
-        bestLowerOffset = lowerOffset;
-        bestUpperTouches = upperTouches;
-        bestLowerTouches = lowerTouches;
-      }
-    }
-  }
-
-  if (bestSlope === null || bestIntercept === null) return null;
-
-  const thirdTouchWarning: 'upper' | 'lower' | null =
-    bestUpperTouches >= 3 ? 'upper' : bestLowerTouches >= 3 ? 'lower' : null;
-
-  return {
-    slope: bestSlope,
-    intercept: bestIntercept,
-    lowerOffset: bestLowerOffset,
-    upperTouches: bestUpperTouches,
-    lowerTouches: bestLowerTouches,
-    thirdTouchWarning,
-    startDate: slice[0].date,
-    endDate: slice[n - 1].date,
-  };
+// ── 종목 분석 ─────────────────────────────────────────────────
+export interface InbumAnalysis {
+  signal: InbumSignal;
+  channelLevel: number | null;
+  channelType: BijagType | null;
+  cloudTop: number | null;
+  cloudBottom: number | null;
+  cloudThicknessPct: number | null;
+  aboveCloud: boolean;
 }
 
-// ── N자형 리테스트 감지 ────────────────────────────────────────
-// 최근 8봉 중 되돌림 패턴 + 구름/채널 근접 = 리테스트
-function detectNRetest(candles: Candle[], channelPos: number | null, cloudTop: number | null): boolean {
-  if (candles.length < 10) return false;
-  const n = candles.length;
-  const recent = candles.slice(n - 10);
-
-  // 직전 고점 대비 현재 저점 조정 여부 (5%~20% 조정)
-  const maxHigh = Math.max(...recent.slice(0, 7).map(c => c.high));
-  const currentClose = recent[recent.length - 1].close;
-  const pullbackPct = (maxHigh - currentClose) / maxHigh;
-
-  const isPullback = pullbackPct >= 0.03 && pullbackPct <= 0.20;
-  const nearCloudOrChannel =
-    (cloudTop !== null && Math.abs(currentClose - cloudTop) / cloudTop < 0.06) ||
-    (channelPos !== null && channelPos <= 30);
-
-  return isPullback && nearCloudOrChannel;
-}
-
-// ── 종목 분석 메인 함수 ────────────────────────────────────────
 export function analyzeInbumBijag(candles: Candle[]): InbumAnalysis {
   const n = candles.length;
   const currentPrice = candles[n - 1].close;
 
-  // 일목균형표
+  const channel = detectBijagChannel(candles);
   const ichimoku = calcIchimoku(candles);
   const currIch = ichimoku[n - 1];
-  const spanA = currIch.spanA;
-  const spanB = currIch.spanB;
 
   let cloudTop: number | null = null;
   let cloudBottom: number | null = null;
   let cloudThicknessPct: number | null = null;
   let aboveCloud = false;
 
-  if (spanA !== null && spanB !== null) {
-    cloudTop = Math.max(spanA, spanB);
-    cloudBottom = Math.min(spanA, spanB);
+  if (currIch.spanA !== null && currIch.spanB !== null) {
+    cloudTop = Math.max(currIch.spanA, currIch.spanB);
+    cloudBottom = Math.min(currIch.spanA, currIch.spanB);
     cloudThicknessPct = cloudBottom > 0
       ? Math.round(((cloudTop - cloudBottom) / cloudBottom) * 1000) / 10
       : null;
     aboveCloud = currentPrice > cloudTop;
   }
 
-  // 빗각채널
-  const channel = detectInbumChannel(candles);
-  let channelPositionPct: number | null = null;
-
-  if (channel) {
-    const lookback = Math.min(52, n - 1);
-    const idxInSlice = lookback; // 슬라이스의 마지막 인덱스
-    const upper = channel.slope * idxInSlice + channel.intercept;
-    const lower = upper + channel.lowerOffset;
-    const range = upper - lower;
-    if (range > 0) {
-      channelPositionPct = Math.max(0, Math.min(100,
-        Math.round(((currentPrice - lower) / range) * 100)
-      ));
-    }
-  }
-
-  // N자형 리테스트
-  const nRetestDetected = detectNRetest(candles, channelPositionPct, cloudTop);
-
-  // 시그널 판단
-  const nearChannelBottom = channelPositionPct !== null && channelPositionPct <= 20;
-  const nearCloudTop = cloudTop !== null && Math.abs(currentPrice - cloudTop) / cloudTop < 0.03;
-  const insideCloud = cloudTop !== null && cloudBottom !== null &&
-    currentPrice >= cloudBottom * 0.97 && currentPrice <= cloudTop * 1.03;
-  const belowCloud = cloudBottom !== null && currentPrice < cloudBottom * 0.97;
-
-  let signal: InbumSignal;
-  if (nearChannelBottom && (nearCloudTop || insideCloud) && !belowCloud) {
-    signal = 'CHANNEL_CLOUD_CONFLUENCE';
-  } else if (nRetestDetected) {
-    signal = 'N_RETEST';
-  } else if (nearCloudTop || insideCloud) {
-    signal = 'CLOUD_SUPPORT';
-  } else if (nearChannelBottom) {
-    signal = 'CHANNEL_LOWER_TOUCH';
-  } else if (aboveCloud) {
-    signal = 'ABOVE_CLOUD';
-  } else {
-    signal = 'BELOW_CLOUD';
-  }
-
   return {
-    signal,
-    channelPositionPct,
+    signal: channel?.signal ?? 'MID_CHANNEL',
+    channelLevel: channel !== null ? Math.round(channel.currentLevel * 100) / 100 : null,
+    channelType: channel?.type ?? null,
     cloudTop: cloudTop !== null ? Math.round(cloudTop * 100) / 100 : null,
     cloudBottom: cloudBottom !== null ? Math.round(cloudBottom * 100) / 100 : null,
     cloudThicknessPct,
-    nRetestDetected,
     aboveCloud,
-    currentSpanA: spanA !== null ? Math.round(spanA * 100) / 100 : null,
-    currentSpanB: spanB !== null ? Math.round(spanB * 100) / 100 : null,
   };
 }

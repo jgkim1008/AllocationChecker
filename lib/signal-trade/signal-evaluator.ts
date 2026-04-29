@@ -210,24 +210,24 @@ export async function evaluateSignal(
       const inbumResult = analyzeInbumBijag(weeklyCandles);
       const sig = inbumResult.signal;
 
-      // 시그널별 싱크로율 매핑
+      // 시그널별 싱크로율 매핑 (새 신호 체계)
       const syncMap: Record<string, number> = {
-        CHANNEL_CLOUD_CONFLUENCE: 100,
-        N_RETEST: 80,
-        CLOUD_SUPPORT: 60,
-        CHANNEL_LOWER_TOUCH: 50,
-        ABOVE_CLOUD: 30,
-        BELOW_CLOUD: 10,
+        BREAKOUT_BUY:   100,
+        CHANNEL_BOTTOM:  85,
+        BIJAG_TOUCH:     70,
+        MID_CHANNEL:     40,
+        CHANNEL_TOP:     20,
+        EXTENSION:       15,
+        BREAKDOWN:        5,
       };
 
       result = {
         syncRate: syncMap[sig] ?? 0,
         criteria: {
-          isConfluence: sig === 'CHANNEL_CLOUD_CONFLUENCE',
-          isNRetest: sig === 'N_RETEST',
-          isCloudSupport: sig === 'CLOUD_SUPPORT',
-          isChannelLower: sig === 'CHANNEL_LOWER_TOUCH',
-          isAboveCloud: inbumResult.aboveCloud,
+          isBreakoutBuy:   sig === 'BREAKOUT_BUY',
+          isChannelBottom: sig === 'CHANNEL_BOTTOM',
+          isBijagTouch:    sig === 'BIJAG_TOUCH',
+          isAboveCloud:    inbumResult.aboveCloud,
         },
       };
       break;
@@ -309,9 +309,11 @@ function checkEntryConditions(
              (criteria.isPartialFork === true && criteria.isForkExpanding === true);
 
     case 'inbum-bijag':
-      // 채널+구름 동시 또는 N자 리테스트 신호 시 진입
-      return (criteria.isConfluence === true || criteria.isNRetest === true) &&
-             criteria.isAboveCloud !== false; // 구름 아래면 진입 안 함
+      // 돌파 매수, 채널 하단, 빗각 터치 중 하나 + 구름 아래 아닐 것
+      return (criteria.isBreakoutBuy === true ||
+              criteria.isChannelBottom === true ||
+              criteria.isBijagTouch === true) &&
+             criteria.isAboveCloud !== false;
 
     case 'infinite-buy':
       // 무한매수법은 별도 모듈 사용
