@@ -20,7 +20,6 @@ const SESSION_COOKIE_NAME = 'broker_session';
 // POST: 브로커 연결
 export async function POST(request: NextRequest) {
   try {
-    if (process.env.NODE_ENV === 'production') return NextResponse.json({ error: '서비스 준비 중입니다.' }, { status: 503 });
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
 
@@ -95,7 +94,6 @@ export async function POST(request: NextRequest) {
 // DELETE: 브로커 연결 해제
 export async function DELETE(request: NextRequest) {
   try {
-    if (process.env.NODE_ENV === 'production') return NextResponse.json({ error: '서비스 준비 중입니다.' }, { status: 503 });
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
 
@@ -153,7 +151,6 @@ export async function DELETE(request: NextRequest) {
 // GET: 연결 상태 확인
 export async function GET(request: NextRequest) {
   try {
-    if (process.env.NODE_ENV === 'production') return NextResponse.json({ error: '서비스 준비 중입니다.' }, { status: 503 });
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
 

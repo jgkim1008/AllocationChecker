@@ -12,7 +12,6 @@ import type { BrokerType } from '@/lib/broker/types';
 
 export async function GET(request: NextRequest) {
   try {
-    if (process.env.NODE_ENV === 'production') return NextResponse.json({ error: '서비스 준비 중입니다.' }, { status: 503 });
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
 

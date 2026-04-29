@@ -29,7 +29,6 @@ interface AutoTradeSettings {
 // GET: 자동매매 상태 조회
 export async function GET(request: NextRequest) {
   try {
-    if (process.env.NODE_ENV === 'production') return NextResponse.json({ error: '서비스 준비 중입니다.' }, { status: 503 });
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
 
@@ -83,7 +82,6 @@ export async function GET(request: NextRequest) {
 // POST: 자동매매 설정 저장
 export async function POST(request: NextRequest) {
   try {
-    if (process.env.NODE_ENV === 'production') return NextResponse.json({ error: '서비스 준비 중입니다.' }, { status: 503 });
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
 
@@ -169,7 +167,6 @@ export async function POST(request: NextRequest) {
 // DELETE: 자동매매 중지
 export async function DELETE(request: NextRequest) {
   try {
-    if (process.env.NODE_ENV === 'production') return NextResponse.json({ error: '서비스 준비 중입니다.' }, { status: 503 });
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
 
