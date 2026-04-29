@@ -40,6 +40,29 @@ interface KISOverseasOrderResponse {
   };
 }
 
+interface KISOverseasAutoOrderResponse {
+  rt_cd: string;
+  msg_cd: string;
+  msg1: string;
+  output: {
+    RSVN_ORD_SEQ: string;  // 예약주문순번
+  };
+}
+
+// 해외주식 자동주문 요청
+export interface OverseasAutoOrderRequest {
+  symbol: string;
+  exchange: keyof typeof KIS_EXCHANGE_CODE;
+  side: 'buy' | 'sell';
+  quantity: number;
+  // 익절 조건 (지정가)
+  takeProfitPrice?: number;
+  // 손절 조건 (지정가)
+  stopLossPrice?: number;
+  // 주문 유효기간 (YYYYMMDD, 최대 30일)
+  expirationDate: string;
+}
+
 interface KISDomesticOrdersResponse {
   rt_cd: string;
   msg_cd: string;
@@ -566,6 +589,150 @@ export class KISOrder {
       success: true,
       data: orders.sort((a, b) => b.orderTime.getTime() - a.orderTime.getTime()),
     };
+  }
+
+  /**
+   * 해외주식 자동주문 등록 (익절/손절)
+   * - 조건 충족 시 자동으로 매도 주문 실행
+   * - 유효기간 최대 30일
+   */
+  async createOverseasAutoOrder(
+    request: OverseasAutoOrderRequest
+  ): Promise<BrokerResponse<{ reservationId: string }>> {
+    const [accountNo, accountProduct] = this.auth.getAccountParts();
+    const trId = KIS_TR_ID.OVERSEAS.AUTO_ORDER;
+    const exchangeCode = KIS_EXCHANGE_CODE[request.exchange];
+
+    // 익절 또는 손절 중 하나는 필수
+    if (!request.takeProfitPrice && !request.stopLossPrice) {
+      return {
+        success: false,
+        error: {
+          code: 'INVALID_REQUEST',
+          message: '익절가 또는 손절가 중 하나는 필수입니다.',
+        },
+      };
+    }
+
+    try {
+      // 자동주문 조건 설정
+      // RSVN_ORD_DVSN_CD: 01=익절, 02=손절, 03=익절+손절
+      let conditionCode = '03'; // 기본: 익절+손절
+      if (request.takeProfitPrice && !request.stopLossPrice) {
+        conditionCode = '01'; // 익절만
+      } else if (!request.takeProfitPrice && request.stopLossPrice) {
+        conditionCode = '02'; // 손절만
+      }
+
+      const response = await fetch(
+        `${this.auth.getBaseUrl()}${KIS_ENDPOINTS.OVERSEAS.AUTO_ORDER}`,
+        {
+          method: 'POST',
+          headers: {
+            ...this.auth.getAuthHeaders(),
+            tr_id: trId,
+          },
+          body: JSON.stringify({
+            CANO: accountNo,
+            ACNT_PRDT_CD: accountProduct,
+            OVRS_EXCG_CD: exchangeCode,
+            PDNO: request.symbol,
+            SLL_BUY_DVSN_CD: request.side === 'buy' ? '02' : '01', // 02:매수, 01:매도
+            RSVN_ORD_DVSN_CD: conditionCode,
+            ORD_QTY: request.quantity.toString(),
+            // 익절 조건
+            TPSL_ORD_UNPR: request.takeProfitPrice?.toFixed(2) || '0',
+            // 손절 조건
+            SLST_ORD_UNPR: request.stopLossPrice?.toFixed(2) || '0',
+            // 유효기간 (YYYYMMDD)
+            RSVN_ORD_END_DT: request.expirationDate,
+            ORD_SVR_DVSN_CD: '0',
+          }),
+        }
+      );
+
+      const data: KISOverseasAutoOrderResponse = await response.json();
+
+      if (data.rt_cd !== '0') {
+        return {
+          success: false,
+          error: {
+            code: data.msg_cd,
+            message: data.msg1,
+          },
+        };
+      }
+
+      return {
+        success: true,
+        data: {
+          reservationId: data.output.RSVN_ORD_SEQ,
+        },
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: {
+          code: 'AUTO_ORDER_ERROR',
+          message: error instanceof Error ? error.message : '알 수 없는 오류',
+        },
+      };
+    }
+  }
+
+  /**
+   * 해외주식 자동주문 취소
+   */
+  async cancelOverseasAutoOrder(
+    reservationId: string,
+    symbol: string,
+    exchange: keyof typeof KIS_EXCHANGE_CODE = 'NASDAQ'
+  ): Promise<BrokerResponse<void>> {
+    const [accountNo, accountProduct] = this.auth.getAccountParts();
+    const trId = KIS_TR_ID.OVERSEAS.AUTO_ORDER_CANCEL;
+    const exchangeCode = KIS_EXCHANGE_CODE[exchange];
+
+    try {
+      const response = await fetch(
+        `${this.auth.getBaseUrl()}${KIS_ENDPOINTS.OVERSEAS.AUTO_ORDER_CANCEL}`,
+        {
+          method: 'POST',
+          headers: {
+            ...this.auth.getAuthHeaders(),
+            tr_id: trId,
+          },
+          body: JSON.stringify({
+            CANO: accountNo,
+            ACNT_PRDT_CD: accountProduct,
+            OVRS_EXCG_CD: exchangeCode,
+            PDNO: symbol,
+            RSVN_ORD_SEQ: reservationId,
+          }),
+        }
+      );
+
+      const data = await response.json();
+
+      if (data.rt_cd !== '0') {
+        return {
+          success: false,
+          error: {
+            code: data.msg_cd,
+            message: data.msg1,
+          },
+        };
+      }
+
+      return { success: true };
+    } catch (error) {
+      return {
+        success: false,
+        error: {
+          code: 'CANCEL_AUTO_ORDER_ERROR',
+          message: error instanceof Error ? error.message : '알 수 없는 오류',
+        },
+      };
+    }
   }
 }
 

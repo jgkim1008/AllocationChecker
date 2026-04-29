@@ -17,7 +17,7 @@ import type {
 import { KISAuth } from './auth';
 import { KISAccount } from './account';
 import { KISQuote } from './quote';
-import { KISOrder, getExchangeForSymbol as getExchangeStatic } from './order';
+import { KISOrder, getExchangeForSymbol as getExchangeStatic, type OverseasAutoOrderRequest } from './order';
 import { KIS_EXCHANGE_CODE } from './constants';
 
 export class KISClient implements IBroker {
@@ -252,6 +252,49 @@ export class KISClient implements IBroker {
   restoreToken(token: TokenInfo): void {
     this.auth.setToken(token);
     this.connected = true;
+  }
+
+  /**
+   * 해외주식 자동주문 등록 (익절/손절)
+   * - 조건 충족 시 자동으로 매도 주문 실행
+   * - 유효기간 최대 30일
+   */
+  async createOverseasAutoOrder(
+    request: Omit<OverseasAutoOrderRequest, 'exchange'> & { exchange?: keyof typeof KIS_EXCHANGE_CODE }
+  ): Promise<BrokerResponse<{ reservationId: string }>> {
+    if (!this.isConnected()) {
+      return {
+        success: false,
+        error: { code: 'NOT_CONNECTED', message: '연결되지 않았습니다.' },
+      };
+    }
+
+    // exchange 자동 결정
+    const exchange = request.exchange ?? getExchangeStatic(request.symbol);
+
+    return this.order.createOverseasAutoOrder({
+      ...request,
+      exchange,
+    });
+  }
+
+  /**
+   * 해외주식 자동주문 취소
+   */
+  async cancelOverseasAutoOrder(
+    reservationId: string,
+    symbol: string,
+    exchange?: keyof typeof KIS_EXCHANGE_CODE
+  ): Promise<BrokerResponse<void>> {
+    if (!this.isConnected()) {
+      return {
+        success: false,
+        error: { code: 'NOT_CONNECTED', message: '연결되지 않았습니다.' },
+      };
+    }
+
+    const resolvedExchange = exchange ?? getExchangeStatic(symbol);
+    return this.order.cancelOverseasAutoOrder(reservationId, symbol, resolvedExchange);
   }
 }
 

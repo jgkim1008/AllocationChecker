@@ -48,6 +48,11 @@ export const KIS_ENDPOINTS = {
 
     // 체결내역
     ORDERS: '/uapi/overseas-stock/v1/trading/inquire-ccnl',
+
+    // 자동주문 (익절/손절)
+    AUTO_ORDER: '/uapi/overseas-stock/v1/trading/order-resv',           // 자동주문 등록
+    AUTO_ORDER_LIST: '/uapi/overseas-stock/v1/trading/inquire-resv',    // 자동주문 조회
+    AUTO_ORDER_CANCEL: '/uapi/overseas-stock/v1/trading/order-resv-ccnl', // 자동주문 취소
   },
 } as const;
 
@@ -127,6 +132,9 @@ export const KIS_TR_ID = {
     SELL: 'TTTT1006U',    // 미국 매도 (NASD/NYSE/AMEX)
     CANCEL: 'TTTT1004U',  // 미국 정정취소
     ORDERS: 'TTTS3035R',
+    AUTO_ORDER: 'TTTS6036U',        // 해외주식 자동주문 등록
+    AUTO_ORDER_LIST: 'TTTS6037R',   // 해외주식 자동주문 조회
+    AUTO_ORDER_CANCEL: 'TTTS6038U', // 해외주식 자동주문 취소
   },
   // 해외주식 - 모의
   OVERSEAS_VIRTUAL: {

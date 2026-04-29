@@ -8,8 +8,9 @@ import { SignalTradePanel } from '@/components/signal-trade';
 
 const DCAPanel = dynamic(() => import('@/components/auto-trade/DCAPanel'), { ssr: false });
 import { PremiumGate } from '@/components/PremiumGate';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Bot, Link, History, TrendingUp, Wallet, GitCompare, Zap, TrendingDown } from 'lucide-react';
+import { Bot, Link, History, TrendingUp, Wallet, GitCompare, Zap, TrendingDown, Loader2 } from 'lucide-react';
 
 interface ConnectedCredential {
   credentialId: string;
@@ -18,6 +19,7 @@ interface ConnectedCredential {
 }
 
 export default function AutoTradePageContent() {
+  const [mounted, setMounted] = useState(false);
   const [connectedCredentials, setConnectedCredentials] = useState<ConnectedCredential[]>([]);
   const [selectedCredentialId, setSelectedCredentialId] = useState<string | undefined>(undefined);
 
@@ -40,8 +42,25 @@ export default function AutoTradePageContent() {
   }, []);
 
   useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
     fetchConnectedAccounts();
   }, [fetchConnectedAccounts]);
+
+  // SSR/CSR hydration mismatch 방지: 마운트 전 로딩 표시
+  if (!mounted) {
+    return (
+      <PremiumGate featureName="자동매매">
+        <div className="container mx-auto max-w-6xl py-6">
+          <div className="flex items-center justify-center py-20">
+            <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+          </div>
+        </div>
+      </PremiumGate>
+    );
+  }
 
   return (
     <PremiumGate featureName="자동매매">

@@ -58,6 +58,8 @@ function getStrategyName(type: SignalStrategyType): string {
     'chart-pattern': '차트 패턴',
     'monthly-ma': '월봉 10이평',
     'forking': '월봉 포킹',
+    'weekly-sr': '주봉 SR채널',
+    'decline-box': '하락 박스',
     'infinite-buy': '무한매수법',
   };
   return names[type] || type;

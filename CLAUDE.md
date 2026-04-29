@@ -75,6 +75,29 @@ const BENCHMARK_COLORS: Record<string, string> = {
 
 새 전략을 만들 때는 **스캔 페이지 + 상세 페이지 + 차트 컴포넌트**를 함께 생성한다.
 
+### 자동매매(신호전략) 등록 여부 확인
+
+새 전략을 생성할 때 **반드시 사용자에게 자동매매 등록 여부를 물어본다**.
+
+```
+"이 전략을 자동매매 > 신호전략에서 사용할 수 있게 등록할까요?"
+```
+
+**등록 시 수정할 파일:**
+1. `lib/signal-trade/types.ts`
+   - `SignalStrategyType`에 전략 ID 추가
+   - `SIGNAL_STRATEGIES` 배열에 전략 정보 추가 (`autoTradeEnabled: true`)
+   - `STRATEGY_ENTRY_CONDITIONS`에 진입 조건 추가
+
+2. `app/api/signal-trade/execute/route.ts`
+   - `getStrategyName()` 함수에 한글 이름 추가
+
+3. (선택) `lib/utils/chart-strategy-sync.ts`
+   - 종목 조회 & 주문 탭의 "전략 싱크" 카드에 표시하려면 `STRATEGY_META` 및 싱크율 계산 로직 추가
+
+**자동매매 제외 전략** (등록하지 않음):
+- 백테스팅, 무한매수법, 가치투자(value-scan), 배당, 2weeks 전략
+
 ### 파일 생성 위치
 
 ```

@@ -9,7 +9,9 @@ export type SignalStrategyType =
   | 'chart-pattern'          // 차트 패턴
   | 'monthly-ma'             // 월봉 10이평 전략
   | 'forking'                // 월봉 포킹 전략
-  | 'infinite-buy';          // 무한매수법
+  | 'weekly-sr'              // 주봉 SR채널 전략
+  | 'decline-box'            // 하락 박스 전략
+  | 'infinite-buy';          // 무한매수법 (자동매매 비활성)
 
 export type ExitReason =
   | 'take_profit'
@@ -193,14 +195,32 @@ export const SIGNAL_STRATEGIES: SignalStrategyInfo[] = [
     autoTradeEnabled: true,
   },
 
-  // ── 시스템 전략 ──
+  // ── 주봉 기반 전략 ──
+  {
+    id: 'weekly-sr',
+    name: '주봉 SR채널',
+    description: '주봉 지지/저항 플립 + 10MA 눌림목 매매',
+    requiredHistory: 70,
+    category: 'daily',
+    autoTradeEnabled: true,
+  },
+  {
+    id: 'decline-box',
+    name: '하락 박스',
+    description: '하락 추세 박스권 하단 지지 + 반등 신호 매매',
+    requiredHistory: 60,
+    category: 'daily',
+    autoTradeEnabled: true,
+  },
+
+  // ── 시스템 전략 (자동매매 비활성) ──
   {
     id: 'infinite-buy',
     name: '무한매수법',
     description: '분할매수 + 별지점 매도 시스템 (V2.2/V3.0/V4.0)',
     requiredHistory: 1,
     category: 'system',
-    autoTradeEnabled: true,
+    autoTradeEnabled: false,  // 별도 DCA 모듈 사용
   },
 ];
 
@@ -214,5 +234,7 @@ export const STRATEGY_ENTRY_CONDITIONS: Record<SignalStrategyType, string[]> = {
   'chart-pattern': ['hasPattern', 'isBuySignal'],  // 패턴 감지 + 매수 신호
   'monthly-ma': ['isAboveMA10', 'isCrossUp'],  // 월봉 10이평 위 + 상향 돌파
   'forking': ['isConverging', 'isBreakout'],  // 수렴 + 돌파
+  'weekly-sr': ['isAboveMA', 'isMaUptrend'],  // 주봉 10MA 위 + 상승 추세
+  'decline-box': ['isAtBoxBottom', 'isReboundSignal'],  // 박스 하단 + 반등 신호
   'infinite-buy': [],  // 별도 로직 (무한매수법 모듈 사용)
 };
