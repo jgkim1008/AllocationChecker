@@ -14,6 +14,7 @@ import {
   getFibonacciInterpretation,
   FIBONACCI_LEVELS,
 } from './fibonacci-calculator';
+import { analyzeInbumBijag } from './inbum-bijag-calculator';
 import type { FibonacciLevel } from '@/types/fibonacci';
 
 export interface PriceHistoryItem {
@@ -63,6 +64,7 @@ export interface ChartStrategySyncs {
   fibonacci: FibonacciSync | null;
   monthlyMA10: MonthlyMA10Sync | null;
   weeklySR: WeeklySRSync | null;
+  inbumBijag: StrategySync | null;
 }
 
 /**
@@ -120,6 +122,9 @@ export function calculateChartStrategySyncs(
   // 피보나치 되돌림 전략 (52주 고저가 기준, 항상 표시)
   const fibonacciResult = calculateFibonacciSync(historyForCalc, currentPrice);
 
+  // 인범 빗각 + 구름대 (일봉 → 주봉 집계)
+  const inbumBijagResult = calculateInbumBijagSync(historyForCalc);
+
   return {
     maAlignment: maResult ? {
       syncRate: maResult.syncRate,
@@ -163,6 +168,7 @@ export function calculateChartStrategySyncs(
     fibonacci: fibonacciResult,
     monthlyMA10: monthlyMA10Result,
     weeklySR: weeklySRResult,
+    inbumBijag: inbumBijagResult,
   };
 }
 
@@ -370,6 +376,50 @@ function calculateFibonacciSync(
 }
 
 /**
+ * 인범 빗각 + 구름대 전략 계산 (일봉 → 주봉 집계)
+ */
+function calculateInbumBijagSync(
+  historyForCalc: { date: string; price: number; high: number; low: number; volume: number }[]
+): StrategySync | null {
+  if (historyForCalc.length < 70) return null;
+
+  // 오래된 순으로 정렬 후 5거래일 단위로 주봉 OHLCV 집계
+  const dailyAsc = [...historyForCalc].reverse();
+  const weekly: { date: string; open: number; high: number; low: number; close: number }[] = [];
+  for (let i = 0; i + 2 < dailyAsc.length; i += 5) {
+    const week = dailyAsc.slice(i, i + 5);
+    weekly.push({
+      date:  week[week.length - 1].date,
+      open:  week[0].price,
+      high:  Math.max(...week.map(d => d.high)),
+      low:   Math.min(...week.map(d => d.low)),
+      close: week[week.length - 1].price,
+    });
+  }
+  if (weekly.length < 50) return null;
+
+  const res = analyzeInbumBijag(weekly);
+  const syncMap: Record<string, number> = {
+    BREAKOUT_BUY:   100, CHANNEL_BOTTOM: 85, BIJAG_TOUCH: 70,
+    MID_CHANNEL:     40, CHANNEL_TOP:    20, EXTENSION:   15, BREAKDOWN: 5,
+  };
+  const signalKo: Record<string, string> = {
+    BREAKOUT_BUY: '빗각 돌파 매수', CHANNEL_BOTTOM: '채널 하단', BIJAG_TOUCH: '빗각 터치',
+    MID_CHANNEL:  '채널 중간',       CHANNEL_TOP:    '채널 상단', EXTENSION:   '채널 확장',
+    BREAKDOWN: '하단 이탈',
+  };
+
+  return {
+    syncRate: syncMap[res.signal] ?? 0,
+    criteria: [
+      { label: `시그널: ${signalKo[res.signal] ?? res.signal}`, pass: ['BREAKOUT_BUY', 'CHANNEL_BOTTOM', 'BIJAG_TOUCH'].includes(res.signal) },
+      { label: '구름대 위 (양봉 구조)', pass: res.aboveCloud },
+      { label: `채널 레벨 ${res.channelLevel !== null ? res.channelLevel.toFixed(2) + 'D' : '-'} (≤1.0)`, pass: res.channelLevel !== null && res.channelLevel <= 1.0 },
+    ],
+  };
+}
+
+/**
  * 싱크율에 따른 레벨 반환
  */
 export function getSyncLevel(syncRate: number): 'high' | 'medium' | 'low' {
@@ -460,6 +510,13 @@ export const STRATEGY_META = {
     label: '주봉 SR플립',
     sublabel: '주봉 10MA + SR 채널',
     color: { bar: 'bg-rose-500', badge: 'bg-rose-50 text-rose-700', icon: 'text-rose-500' },
+    requiredDays: 70,
+  },
+  inbumBijag: {
+    key: 'inbumBijag',
+    label: '인범 빗각+구름대',
+    sublabel: '로그스케일 빗각채널 + 일목균형표',
+    color: { bar: 'bg-violet-500', badge: 'bg-violet-50 text-violet-700', icon: 'text-violet-500' },
     requiredDays: 70,
   },
 } as const;
