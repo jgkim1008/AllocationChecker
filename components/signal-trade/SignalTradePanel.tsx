@@ -262,6 +262,17 @@ export function SignalTradePanel() {
                               {s.name}
                             </SelectItem>
                           ))}
+                          {/* 주봉 전략 */}
+                          <div className="px-2 py-1 text-xs font-semibold text-gray-500 mt-1">
+                            주봉 전략
+                          </div>
+                          {SIGNAL_STRATEGIES.filter(
+                            (s) => s.category === 'weekly' && s.autoTradeEnabled
+                          ).map((s) => (
+                            <SelectItem key={s.id} value={s.id}>
+                              {s.name}
+                            </SelectItem>
+                          ))}
                           {/* 월봉 전략 */}
                           <div className="px-2 py-1 text-xs font-semibold text-gray-500 mt-1">
                             월봉 전략
