@@ -33,10 +33,10 @@ const SIGNAL_META: Record<InbumSignal, { label: string; cls: string; priority: n
 };
 
 function SignalBadge({ signal }: { signal: InbumSignal }) {
-  const { label, cls } = SIGNAL_META[signal];
+  const meta = SIGNAL_META[signal] ?? { label: signal, cls: 'bg-gray-100 text-gray-500' };
   return (
-    <span className={`inline-flex items-center px-2 py-1 rounded-lg text-xs font-black ${cls}`}>
-      {label}
+    <span className={`inline-flex items-center px-2 py-1 rounded-lg text-xs font-black ${meta.cls}`}>
+      {meta.label}
     </span>
   );
 }
@@ -200,7 +200,7 @@ export default function InbumBijagPage() {
     return [...stocks].sort((a, b) => {
       let cmp = 0;
       switch (sortKey) {
-        case 'signal':        cmp = SIGNAL_META[a.signal].priority - SIGNAL_META[b.signal].priority; break;
+        case 'signal':        cmp = (SIGNAL_META[a.signal]?.priority ?? 0) - (SIGNAL_META[b.signal]?.priority ?? 0); break;
         case 'symbol':        cmp = a.symbol.localeCompare(b.symbol); break;
         case 'price':         cmp = a.currentPrice - b.currentPrice; break;
         case 'channelLevel':  cmp = (a.channelLevel ?? 999) - (b.channelLevel ?? 999); break;
