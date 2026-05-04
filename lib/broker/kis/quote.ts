@@ -40,6 +40,30 @@ interface KISOverseasQuoteResponse {
   };
 }
 
+interface KISDomesticDailyPriceResponse {
+  rt_cd: string;
+  msg_cd: string;
+  msg1: string;
+  output2: {
+    stck_bsop_date: string;  // 영업일 (YYYYMMDD)
+    stck_clpr: string;       // 종가
+    stck_hgpr: string;       // 고가
+    stck_lwpr: string;       // 저가
+  }[];
+}
+
+interface KISOverseasDailyPriceResponse {
+  rt_cd: string;
+  msg_cd: string;
+  msg1: string;
+  output2: {
+    xymd: string;   // 날짜 (YYYYMMDD)
+    clos: string;   // 종가
+    high: string;   // 고가
+    low: string;    // 저가
+  }[];
+}
+
 /**
  * KIS 시세 조회
  */
@@ -200,6 +224,149 @@ export class KISQuote {
       }
     }
     return 'NASDAQ'; // fallback
+  }
+
+  /**
+   * 국내주식 일봉 종가 이력 조회 (원주가 기준, 최신순)
+   * @param count 필요한 캔들 수 (최대 300)
+   */
+  async getDomesticDailyPriceHistory(
+    symbol: string,
+    count: number = 240,
+  ): Promise<{ date: string; price: number; high: number; low: number }[]> {
+    const results: { date: string; price: number; high: number; low: number }[] = [];
+    const trId = KIS_TR_ID.DOMESTIC.DAILY_PRICE;
+
+    // 100개씩 최대 6회 호출 (주봉 일목 78개 = 일봉 ~550개 필요)
+    const maxBatches = Math.ceil(Math.min(count, 600) / 100);
+    let endDate = new Date();
+
+    for (let i = 0; i < maxBatches && results.length < count; i++) {
+      const startDate = new Date(endDate);
+      startDate.setDate(startDate.getDate() - 140); // ~100 영업일 = ~140 역일
+
+      const fmt = (d: Date) =>
+        `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+
+      const url = new URL(`${this.auth.getBaseUrl()}${KIS_ENDPOINTS.DOMESTIC.DAILY_PRICE}`);
+      url.searchParams.set('FID_COND_MRKT_DIV_CODE', 'J');
+      url.searchParams.set('FID_INPUT_ISCD', symbol);
+      url.searchParams.set('FID_INPUT_DATE_1', fmt(startDate));
+      url.searchParams.set('FID_INPUT_DATE_2', fmt(endDate));
+      url.searchParams.set('FID_PERIOD_DIV_CODE', 'D');
+      url.searchParams.set('FID_ORG_ADJ_PRC', '1'); // 원주가
+
+      const response = await fetch(url.toString(), {
+        method: 'GET',
+        headers: { ...this.auth.getAuthHeaders(), tr_id: trId },
+      });
+
+      const data: KISDomesticDailyPriceResponse = await response.json();
+      if (data.rt_cd !== '0' || !data.output2?.length) break;
+
+      for (const row of data.output2) {
+        if (row.stck_bsop_date && row.stck_clpr) {
+          results.push({
+            date: row.stck_bsop_date,
+            price: parseFloat(row.stck_clpr),
+            high: parseFloat(row.stck_hgpr ?? row.stck_clpr),
+            low: parseFloat(row.stck_lwpr ?? row.stck_clpr),
+          });
+        }
+      }
+
+      // 다음 배치는 현재 배치의 마지막 날짜 -1일부터
+      const lastDate = data.output2[data.output2.length - 1].stck_bsop_date;
+      endDate = new Date(
+        parseInt(lastDate.slice(0, 4)),
+        parseInt(lastDate.slice(4, 6)) - 1,
+        parseInt(lastDate.slice(6, 8)) - 1,
+      );
+    }
+
+    // 최신순 정렬 후 count만큼 반환
+    return results
+      .sort((a, b) => b.date.localeCompare(a.date))
+      .slice(0, count);
+  }
+
+  /**
+   * 해외주식 일봉 종가 이력 조회 (원주가 기준, 최신순)
+   * @param excd 거래소 코드 (NAS / NYS / AMS)
+   * @param count 필요한 캔들 수 (최대 300)
+   */
+  async getOverseasDailyPriceHistory(
+    symbol: string,
+    excd: string,
+    count: number = 240,
+  ): Promise<{ date: string; price: number; high: number; low: number }[]> {
+    const results: { date: string; price: number; high: number; low: number }[] = [];
+    const trId = KIS_TR_ID.OVERSEAS.DAILY_PRICE;
+
+    const maxBatches = Math.ceil(Math.min(count, 300) / 100);
+    let bymd = new Date();
+
+    for (let i = 0; i < maxBatches && results.length < count; i++) {
+      const fmt = (d: Date) =>
+        `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+
+      const url = new URL(`${this.auth.getBaseUrl()}${KIS_ENDPOINTS.OVERSEAS.DAILY_PRICE}`);
+      url.searchParams.set('AUTH', '');
+      url.searchParams.set('EXCD', excd);
+      url.searchParams.set('SYMB', symbol);
+      url.searchParams.set('GUBN', '0');    // 일봉
+      url.searchParams.set('BYMD', fmt(bymd));
+      url.searchParams.set('MODP', '0');    // 원주가
+
+      const response = await fetch(url.toString(), {
+        method: 'GET',
+        headers: { ...this.auth.getAuthHeaders(), tr_id: trId },
+      });
+
+      const data: KISOverseasDailyPriceResponse = await response.json();
+      if (data.rt_cd !== '0' || !data.output2?.length) break;
+
+      for (const row of data.output2) {
+        if (row.xymd && row.clos) {
+          results.push({
+            date: row.xymd,
+            price: parseFloat(row.clos),
+            high: parseFloat(row.high ?? row.clos),
+            low: parseFloat(row.low ?? row.clos),
+          });
+        }
+      }
+
+      // 다음 배치는 현재 배치의 마지막 날짜 -1일
+      const lastDate = data.output2[data.output2.length - 1].xymd;
+      bymd = new Date(
+        parseInt(lastDate.slice(0, 4)),
+        parseInt(lastDate.slice(4, 6)) - 1,
+        parseInt(lastDate.slice(6, 8)) - 1,
+      );
+    }
+
+    return results
+      .sort((a, b) => b.date.localeCompare(a.date))
+      .slice(0, count);
+  }
+
+  /**
+   * 일봉 종가 이력 조회 (시장 자동 판별)
+   */
+  async getDailyPriceHistory(
+    symbol: string,
+    market: 'domestic' | 'overseas',
+    count: number = 240,
+  ): Promise<{ date: string; price: number; high: number; low: number }[]> {
+    if (market === 'domestic') {
+      return this.getDomesticDailyPriceHistory(symbol, count);
+    }
+    for (const excd of ['NAS', 'NYS', 'AMS']) {
+      const history = await this.getOverseasDailyPriceHistory(symbol, excd, count);
+      if (history.length > 0) return history;
+    }
+    return [];
   }
 
   /**

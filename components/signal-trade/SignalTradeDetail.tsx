@@ -113,6 +113,28 @@ export function SignalTradeDetail() {
       {/* 종목 검색 */}
       <Card className="border-gray-200 bg-white">
         <CardContent className="p-4">
+          {/* 즐겨찾기 빠른 검색 버튼 */}
+          {!selected && (
+            <div className="flex flex-wrap gap-1.5 mb-3">
+              {[
+                { symbol: 'SOXL', label: 'SOXL', color: 'bg-red-50 text-red-600 border-red-200 hover:bg-red-100' },
+                { symbol: 'TQQQ', label: 'TQQQ', color: 'bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100' },
+                { symbol: 'QLD',  label: 'QLD',  color: 'bg-cyan-50 text-cyan-600 border-cyan-200 hover:bg-cyan-100' },
+              ].map(({ symbol, label, color }) => (
+                <button
+                  key={symbol}
+                  onClick={() => {
+                    setQuery(symbol);
+                    search(symbol);
+                  }}
+                  className={`px-3 py-1 text-xs font-bold rounded-lg border transition-colors ${color}`}
+                >
+                  {label}
+                </button>
+              ))}
+              <span className="self-center text-[10px] text-gray-400 ml-1">빠른 검색</span>
+            </div>
+          )}
           <div className="relative">
             <div className="relative flex gap-2">
               <div className="relative flex-1">
@@ -213,6 +235,7 @@ export function SignalTradeDetail() {
             <StrategyOverlayChart
               priceHistory={stockData.priceHistory}
               market={market}
+              symbol={selected.symbol}
               selectedStrategy={selectedStrategy}
               onStrategyChange={setSelectedStrategy}
             />

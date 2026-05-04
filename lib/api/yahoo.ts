@@ -156,7 +156,8 @@ export async function getDividendHistory(
 
 export async function getDailyHistory(
   symbol: string,
-  market: 'US' | 'KR' = 'KR'
+  market: 'US' | 'KR' = 'KR',
+  options: { useRawClose?: boolean } = {}
 ): Promise<{ date: string; open: number; high: number; low: number; price: number; volume: number }[]> {
   const ticker = market === 'KR' ? ensureSuffix(symbol) : toYahooUSTicker(symbol);
   // 5년치 일봉 데이터 (장기 차트 + 이평선 계산용)
@@ -180,24 +181,73 @@ export async function getDailyHistory(
     const { open = [], high = [], low = [], close = [], volume = [] } = quotes;
 
     const history = [];
-    // 최신 데이터가 앞에 오도록 역순 정렬을 위해 unshift 사용하거나 나중에 reverse
     for (let i = 0; i < timestamps.length; i++) {
-      if (adjClose[i] == null || close[i] == null) continue;
+      if (close[i] == null) continue;
 
       const d = new Date(timestamps[i] * 1000);
 
-      // 조정 비율 계산 (배당/액면분할 반영)
-      // adjClose와 rawClose의 비율로 OHLC 모두 조정
-      const adjustmentFactor = adjClose[i] / close[i];
+      if (options.useRawClose) {
+        // 미조정 raw close — 실제 브로커 차트와 동일한 가격 (주문가 계산용)
+        history.push({
+          date: d.toISOString().split('T')[0],
+          open: open[i] ?? close[i],
+          high: high[i] ?? close[i],
+          low: low[i] ?? close[i],
+          price: close[i],
+          volume: volume[i] ?? 0,
+        });
+      } else {
+        // 배당/액면분할 조정된 adjClose (백테스트·전략 분석용)
+        if (adjClose[i] == null) continue;
+        const adjustmentFactor = adjClose[i] / close[i];
+        history.push({
+          date: d.toISOString().split('T')[0],
+          open: (open[i] ?? close[i]) * adjustmentFactor,
+          high: (high[i] ?? close[i]) * adjustmentFactor,
+          low: (low[i] ?? close[i]) * adjustmentFactor,
+          price: adjClose[i],
+          volume: volume[i] ?? 0,
+        });
+      }
+    }
 
-      history.push({
-        date: d.toISOString().split('T')[0],
-        open: (open[i] ?? close[i]) * adjustmentFactor,
-        high: (high[i] ?? close[i]) * adjustmentFactor,
-        low: (low[i] ?? close[i]) * adjustmentFactor,
-        price: adjClose[i],
-        volume: volume[i] ?? 0,
-      });
+    return history.reverse(); // 최신순
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * 1시간봉 OHLC 이력 조회 (일목균형표 60분봉/240분봉용)
+ * - includePrePost=false: 정규장 시간만 포함 (장전/장후 제외)
+ *   US: 9:30AM-4:00PM ET, KR: 9:00AM-3:30PM KST
+ *   장후 데이터를 포함하면 4H 집계 시 하루당 캔들 수가 2-3배 늘어
+ *   Ichimoku offset/lookback 윈도우가 크게 틀어지는 문제 발생
+ * - range=90d: 4H 집계 후 최소 100+ 캔들 확보 (78봉 필요)
+ */
+export async function getHourlyOHLCHistory(
+  symbol: string,
+  market: 'US' | 'KR' = 'US',
+): Promise<{ high: number; low: number; close: number }[]> {
+  const ticker = market === 'KR' ? ensureSuffix(symbol) : toYahooUSTicker(symbol);
+  const url = `${QUERY_URL}/v8/finance/chart/${encodeURIComponent(ticker)}?range=90d&interval=60m&includePrePost=false`;
+
+  try {
+    const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+    if (!res.ok) return [];
+
+    const data = await res.json();
+    const result = data?.chart?.result?.[0];
+    if (!result) return [];
+
+    const timestamps: number[] = result.timestamp ?? [];
+    const quotes = result.indicators?.quote?.[0] ?? {};
+    const { high = [], low = [], close = [] } = quotes;
+
+    const history: { high: number; low: number; close: number }[] = [];
+    for (let i = 0; i < timestamps.length; i++) {
+      if (close[i] == null || high[i] == null || low[i] == null) continue;
+      history.push({ high: high[i] as number, low: low[i] as number, close: close[i] as number });
     }
 
     return history.reverse(); // 최신순

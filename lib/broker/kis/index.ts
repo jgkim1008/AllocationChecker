@@ -248,6 +248,18 @@ export class KISClient implements IBroker {
     return this.account.getFullBalance();
   }
 
+  /**
+   * 일봉 종가 이력 조회 (MA 계산용, 원주가 기준)
+   */
+  async getDailyPriceHistory(
+    symbol: string,
+    market: 'domestic' | 'overseas',
+    count: number = 240,
+  ): Promise<{ date: string; price: number; high: number; low: number }[]> {
+    if (!this.isConnected()) return [];
+    return this.quote.getDailyPriceHistory(symbol, market, count);
+  }
+
   // 토큰 복원 (서버 세션에서 토큰 복원시 사용)
   restoreToken(token: TokenInfo): void {
     this.auth.setToken(token);
