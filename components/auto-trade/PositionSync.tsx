@@ -45,7 +45,14 @@ interface PositionSyncProps {
 export function PositionSync({ credentialId: propCredentialId }: PositionSyncProps = {}) {
   const selectedCredentialId = propCredentialId || '';
   const [symbol, setSymbol] = useState('TQQQ');
-  const [cycleNumber, setCycleNumber] = useState(1);
+  const [cycleNumber, setCycleNumber] = useState(() => {
+    // localStorage에서 현재 회차 읽기 (없으면 1)
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('inf-buy-cycle-TQQQ');
+      return saved ? parseInt(saved, 10) : 1;
+    }
+    return 1;
+  });
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<SyncResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -194,7 +201,13 @@ export function PositionSync({ credentialId: propCredentialId }: PositionSyncPro
                 {PRESET_SYMBOLS.map((sym) => (
                   <button
                     key={sym}
-                    onClick={() => { setSymbol(sym); setResult(null); }}
+                    onClick={() => {
+                      setSymbol(sym);
+                      // 종목 변경 시 해당 종목의 현재 회차 자동 로드
+                      const saved = localStorage.getItem(`inf-buy-cycle-${sym}`);
+                      setCycleNumber(saved ? parseInt(saved, 10) : 1);
+                      setResult(null);
+                    }}
                     className={`text-xs px-2.5 py-1.5 rounded-lg border transition-colors ${
                       symbol === sym
                         ? 'bg-green-600 text-white border-green-600'

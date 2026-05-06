@@ -143,7 +143,11 @@ export default function InfiniteBuyPage() {
   function handleCycleReset() {
     const next = currentCycle + 1;
     setCurrentCycle(next);
-    if (activeSymbol) localStorage.setItem(`inf-buy-cycle-${activeSymbol}`, next.toString());
+    if (activeSymbol) {
+      localStorage.setItem(`inf-buy-cycle-${activeSymbol}`, next.toString());
+      // 강제 페이지 새로고침으로 BuyTracker의 기록도 새 회차로 초기화
+      window.location.reload();
+    }
   }
 
   function handlePresetClick(sym: string) {
@@ -429,7 +433,7 @@ export default function InfiniteBuyPage() {
       {/* 탭 내용 */}
       <div>
         {tab === 'calc' && (
-          <StrategyCalc symbol={activeSymbol} capital={capital} n={n} targetRate={targetRate} variableBuy={variableBuy} market={activeMarket} version={version} />
+          <StrategyCalc symbol={activeSymbol} capital={capital} n={n} targetRate={targetRate} variableBuy={variableBuy} market={activeMarket} version={version} currentCycle={currentCycle} />
         )}
         {tab === 'tracker' && (
           <BuyTracker
