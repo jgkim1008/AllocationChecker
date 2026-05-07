@@ -29,8 +29,8 @@ cat << EOF | crontab -
 # DCA 국내 아침 - 09:05 월~금
 5 9 * * 1-5 curl -s -X GET "${APP_URL}/api/auto-trade/dca/cron/morning?market=domestic" -H "Authorization: Bearer ${CRON_SECRET}" > /dev/null 2>&1
 
-# DCA 국내 장마감 - 15:30 월~금
-30 15 * * 1-5 curl -s -X GET "${APP_URL}/api/auto-trade/dca/cron/preclose?market=domestic" -H "Authorization: Bearer ${CRON_SECRET}" > /dev/null 2>&1
+# DCA 국내 장마감 - 15:32 월~금
+32 15 * * 1-5 curl -s -X GET "${APP_URL}/api/auto-trade/dca/cron/preclose?market=domestic" -H "Authorization: Bearer ${CRON_SECRET}" > /dev/null 2>&1
 
 # DCA 해외 아침 (서머타임 EDT) - 22:30 월~금
 30 22 * * 1-5 curl -s -X GET "${APP_URL}/api/auto-trade/dca/cron/morning?market=overseas" -H "Authorization: Bearer ${CRON_SECRET}" > /dev/null 2>&1
