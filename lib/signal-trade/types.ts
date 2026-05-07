@@ -121,7 +121,7 @@ export interface SignalStrategyInfo {
   name: string;
   description: string;
   requiredHistory: number;  // 필요한 최소 히스토리 일수
-  category: 'daily' | 'monthly' | 'pattern' | 'system';  // 전략 카테고리
+  category: 'daily' | 'weekly' | 'monthly' | 'pattern' | 'system';  // 전략 카테고리
   autoTradeEnabled: boolean;  // 자동매매 지원 여부
 }
 
@@ -202,7 +202,7 @@ export const SIGNAL_STRATEGIES: SignalStrategyInfo[] = [
     name: '주봉 SR채널',
     description: '주봉 지지/저항 플립 + 10MA 눌림목 매매',
     requiredHistory: 70,
-    category: 'daily',
+    category: 'weekly',
     autoTradeEnabled: true,
   },
   {
@@ -210,17 +210,15 @@ export const SIGNAL_STRATEGIES: SignalStrategyInfo[] = [
     name: '하락 박스',
     description: '하락 추세 박스권 하단 지지 + 반등 신호 매매',
     requiredHistory: 60,
-    category: 'daily',
+    category: 'weekly',
     autoTradeEnabled: true,
   },
-
-  // ── 주봉 기반 전략 (추가) ──
   {
     id: 'inbum-bijag',
     name: '인범 빗각+구름대',
-    description: '빗각채널 하단 + 구름대 지지 동시 충족 시 매수 (N자형 리테스트 포함)',
+    description: '로그스케일 빗각채널 하단 + 일목균형표 구름대 지지 동시 충족 시 매수',
     requiredHistory: 70,
-    category: 'daily',
+    category: 'weekly',
     autoTradeEnabled: true,
   },
 

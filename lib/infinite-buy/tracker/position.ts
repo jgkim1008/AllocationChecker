@@ -14,13 +14,13 @@ export interface TrackerPosition {
  * 트래커에서 현재 포지션 조회 (매수 + 매도 기록 반영)
  * - 전량 매도 완료 시 null 반환
  */
-export async function fetchTrackerPosition(symbol: string): Promise<TrackerPosition | null> {
+export async function fetchTrackerPosition(symbol: string, cycle: number = 1): Promise<TrackerPosition | null> {
   if (!symbol) return null;
 
   try {
     const [buyRes, sellRes] = await Promise.all([
-      fetch(`/api/infinite-buy/records?symbol=${encodeURIComponent(symbol)}`),
-      fetch(`/api/infinite-buy/sell-records?symbol=${encodeURIComponent(symbol)}`),
+      fetch(`/api/infinite-buy/records?symbol=${encodeURIComponent(symbol)}&cycle_number=${cycle}`),
+      fetch(`/api/infinite-buy/sell-records?symbol=${encodeURIComponent(symbol)}&cycle_number=${cycle}`),
     ]);
 
     if (!buyRes.ok) return null;

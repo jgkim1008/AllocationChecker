@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -39,41 +39,64 @@ export function QuickOrderForm({
   const [quantity, setQuantity] = useState('');
   const [amount, setAmount] = useState('');
   const [price, setPrice] = useState('');
-  const [takeProfitPct, setTakeProfitPct] = useState('10');
-  const [stopLossPct, setStopLossPct] = useState('5');
+  const [takeProfitPct, setTakeProfitPct] = useState('');
+  const [stopLossPct, setStopLossPct] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  // 가격 초기화
+  // 마지막으로 변경된 필드 추적 (수량 vs 금액 중 어느 쪽이 주도권을 갖는지)
+  const lastChangedRef = useRef<'quantity' | 'amount' | null>(null);
+
+  // 가격 초기화 (심볼/가격 바뀔 때)
   useEffect(() => {
     setPrice(currentPrice.toFixed(market === 'US' ? 2 : 0));
+    setQuantity('');
+    setAmount('');
+    lastChangedRef.current = null;
   }, [currentPrice, market]);
 
-  // 금액 → 수량 자동 계산
-  useEffect(() => {
-    if (amount && currentPrice > 0) {
-      const qty = Math.floor(Number(amount) / currentPrice);
+  // 실제 주문가 (지정가면 입력값, 아니면 현재가)
+  const effectivePrice = Number(price) > 0 ? Number(price) : currentPrice;
+
+  // 수량 변경 → 금액 재계산
+  const handleQuantityChange = (value: string) => {
+    lastChangedRef.current = 'quantity';
+    setQuantity(value);
+    if (value && effectivePrice > 0) {
+      const total = Number(value) * effectivePrice;
+      setAmount(total.toFixed(market === 'US' ? 2 : 0));
+    } else {
+      setAmount('');
+    }
+  };
+
+  // 금액 변경 → 수량 재계산
+  const handleAmountChange = (value: string) => {
+    lastChangedRef.current = 'amount';
+    setAmount(value);
+    if (value && effectivePrice > 0) {
+      const qty = Math.floor(Number(value) / effectivePrice);
+      setQuantity(qty > 0 ? String(qty) : '');
+    } else {
+      setQuantity('');
+    }
+  };
+
+  // 주문가 변경 → 마지막 변경 필드 기준으로 상대방 재계산
+  const handlePriceChange = (value: string) => {
+    setPrice(value);
+    const p = Number(value) > 0 ? Number(value) : currentPrice;
+    if (lastChangedRef.current === 'quantity' && quantity) {
+      const total = Number(quantity) * p;
+      setAmount(total.toFixed(market === 'US' ? 2 : 0));
+    } else if (lastChangedRef.current === 'amount' && amount) {
+      const qty = Math.floor(Number(amount) / p);
       setQuantity(qty > 0 ? String(qty) : '');
     }
-  }, [amount, currentPrice]);
-
-  // 수량 → 금액 자동 계산 (수량 직접 입력 시)
-  const handleQuantityChange = (value: string) => {
-    setQuantity(value);
-    if (value && currentPrice > 0) {
-      const total = Number(value) * currentPrice;
-      setAmount(total.toFixed(market === 'US' ? 2 : 0));
-    }
   };
 
-  // 금액 입력 시
-  const handleAmountChange = (value: string) => {
-    setAmount(value);
-    // 금액 변경 시 수량은 useEffect에서 자동 계산
-  };
-
-  const estimatedTotal = quantity ? Number(quantity) * Number(price || currentPrice) : 0;
+  const estimatedTotal = quantity ? Number(quantity) * effectivePrice : 0;
   const currency = market === 'US' ? '$' : '₩';
 
   const handleSubmit = async () => {
@@ -233,16 +256,19 @@ export function QuickOrderForm({
               min="0"
               step={market === 'US' ? '0.01' : '1'}
               value={price}
-              onChange={(e) => setPrice(e.target.value)}
+              onChange={(e) => handlePriceChange(e.target.value)}
               className="h-9 text-sm"
             />
           </div>
         )}
 
-        {/* 익절/손절 설정 */}
+        {/* 익절/손절 설정 (선택 사항) */}
         <div className="pt-2 border-t border-gray-100">
           <div className="flex items-center justify-between mb-2">
-            <Label className="text-xs text-gray-500">청산 조건</Label>
+            <Label className="text-xs text-gray-500">
+              청산 조건
+              <span className="text-[10px] text-gray-400 ml-1">(선택)</span>
+            </Label>
             {broker === 'kis' && market === 'US' && (
               <Badge variant="outline" className="text-[10px] bg-blue-50 text-blue-600 border-blue-200">
                 자동주문 30일
@@ -260,7 +286,7 @@ export function QuickOrderForm({
                 step="0.1"
                 value={takeProfitPct}
                 onChange={(e) => setTakeProfitPct(e.target.value)}
-                placeholder="10"
+                placeholder="미설정"
                 className="h-9 text-sm"
               />
             </div>
@@ -274,7 +300,7 @@ export function QuickOrderForm({
                 step="0.1"
                 value={stopLossPct}
                 onChange={(e) => setStopLossPct(e.target.value)}
-                placeholder="5"
+                placeholder="미설정"
                 className="h-9 text-sm"
               />
             </div>
@@ -282,6 +308,11 @@ export function QuickOrderForm({
           {broker === 'kis' && market === 'US' && (takeProfitPct || stopLossPct) && (
             <p className="text-[10px] text-blue-600 mt-2">
               한투 자동주문 API로 30일간 익절/손절 조건 유지
+            </p>
+          )}
+          {broker === 'kis' && market === 'US' && !takeProfitPct && !stopLossPct && (
+            <p className="text-[10px] text-gray-400 mt-2">
+              청산 조건 미설정 시 자동주문 없이 즉시 매수만 실행
             </p>
           )}
           {(broker !== 'kis' || market !== 'US') && (takeProfitPct || stopLossPct) && (

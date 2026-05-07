@@ -12,6 +12,7 @@ import { calculateMAAlignment } from '@/lib/utils/ma-alignment-calculator';
 import { calculateInverseAlignment } from '@/lib/utils/inverse-alignment-calculator';
 import { calculateDualRSI } from '@/lib/utils/dual-rsi-calculator';
 import { calculateRSIDivergence } from '@/lib/utils/rsi-divergence-calculator';
+import { analyzeInbumBijag } from '@/lib/utils/inbum-bijag-calculator';
 
 interface MonteCarloResult {
   currentPrice: number;
@@ -1208,6 +1209,8 @@ export default function AnalystAlphaDetailPage({ params }: { params: Promise<{ s
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showFibonacci, setShowFibonacci] = useState(true);
+  const [benchmarks, setBenchmarks] = useState<Array<{ id: string; name: string; color: string; data: { date: string; value: number }[] }>>([]);
+  const [benchmarksLoading, setBenchmarksLoading] = useState(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -1227,6 +1230,20 @@ export default function AnalystAlphaDetailPage({ params }: { params: Promise<{ s
   }, [symbol, market]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  // 지수 벤치마크 데이터 (데이터 로드 후)
+  useEffect(() => {
+    if (!data?.priceHistory?.length) return;
+    const oneYearAgo = new Date();
+    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+    const from = oneYearAgo.toISOString().split('T')[0];
+    setBenchmarksLoading(true);
+    fetch(`/api/strategies/benchmark?from=${from}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d?.benchmarks) setBenchmarks(d.benchmarks); })
+      .catch(() => {})
+      .finally(() => setBenchmarksLoading(false));
+  }, [data?.priceHistory?.length]);
 
   const f = data?.fundamentals;
 
@@ -1365,6 +1382,44 @@ export default function AnalystAlphaDetailPage({ params }: { params: Promise<{ s
       };
     })();
 
+    // 인범 빗각 + 구름대 전략 (일봉 → 주봉 집계)
+    const inbumBijagResult = (() => {
+      if (historyForCalc.length < 70) return null;
+
+      // 오래된 순 정렬 후 5거래일 단위로 주봉 OHLCV 집계
+      const dailyAsc = [...historyForCalc].reverse();
+      const weekly: { date: string; open: number; high: number; low: number; close: number }[] = [];
+      for (let i = 0; i + 2 < dailyAsc.length; i += 5) {
+        const week = dailyAsc.slice(i, i + 5);
+        weekly.push({
+          date:  week[week.length - 1].date,
+          open:  week[0].price,
+          high:  Math.max(...week.map(d => d.high)),
+          low:   Math.min(...week.map(d => d.low)),
+          close: week[week.length - 1].price,
+        });
+      }
+      if (weekly.length < 50) return null;
+
+      const res = analyzeInbumBijag(weekly);
+      const syncMap: Record<string, number> = {
+        BREAKOUT_BUY:   100, CHANNEL_BOTTOM: 85, BIJAG_TOUCH: 70,
+        MID_CHANNEL:     40, CHANNEL_TOP:    20, EXTENSION:   15, BREAKDOWN: 5,
+      };
+      const signalKo: Record<string, string> = {
+        BREAKOUT_BUY: '빗각 돌파 매수', CHANNEL_BOTTOM: '채널 하단', BIJAG_TOUCH: '빗각 터치',
+        MID_CHANNEL:  '채널 중간',       CHANNEL_TOP:    '채널 상단', EXTENSION:   '채널 확장', BREAKDOWN: '하단 이탈',
+      };
+      return {
+        syncRate: syncMap[res.signal] ?? 0,
+        criteria: [
+          { label: `시그널: ${signalKo[res.signal] ?? res.signal}`, pass: ['BREAKOUT_BUY', 'CHANNEL_BOTTOM', 'BIJAG_TOUCH'].includes(res.signal) },
+          { label: '구름대 위 (양봉 구조)', pass: res.aboveCloud },
+          { label: `채널 레벨 ${res.channelLevel !== null ? res.channelLevel.toFixed(2) + 'D' : '-'} (≤1.0)`, pass: res.channelLevel !== null && res.channelLevel <= 1.0 },
+        ],
+      };
+    })();
+
     return {
       maAlignment: maResult ? {
         syncRate: maResult.syncRate,
@@ -1416,6 +1471,7 @@ export default function AnalystAlphaDetailPage({ params }: { params: Promise<{ s
         ],
       } : null,
       weeklySR: weeklySRResult,
+      inbumBijag: inbumBijagResult,
     };
   }, [data, f]);
 
@@ -1820,6 +1876,13 @@ export default function AnalystAlphaDetailPage({ params }: { params: Promise<{ s
                       color: { bar: 'bg-rose-500', badge: 'bg-rose-50 text-rose-700', icon: 'text-rose-500' },
                       data: chartStrategySyncs.weeklySR,
                     },
+                    {
+                      label: '인범 빗각 + 구름대',
+                      sublabel: '로그스케일 빗각채널 하단 + 일목균형표 구름대 지지',
+                      href: `/strategies/inbum-bijag/${symbol}?market=${market}&name=${encodeURIComponent(f?.name ?? symbol)}`,
+                      color: { bar: 'bg-violet-500', badge: 'bg-violet-50 text-violet-700', icon: 'text-violet-500' },
+                      data: chartStrategySyncs.inbumBijag,
+                    },
                   ].map(({ label, sublabel, href, color, data: syncData }) => {
                     if (!syncData) return null;
                     const rate = syncData.syncRate;
@@ -1873,6 +1936,103 @@ export default function AnalystAlphaDetailPage({ params }: { params: Promise<{ s
                     );
                   })}
                 </div>
+              </div>
+            )}
+
+            {/* ── 9. 지수 비교 ── */}
+            {(benchmarksLoading || benchmarks.length > 0) && data?.priceHistory && (
+              <div className="bg-white rounded-[24px] border border-gray-200 p-6">
+                <div className="flex items-center gap-2 mb-5">
+                  <BarChart3 className="h-4 w-4 text-indigo-500" />
+                  <h2 className="font-black text-gray-900">지수 비교</h2>
+                  <span className="text-[10px] text-gray-400 font-medium">주요 지수 대비 수익률</span>
+                </div>
+                {benchmarksLoading ? (
+                  <div className="flex items-center gap-2 text-sm text-gray-400 py-4">
+                    <Loader2 className="h-4 w-4 animate-spin" />지수 데이터 로딩 중...
+                  </div>
+                ) : (() => {
+                  // 지수 수익률 계산 (주봉 기준, 최신순 마지막 인덱스)
+                  function bmReturn(bmData: { date: string; value: number }[], weeksAgo: number): number | null {
+                    const n = bmData.length;
+                    if (n < 2) return null;
+                    const cur = bmData[n - 1].value;
+                    const idx = Math.max(0, n - 1 - weeksAgo);
+                    const past = bmData[idx].value;
+                    if (!past) return null;
+                    return Math.round((cur / past - 1) * 1000) / 10;
+                  }
+
+                  // 종목 수익률 계산 (일봉 기준, 최신순 정렬)
+                  const ph = [...data.priceHistory].sort((a, b) => b.date.localeCompare(a.date));
+                  function stockReturn(daysAgo: number): number | null {
+                    const cur = ph[0]?.close;
+                    const past = ph[Math.min(daysAgo, ph.length - 1)]?.close;
+                    if (!cur || !past) return null;
+                    return Math.round((cur / past - 1) * 1000) / 10;
+                  }
+
+                  const PERIODS = [
+                    { label: '1개월', weeks: 4,  days: 22 },
+                    { label: '3개월', weeks: 13, days: 65 },
+                    { label: '6개월', weeks: 26, days: 130 },
+                    { label: '1년',   weeks: 52, days: 252 },
+                  ];
+
+                  const BENCHMARK_COLORS: Record<string, string> = {
+                    KOSPI: '#3b82f6', KOSDAQ: '#8b5cf6', SP500: '#10b981', NASDAQ: '#06b6d4', SOXL: '#ef4444',
+                  };
+
+                  const rows = [
+                    {
+                      id: 'STOCK', name: f?.name ?? symbol, color: '#f59e0b',
+                      returns: PERIODS.map(p => stockReturn(p.days)),
+                    },
+                    ...benchmarks.map(bm => ({
+                      id: bm.id, name: bm.name, color: BENCHMARK_COLORS[bm.id] ?? bm.color,
+                      returns: PERIODS.map(p => bmReturn(bm.data, p.weeks)),
+                    })),
+                  ];
+
+                  return (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b border-gray-100">
+                            <th className="text-left py-2 pr-4 text-[11px] font-black text-gray-400 uppercase tracking-wider">종목/지수</th>
+                            {PERIODS.map(p => (
+                              <th key={p.label} className="text-right py-2 px-3 text-[11px] font-black text-gray-400 uppercase tracking-wider">{p.label}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {rows.map((row, i) => (
+                            <tr key={row.id} className={`border-b border-gray-50 ${i === 0 ? 'bg-amber-50/40' : ''}`}>
+                              <td className="py-2.5 pr-4">
+                                <div className="flex items-center gap-2">
+                                  <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: row.color }} />
+                                  <span className={`text-xs font-black truncate max-w-[110px] ${i === 0 ? 'text-amber-700' : 'text-gray-700'}`}>{row.name}</span>
+                                  {i === 0 && <span className="text-[9px] bg-amber-100 text-amber-600 px-1 py-0.5 rounded font-bold">현재</span>}
+                                </div>
+                              </td>
+                              {row.returns.map((ret, j) => (
+                                <td key={j} className="py-2.5 px-3 text-right">
+                                  {ret !== null ? (
+                                    <span className={`text-xs font-black ${ret > 0 ? 'text-emerald-600' : ret < 0 ? 'text-red-500' : 'text-gray-400'}`}>
+                                      {ret > 0 ? '+' : ''}{ret}%
+                                    </span>
+                                  ) : (
+                                    <span className="text-xs text-gray-300">-</span>
+                                  )}
+                                </td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  );
+                })()}
               </div>
             )}
 

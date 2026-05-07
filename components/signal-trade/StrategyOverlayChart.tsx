@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useMemo, useState } from 'react';
+import { useEffect, useRef, useMemo, useState, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -13,13 +13,22 @@ import {
 } from '@/components/ui/select';
 import { BarChart3, Layers } from 'lucide-react';
 import { STRATEGY_META, type StrategyKey, type PriceHistoryItem } from '@/lib/utils/chart-strategy-sync';
-import { createChart, ColorType, CrosshairMode, LineSeries, CandlestickSeries, HistogramSeries, LineStyle, SeriesMarker, Time, createSeriesMarkers } from 'lightweight-charts';
+import { createChart, ColorType, CrosshairMode, LineSeries, CandlestickSeries, HistogramSeries, LineStyle, SeriesMarker, Time, createSeriesMarkers, AreaSeries, PriceScaleMode } from 'lightweight-charts';
+import { analyzeInbumBijag, calcIchimoku, detectBijagChannel, priceAtLevel, CHANNEL_LEVELS, type Candle } from '@/lib/utils/inbum-bijag-calculator';
 
 interface StrategyOverlayChartProps {
   priceHistory: PriceHistoryItem[];
   market: 'US' | 'KR';
+  symbol: string;
   selectedStrategy: StrategyKey | null;
   onStrategyChange: (strategy: StrategyKey | null) => void;
+}
+
+// 인범 빗각 API 응답 타입
+interface InbumBijagApiData {
+  candles: Candle[];
+  channel: import('@/lib/utils/inbum-bijag-calculator').BijagChannelResult | null;
+  ichimoku: import('@/lib/utils/inbum-bijag-calculator').IchimokuPoint[];
 }
 
 interface OHLCVData {
@@ -465,6 +474,36 @@ function generateEntryMarkers(
       }
       break;
     }
+
+    case 'inbumBijag': {
+      // data is already weekly; slide 52-bar window to detect signal transitions
+      const MIN_BARS = 30;
+      let prevSignal: string | null = null;
+      for (let i = MIN_BARS; i < data.length; i++) {
+        const slice: Candle[] = data.slice(Math.max(0, i - 52), i + 1).map(c => ({
+          date: c.date, open: c.open, high: c.high, low: c.low, close: c.close,
+        }));
+        const res = analyzeInbumBijag(slice);
+        const isEntry = res.signal === 'BREAKOUT_BUY' || res.signal === 'CHANNEL_BOTTOM' || res.signal === 'BIJAG_TOUCH';
+        const wasEntry = prevSignal === 'BREAKOUT_BUY' || prevSignal === 'CHANNEL_BOTTOM' || prevSignal === 'BIJAG_TOUCH';
+        if (isEntry && !wasEntry) {
+          const labelMap: Record<string, string> = {
+            BREAKOUT_BUY: '돌파매수',
+            CHANNEL_BOTTOM: '채널하단',
+            BIJAG_TOUCH: '빗각접촉',
+          };
+          markers.push({
+            time: data[i].date as Time,
+            position: 'belowBar',
+            color: '#8b5cf6',
+            shape: 'arrowUp',
+            text: labelMap[res.signal] ?? res.signal,
+          });
+        }
+        prevSignal = res.signal;
+      }
+      break;
+    }
   }
 
   return markers;
@@ -473,25 +512,57 @@ function generateEntryMarkers(
 export function StrategyOverlayChart({
   priceHistory,
   market,
+  symbol,
   selectedStrategy,
   onStrategyChange,
 }: StrategyOverlayChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const [showChannel, setShowChannel] = useState(false);
+  const [inbumData, setInbumData] = useState<InbumBijagApiData | null>(null);
+  const [inbumLoading, setInbumLoading] = useState(false);
   const [showBijag, setShowBijag] = useState(false);
 
   // 채널 표시 가능 전략인지
   const canShowChannel = selectedStrategy === 'monthlyMA10' || selectedStrategy === 'weeklySR';
 
+  // inbumBijag 선택 시 전략 상세 API에서 네이티브 주봉 + 채널 + 구름 데이터 fetch
+  const fetchInbumData = useCallback(async () => {
+    if (!symbol || !market) return;
+    setInbumLoading(true);
+    try {
+      const res = await fetch(`/api/strategies/inbum-bijag/${encodeURIComponent(symbol)}?market=${market}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setInbumData({ candles: data.candles, channel: data.channel, ichimoku: data.ichimoku });
+    } catch {
+      // 실패 시 기존 변환 데이터 사용
+    } finally {
+      setInbumLoading(false);
+    }
+  }, [symbol, market]);
+
+  useEffect(() => {
+    if (selectedStrategy === 'inbumBijag') {
+      fetchInbumData();
+    } else {
+      setInbumData(null);
+    }
+  }, [selectedStrategy, fetchInbumData]);
+
   // 타임프레임 결정
   const timeframe = useMemo(() => {
     if (selectedStrategy === 'monthlyMA10') return 'monthly';
-    if (selectedStrategy === 'weeklySR') return 'weekly';
+    if (selectedStrategy === 'weeklySR' || selectedStrategy === 'inbumBijag') return 'weekly';
     return 'daily';
   }, [selectedStrategy]);
 
-  // 차트 데이터 변환
+  // 차트 데이터 변환 (inbumBijag는 API에서 받은 네이티브 주봉 우선 사용)
   const chartData = useMemo(() => {
+    if (selectedStrategy === 'inbumBijag' && inbumData?.candles?.length) {
+      return inbumData.candles.map(c => ({
+        date: c.date, open: c.open, high: c.high, low: c.low, close: c.close, volume: 0,
+      }));
+    }
     if (timeframe === 'monthly') {
       return convertToMonthly(priceHistory);
     }
@@ -544,6 +615,7 @@ export function StrategyOverlayChart({
       rightPriceScale: {
         borderColor: '#e5e7eb',
         scaleMargins: { top: 0.1, bottom: 0.2 },
+        mode: selectedStrategy === 'inbumBijag' ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal,
       },
       timeScale: {
         borderColor: '#e5e7eb',
@@ -618,6 +690,8 @@ export function StrategyOverlayChart({
         maSeries.push({ period: 448, series: createMALine('#8b5cf6', 2), color: '#8b5cf6' });
       }
     } else if (selectedStrategy === 'monthlyMA10' || selectedStrategy === 'weeklySR') {
+      maSeries.push({ period: 10, series: createMALine('#f59e0b', 2), color: '#f59e0b' });
+    } else if (selectedStrategy === 'inbumBijag') {
       maSeries.push({ period: 10, series: createMALine('#f59e0b', 2), color: '#f59e0b' });
     } else if (selectedStrategy === 'fibonacci') {
       // 피보나치: MA 없음
@@ -755,6 +829,97 @@ export function StrategyOverlayChart({
       }
     }
 
+    // 인범 빗각 구름대 오버레이 (API에서 받은 네이티브 데이터 우선 사용)
+    if (selectedStrategy === 'inbumBijag' && chartData.length >= 30) {
+      const MASK_BG = '#ffffff';
+      const candles: Candle[] = chartData.map(c => ({ date: c.date, open: c.open, high: c.high, low: c.low, close: c.close }));
+      const n = candles.length;
+      // API 데이터가 있으면 사용, 없으면 로컬 계산 (fallback)
+      const ichimoku = inbumData?.ichimoku?.length ? inbumData.ichimoku : calcIchimoku(candles);
+      const bijagChannel = inbumData?.channel !== undefined ? inbumData.channel : detectBijagChannel(candles);
+
+      // ── 빗각채널 라인 (주요 레벨만, 구름보다 먼저 그림 → 뒤에 위치) ──
+      if (bijagChannel) {
+        // 실제 데이터 범위 기준 필터 (현재가 기준 X → 전체 고저가 기준)
+        const dataMax = Math.max(...candles.map(c => c.high));
+        const dataMin = Math.min(...candles.map(c => c.low));
+        const priceMin = dataMin * 0.1;   // 데이터 최저가의 10%
+        const priceMax = dataMax * 5;     // 데이터 최고가의 5배
+
+        // 핵심 레벨만 표시 (전체 10개 중 5개만)
+        const KEY_LEVELS: { level: number; color: string; width: 1 | 2; style: LineStyle; title?: string }[] = [
+          { level: -0.5, color: '#a78bfa', width: 1, style: LineStyle.Dashed },
+          { level:  0,   color: '#f97316', width: 2, style: LineStyle.Solid, title: '빗각(0)' },
+          { level:  0.5, color: '#6ee7b7', width: 1, style: LineStyle.Dashed },
+          { level:  1,   color: '#10b981', width: 2, style: LineStyle.Solid, title: 'P3(1)' },
+          { level:  1.5, color: '#059669', width: 1, style: LineStyle.Dashed },
+        ];
+
+        for (const { level, color, width, style, title } of KEY_LEVELS) {
+          const lineData: { time: string; value: number }[] = [];
+          for (let i = 0; i < n; i++) {
+            const price = priceAtLevel(i, level, bijagChannel);
+            if (price > priceMin && price < priceMax && isFinite(price)) {
+              lineData.push({ time: candles[i].date, value: price });
+            }
+          }
+          if (lineData.length < 2) continue;
+
+          chart.addSeries(LineSeries, {
+            color, lineWidth: width, lineStyle: style,
+            priceLineVisible: false,
+            lastValueVisible: !!title,
+            title: title ?? undefined,
+            crosshairMarkerVisible: false,
+          }).setData(lineData);
+        }
+      }
+
+      // ── 구름대 (채널선 위에 그림) ──
+      type CloudSeg = { bullish: boolean; pts: { time: string; spanA: number; spanB: number }[] };
+      const segs: CloudSeg[] = [];
+      for (const pt of ichimoku) {
+        if (pt.spanA === null || pt.spanB === null) continue;
+        const bullish = pt.spanA >= pt.spanB;
+        if (segs.length === 0 || segs[segs.length - 1].bullish !== bullish) {
+          segs.push({ bullish, pts: [] });
+        }
+        segs[segs.length - 1].pts.push({ time: pt.date, spanA: pt.spanA, spanB: pt.spanB });
+      }
+
+      for (const seg of segs) {
+        if (seg.pts.length < 2) continue;
+        const fillColor = seg.bullish ? 'rgba(22,163,74,0.25)' : 'rgba(220,38,38,0.25)';
+        const lineColor = seg.bullish ? '#16a34a' : '#dc2626';
+        const topData = seg.pts.map(p => ({ time: p.time as Time, value: seg.bullish ? p.spanA : p.spanB }));
+        const botData = seg.pts.map(p => ({ time: p.time as Time, value: seg.bullish ? p.spanB : p.spanA }));
+        // Color fill (top line → 0)
+        chart.addSeries(AreaSeries, {
+          lineColor, lineWidth: 1,
+          topColor: fillColor, bottomColor: fillColor,
+          lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false,
+        }).setData(topData);
+        // Mask below bottom (bottom line → 0 with bg color)
+        chart.addSeries(AreaSeries, {
+          lineColor: MASK_BG, lineWidth: 1,
+          topColor: MASK_BG, bottomColor: MASK_BG,
+          lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false,
+        }).setData(botData);
+      }
+
+      // SpanA / SpanB 외곽선
+      const spanAData = ichimoku.filter(p => p.spanA !== null).map(p => ({ time: p.date as Time, value: p.spanA! }));
+      const spanBData = ichimoku.filter(p => p.spanB !== null).map(p => ({ time: p.date as Time, value: p.spanB! }));
+      if (spanAData.length > 0) chart.addSeries(LineSeries, {
+        color: '#16a34a', lineWidth: 1, lineStyle: LineStyle.Dashed,
+        lastValueVisible: true, priceLineVisible: false, crosshairMarkerVisible: false, title: 'SpanA',
+      }).setData(spanAData);
+      if (spanBData.length > 0) chart.addSeries(LineSeries, {
+        color: '#dc2626', lineWidth: 1, lineStyle: LineStyle.Dashed,
+        lastValueVisible: true, priceLineVisible: false, crosshairMarkerVisible: false, title: 'SpanB',
+      }).setData(spanBData);
+    }
+
     // 볼륨 히스토그램
     const volumeSeries = chart.addSeries(HistogramSeries, {
       priceFormat: { type: 'volume' },
@@ -787,7 +952,7 @@ export function StrategyOverlayChart({
       }
       chart.remove();
     };
-  }, [chartData, market, selectedStrategy, priceHistory, entryMarkers, parallelChannel, bijagChannel, showChannel, showBijag]);
+  }, [chartData, market, selectedStrategy, priceHistory, entryMarkers, parallelChannel, bijagChannel, showChannel, showBijag, inbumData]);
 
   // 타임프레임 라벨
   const timeframeLabel = timeframe === 'monthly' ? '월봉' : timeframe === 'weekly' ? '주봉' : '일봉';
@@ -864,7 +1029,17 @@ export function StrategyOverlayChart({
         </div>
       </CardHeader>
       <CardContent className="p-0">
-        <div ref={chartContainerRef} className="h-[400px] w-full" />
+        <div className="relative">
+          <div ref={chartContainerRef} className="h-[400px] w-full" />
+          {inbumLoading && (
+            <div className="absolute inset-0 flex items-center justify-center bg-white/70">
+              <div className="flex flex-col items-center gap-2">
+                <div className="h-5 w-5 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" />
+                <span className="text-xs text-gray-500">주봉 데이터 로딩 중...</span>
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* 범례 */}
         <div className="flex flex-wrap gap-3 p-3 border-t border-gray-100">
@@ -922,6 +1097,15 @@ export function StrategyOverlayChart({
               <LegendItem color="#3b82f6" label="61.8%" />
               <LegendItem color="#8b5cf6" label="76.4%" />
               <LegendItem color="#ec4899" label="100%" />
+            </>
+          )}
+          {selectedStrategy === 'inbumBijag' && (
+            <>
+              <LegendItem color="#f59e0b" label="10주MA" />
+              <LegendItem color="#f97316" label="빗각(0)" />
+              <LegendItem color="#10b981" label="P3(1)" />
+              <LegendItem color="#16a34a" label="SpanA" dashed />
+              <LegendItem color="#dc2626" label="SpanB" dashed />
             </>
           )}
           {selectedStrategy && entryMarkers.length > 0 && (

@@ -368,6 +368,26 @@ export async function GET(request: NextRequest) {
       console.error('신호 전략 실행 오류:', signalError);
     }
 
+    // 9. MA 계단식 자동매수 실행
+    let maLadderResults = null;
+    try {
+      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+      const maLadderResponse = await fetch(`${baseUrl}/api/signal-trade/ma-ladder/execute`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${CRON_SECRET}`,
+        },
+      });
+
+      if (maLadderResponse.ok) {
+        const maLadderData = await maLadderResponse.json();
+        maLadderResults = maLadderData.results;
+      }
+    } catch (maLadderError) {
+      console.error('MA 계단식 실행 오류:', maLadderError);
+    }
+
     return NextResponse.json({
       success: true,
       message: `${results.length}개 설정 처리 완료`,
@@ -375,6 +395,7 @@ export async function GET(request: NextRequest) {
         processed: results.length,
         results,
         signalTrade: signalTradeResults,
+        maLadder: maLadderResults,
       },
     });
   } catch (error) {

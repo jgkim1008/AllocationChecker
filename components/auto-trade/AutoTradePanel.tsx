@@ -44,7 +44,7 @@ import {
   Trash2,
   Clock,
 } from 'lucide-react';
-import { fetchTrackerPosition } from '@/lib/infinite-buy/tracker/position';
+import { useInfiniteBuyRecords } from '@/hooks/useInfiniteBuyRecords';
 
 type BrokerType = 'kis' | 'kiwoom';
 type StrategyVersion = 'v2.2' | 'v3.0' | 'v4.0';
@@ -114,7 +114,6 @@ export function AutoTradePanel({
 
   const [isLoading, setIsLoading] = useState(false);
   const [isExecuting, setIsExecuting] = useState(false);
-  const [isLoadingTracker, setIsLoadingTracker] = useState(false);
   const [trackerLoaded, setTrackerLoaded] = useState(false);
 
   // 종목 검색 자동완성
@@ -177,47 +176,51 @@ export function AutoTradePanel({
     setTrackerLoaded(false);
   };
 
-  // 빠른 종목 선택 + 트래커 동기화
-  const quickSelectSymbol = async (sym: string) => {
+  // localStorage에서 현재 회차 읽기
+  const getCurrentCycle = (sym: string) => {
+    if (typeof window !== 'undefined') {
+      return parseInt(localStorage.getItem(`inf-buy-cycle-${sym.toUpperCase()}`) || '1', 10);
+    }
+    return 1;
+  };
+
+  // useInfiniteBuyRecords 훅 사용 (현재 회차 기반)
+  const currentCycle = getCurrentCycle(symbol);
+  const { records, sellRecords, fetchRecords, loading: isLoadingTracker } = useInfiniteBuyRecords(symbol, currentCycle);
+
+  // records/sellRecords에서 현재 상태 계산
+  useEffect(() => {
+    if (records.length === 0 && sellRecords.length === 0) {
+      setCurrentT(0);
+      setCurrentShares(0);
+      setCurrentInvested(0);
+      setTrackerLoaded(false);
+      return;
+    }
+
+    const totalBuyShares = records.reduce((s, b) => s + b.shares, 0);
+    const totalBuyInvested = records.reduce((s, b) => s + b.amount, 0);
+    const totalSoldShares = sellRecords.reduce((s, r) => s + r.shares, 0);
+    const remainingShares = Math.max(0, totalBuyShares - totalSoldShares);
+
+    const divisions = strategyVersion === 'v3.0' ? 20 : 40;
+    const capital = records.length > 0 ? records[0].capital : 5000;
+    const unitBuy = capital / divisions;
+    const t = Math.ceil((totalBuyInvested / unitBuy) * 100) / 100;
+
+    setTotalCapital(capital);
+    setCurrentT(t);
+    setCurrentShares(Math.round(remainingShares * 10000) / 10000);
+    setCurrentInvested(Math.round(totalBuyInvested * 100) / 100);
+    setTrackerLoaded(true);
+  }, [records, sellRecords, strategyVersion]);
+
+  // 빠른 종목 선택
+  const quickSelectSymbol = (sym: string) => {
     setSymbol(sym);
     setSuggestions([]);
     setShowSuggestions(false);
     setTrackerLoaded(false);
-    // 트래커 동기화 바로 실행
-    await loadFromTracker(sym);
-  };
-
-  // 트래커에서 현재 상태 불러오기 (targetSymbol 파라미터로 특정 종목 지정 가능)
-  const loadFromTracker = async (targetSymbol?: string) => {
-    const sym = targetSymbol || symbol;
-    if (!sym) return;
-    setIsLoadingTracker(true);
-    try {
-      const position = await fetchTrackerPosition(sym.toUpperCase());
-
-      if (!position) {
-        alert(`트래커에 "${sym}" 포지션이 없습니다. (기록 없음 또는 전량 매도 완료)`);
-        setCurrentT(0);
-        setCurrentShares(0);
-        setCurrentInvested(0);
-        setTrackerLoaded(true);
-        return;
-      }
-
-      const divisions = strategyVersion === 'v3.0' ? 20 : 40;
-      const unitBuy = position.capital / divisions;
-      const t = Math.ceil((position.invested / unitBuy) * 100) / 100;
-
-      setTotalCapital(position.capital);
-      setCurrentT(t);
-      setCurrentShares(Math.round(position.shares * 10000) / 10000);
-      setCurrentInvested(Math.round(position.invested * 100) / 100);
-      setTrackerLoaded(true);
-    } catch {
-      alert('트래커 데이터를 불러오지 못했습니다.');
-    } finally {
-      setIsLoadingTracker(false);
-    }
   };
 
   // 주문 계산
@@ -549,7 +552,7 @@ export function AutoTradePanel({
             <Button
               variant="outline"
               size="sm"
-              onClick={() => loadFromTracker()}
+              onClick={() => fetchRecords()}
               disabled={isLoadingTracker || !symbol}
               title="실시간 트래커에서 현재 회차/보유수량/투자금액을 자동으로 불러옵니다"
               className="border-emerald-500 text-emerald-600 hover:bg-emerald-100 hover:text-emerald-700"

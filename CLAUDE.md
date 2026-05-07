@@ -246,6 +246,147 @@ export default function StrategyPage() {
 - `RefreshCw` 버튼으로 강제 새로고침 지원 (`force=true` → `clearClientCache` → API 재호출)
 - `PremiumGate` 래핑 (프리미엄 전략인 경우)
 
+### 스캔 목록 페이지 필수 포함 — 5대 지수 + SOXL 수익률 테이블
+
+스캔 목록 페이지(`page.tsx`) 최상단(요약 통계 카드 위)에 **반드시** 지수 비교 테이블을 포함한다.
+`/api/strategies/benchmark?from=<1년전 날짜>` API를 사용한다 (6h 서버 캐시 자동 적용).
+
+#### 구현 패턴
+
+```tsx
+// 타입 / 상수
+interface BenchmarkSeries {
+  id: string; name: string; color: string;
+  data: { date: string; value: number }[];
+}
+const PERIOD_WEEKS = { '1M': 4, '3M': 13, '6M': 26, '1Y': 52 } as const;
+type PeriodKey = keyof typeof PERIOD_WEEKS;
+
+function getPeriodReturn(data: { date: string; value: number }[], weeks: number): number | null {
+  if (data.length < 2) return null;
+  const last = data[data.length - 1].value;
+  const base = data[Math.max(0, data.length - 1 - weeks)].value;
+  return Math.round((last / base - 1) * 1000) / 10;
+}
+
+// 컴포넌트
+// 지수 id → 상세 페이지 이동 정보 (전략마다 {strategy-name} 경로만 바꾸면 됨)
+const INDEX_NAV: Record<string, { symbol: string; market: 'US' | 'KR'; name: string }> = {
+  KOSPI:  { symbol: '%5EKS11', market: 'KR', name: 'KOSPI' },
+  KOSDAQ: { symbol: '%5EKQ11', market: 'KR', name: 'KOSDAQ' },
+  SP500:  { symbol: '%5EGSPC', market: 'US', name: 'S&P 500' },
+  NASDAQ: { symbol: '%5EIXIC', market: 'US', name: 'NASDAQ' },
+  SOXL:   { symbol: 'SOXL',   market: 'US', name: 'SOXL' },
+};
+
+function IndexTable({ benchmarks, loading }: { benchmarks: BenchmarkSeries[]; loading: boolean }) {
+  const router = useRouter();
+
+  const handleRowClick = (id: string) => {
+    const nav = INDEX_NAV[id];
+    if (!nav) return;
+    // 경로는 전략마다 다름: /strategies/{strategy-name}/{symbol}?market=...&name=...
+    router.push(`/strategies/{strategy-name}/${nav.symbol}?market=${nav.market}&name=${encodeURIComponent(nav.name)}`);
+  };
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden mb-6">
+      <div className="flex items-center gap-2 px-5 py-3 border-b border-gray-100 bg-gray-50">
+        <BarChart2 className="h-4 w-4 text-gray-400" />
+        <span className="text-sm font-black text-gray-700">5대 지수 수익률</span>
+        <span className="text-[10px] text-gray-400 ml-auto">주봉 기준 / 누적 수익률 · 클릭 시 상세 분석</span>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full">
+          <thead>
+            <tr className="border-b border-gray-100">
+              <th className="px-3 py-2.5 text-left text-[10px] font-black text-gray-400 uppercase tracking-wider">지수</th>
+              {(Object.keys(PERIOD_WEEKS) as PeriodKey[]).map(p => (
+                <th key={p} className="px-3 py-2.5 text-right text-[10px] font-black text-gray-400 uppercase tracking-wider">{p}</th>
+              ))}
+              <th className="px-2 py-2.5 w-8" />
+            </tr>
+          </thead>
+          <tbody>
+            {loading
+              ? Array.from({ length: 5 }).map((_, i) => (
+                  <tr key={i} className="border-b border-gray-50">
+                    <td className="px-3 py-2.5"><div className="h-4 w-20 bg-gray-100 rounded animate-pulse" /></td>
+                    {[0,1,2,3].map(j => (
+                      <td key={j} className="px-3 py-2.5 text-right"><div className="h-4 w-12 bg-gray-100 rounded animate-pulse ml-auto" /></td>
+                    ))}
+                    <td className="px-2 py-2.5" />
+                  </tr>
+                ))
+              : benchmarks.map(b => (
+                  <tr
+                    key={b.id}
+                    onClick={() => handleRowClick(b.id)}
+                    className="border-b border-gray-50 hover:bg-violet-50 transition-colors cursor-pointer group"
+                  >
+                    <td className="px-3 py-2.5">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: b.color }} />
+                        <span className="text-xs font-bold text-gray-700 group-hover:text-violet-700 transition-colors">{b.name}</span>
+                      </div>
+                    </td>
+                    {(Object.entries(PERIOD_WEEKS) as [PeriodKey, number][]).map(([period, weeks]) => {
+                      const pct = getPeriodReturn(b.data, weeks);
+                      return (
+                        <td key={period} className={`px-3 py-2.5 text-right text-xs font-bold tabular-nums ${
+                          pct === null ? 'text-gray-300' : pct >= 0 ? 'text-emerald-600' : 'text-red-500'
+                        }`}>
+                          {pct === null ? '-' : `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`}
+                        </td>
+                      );
+                    })}
+                    <td className="px-2 py-2.5">
+                      <ChevronRight className="h-4 w-4 text-gray-300 group-hover:text-violet-500 transition-colors" />
+                    </td>
+                  </tr>
+                ))
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// 페이지 컴포넌트 내 state + fetch
+const [benchmarks, setBenchmarks] = useState<BenchmarkSeries[]>([]);
+const [benchmarksLoading, setBenchmarksLoading] = useState(true);
+
+useEffect(() => {
+  const from = new Date();
+  from.setFullYear(from.getFullYear() - 1);
+  const fromStr = from.toISOString().split('T')[0];
+  setBenchmarksLoading(true);
+  fetch(`/api/strategies/benchmark?from=${fromStr}`)
+    .then(r => r.json())
+    .then(d => { setBenchmarks(d.benchmarks || []); })
+    .catch(() => {})
+    .finally(() => setBenchmarksLoading(false));
+}, []);
+
+// JSX — 요약 통계 카드 위에 삽입
+<IndexTable benchmarks={benchmarks} loading={benchmarksLoading} />
+```
+
+#### 색상 (벤치마크 API 응답값과 동일)
+
+| 지수 | color |
+|------|-------|
+| KOSPI | `#3b82f6` |
+| KOSDAQ | `#8b5cf6` |
+| S&P 500 | `#10b981` |
+| NASDAQ | `#06b6d4` |
+| SOXL | `#ef4444` |
+
+- 수익률 양수 → `text-emerald-600`, 음수 → `text-red-500`
+- 로딩 중 skeleton(`animate-pulse`) 표시
+- 별도 캐시 관리 불필요 (benchmark API가 자체 6h 캐시 처리)
+
 ### 상세 페이지 (`[symbol]/page.tsx`) 필수 구성
 
 1. **전략 개요** — 전략명, 한줄 설명, 적용 자산군, 권장 투자 기간

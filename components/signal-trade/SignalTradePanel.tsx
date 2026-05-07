@@ -48,11 +48,13 @@ import {
   Settings,
   Search,
   BarChart3,
+  Layers,
 } from 'lucide-react';
 import { useSignalTradeSettings } from '@/hooks/useSignalTradeSettings';
 import { useSignalPositions } from '@/hooks/useSignalPositions';
 import { SIGNAL_STRATEGIES, type SignalStrategyType } from '@/lib/signal-trade/types';
 import { SignalTradeDetail } from './SignalTradeDetail';
+import { MALadderPanel } from './MALadderPanel';
 
 type BrokerType = 'kis' | 'kiwoom';
 
@@ -138,7 +140,7 @@ export function SignalTradePanel() {
     <div className="space-y-4">
       {/* 탭 헤더 */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-3 bg-gray-100">
+        <TabsList className="grid w-full grid-cols-4 bg-gray-100">
           <TabsTrigger
             value="search"
             className="flex items-center gap-2 data-[state=active]:bg-white"
@@ -152,6 +154,13 @@ export function SignalTradePanel() {
           >
             <Settings className="h-4 w-4" />
             설정 관리
+          </TabsTrigger>
+          <TabsTrigger
+            value="ma-ladder"
+            className="flex items-center gap-2 data-[state=active]:bg-white"
+          >
+            <Layers className="h-4 w-4" />
+            MA 계단식
           </TabsTrigger>
           <TabsTrigger
             value="positions"
@@ -170,6 +179,11 @@ export function SignalTradePanel() {
         {/* 종목 조회 & 주문 탭 */}
         <TabsContent value="search" className="mt-4">
           <SignalTradeDetail />
+        </TabsContent>
+
+        {/* MA 계단식 탭 */}
+        <TabsContent value="ma-ladder" className="mt-4">
+          <MALadderPanel />
         </TabsContent>
 
         {/* 설정 관리 탭 */}
@@ -257,6 +271,17 @@ export function SignalTradePanel() {
                           </div>
                           {SIGNAL_STRATEGIES.filter(
                             (s) => s.category === 'pattern' && s.autoTradeEnabled
+                          ).map((s) => (
+                            <SelectItem key={s.id} value={s.id}>
+                              {s.name}
+                            </SelectItem>
+                          ))}
+                          {/* 주봉 전략 */}
+                          <div className="px-2 py-1 text-xs font-semibold text-gray-500 mt-1">
+                            주봉 전략
+                          </div>
+                          {SIGNAL_STRATEGIES.filter(
+                            (s) => s.category === 'weekly' && s.autoTradeEnabled
                           ).map((s) => (
                             <SelectItem key={s.id} value={s.id}>
                               {s.name}

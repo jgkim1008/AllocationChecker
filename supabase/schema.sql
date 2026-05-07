@@ -287,3 +287,81 @@ CREATE INDEX IF NOT EXISTS idx_pending_orders_status ON pending_orders(status);
 CREATE INDEX IF NOT EXISTS idx_pending_orders_market ON pending_orders(market);
 CREATE INDEX IF NOT EXISTS idx_pending_orders_symbol ON pending_orders(symbol);
 CREATE INDEX IF NOT EXISTS idx_pending_orders_order_time ON pending_orders(order_time DESC);
+
+-- ============================================================
+-- ma_ladder_settings (MA 계단식 자동매수 설정)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS ma_ladder_settings (
+  id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id              UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  symbol               TEXT NOT NULL,
+  market               TEXT NOT NULL DEFAULT 'overseas' CHECK (market IN ('domestic', 'overseas')),
+  broker_type          TEXT NOT NULL DEFAULT 'kis' CHECK (broker_type IN ('kis', 'kiwoom')),
+  broker_credential_id UUID REFERENCES broker_credentials(id) ON DELETE SET NULL,
+  is_enabled           BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE ma_ladder_settings ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "ma_ladder_settings_owner" ON ma_ladder_settings
+  FOR ALL USING (auth.uid() = user_id);
+
+CREATE INDEX IF NOT EXISTS idx_ma_ladder_settings_user ON ma_ladder_settings(user_id);
+CREATE INDEX IF NOT EXISTS idx_ma_ladder_settings_enabled ON ma_ladder_settings(is_enabled);
+
+-- ============================================================
+-- ma_ladder_levels (MA별 주문 수량 설정)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS ma_ladder_levels (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  setting_id   UUID NOT NULL REFERENCES ma_ladder_settings(id) ON DELETE CASCADE,
+  -- MA(3~240) 또는 Ichimoku 스팬(9001~9008)
+  ma_period    INTEGER NOT NULL CHECK (ma_period IN (3, 5, 10, 20, 60, 120, 240, 9001, 9002, 9003, 9004, 9005, 9006, 9007, 9008)),
+  quantity     INTEGER NOT NULL DEFAULT 1 CHECK (quantity > 0),
+  is_enabled   BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE ma_ladder_levels ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "ma_ladder_levels_owner" ON ma_ladder_levels
+  FOR ALL USING (
+    EXISTS (
+      SELECT 1 FROM ma_ladder_settings s
+      WHERE s.id = ma_ladder_levels.setting_id
+        AND s.user_id = auth.uid()
+    )
+  );
+
+CREATE INDEX IF NOT EXISTS idx_ma_ladder_levels_setting ON ma_ladder_levels(setting_id);
+
+-- ============================================================
+-- ma_ladder_orders (MA 계단식 주문 추적)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS ma_ladder_orders (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  setting_id      UUID NOT NULL REFERENCES ma_ladder_settings(id) ON DELETE CASCADE,
+  user_id         UUID NOT NULL REFERENCES auth.users(id),
+  symbol          TEXT NOT NULL,
+  ma_period       INTEGER NOT NULL,
+  ma_price        NUMERIC(20, 6) NOT NULL,
+  quantity        INTEGER NOT NULL,
+  broker_order_id TEXT,
+  status          TEXT NOT NULL DEFAULT 'pending'
+                    CHECK (status IN ('pending', 'submitted', 'filled', 'cancelled', 'failed')),
+  order_date      DATE NOT NULL DEFAULT CURRENT_DATE,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE ma_ladder_orders ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "ma_ladder_orders_service_all" ON ma_ladder_orders
+  FOR ALL USING (true);
+
+CREATE INDEX IF NOT EXISTS idx_ma_ladder_orders_setting ON ma_ladder_orders(setting_id);
+CREATE INDEX IF NOT EXISTS idx_ma_ladder_orders_user ON ma_ladder_orders(user_id);
+CREATE INDEX IF NOT EXISTS idx_ma_ladder_orders_date ON ma_ladder_orders(order_date DESC);
+CREATE INDEX IF NOT EXISTS idx_ma_ladder_orders_status ON ma_ladder_orders(status);

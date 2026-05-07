@@ -14,6 +14,7 @@ interface StrategyCalcProps {
   variableBuy: boolean;
   market?: 'US' | 'KR';
   version?: StrategyVersion;
+  currentCycle?: number;
 }
 
 function fmtP(price: number, market: 'US' | 'KR' = 'US'): string {
@@ -216,7 +217,7 @@ function simulateFreshScenario(
   };
 }
 
-export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy, market = 'US', version = 'v2.2' }: StrategyCalcProps) {
+export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy, market = 'US', version = 'v2.2', currentCycle = 1 }: StrategyCalcProps) {
   const [currentPrice, setCurrentPrice] = useState<number | null>(null);
   const [loadingPrice, setLoadingPrice] = useState(false);
   const [position, setPosition] = useState<TrackerPosition | null>(null);
@@ -259,10 +260,10 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy, mark
   // 트래커 포지션 가져오기 (API에서)
   const loadPosition = useCallback(async () => {
     setLoadingPosition(true);
-    const pos = await fetchTrackerPosition(symbol);
+    const pos = await fetchTrackerPosition(symbol, currentCycle);
     setPosition(pos);
     setLoadingPosition(false);
-  }, [symbol]);
+  }, [symbol, currentCycle]);
 
   useEffect(() => {
     loadPosition();

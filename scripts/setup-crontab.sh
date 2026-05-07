@@ -7,7 +7,7 @@
 # 설정값 (여기만 수정하세요)
 # ==============================
 APP_URL="https://allocation-checker-mu.vercel.app"
-CRON_SECRET="여기에_CRON_SECRET_입력"
+CRON_SECRET="6d3a56476879219d547e9aad0bb9eb893ee97cfdf40e81bfcab3deadf389965d"
 
 # ==============================
 # Crontab 생성
@@ -24,16 +24,16 @@ cat << EOF | crontab -
 # ========================================
 
 # 아침 알림 - 08:30 월~금
-30 8 * * 1-5 curl -s -X GET "${APP_URL}/api/auto-trade/morning-alert" -H "Authorization: Bearer ${CRON_SECRET}" > /dev/null 2>&1
+#30 8 * * 1-5 curl -s -X GET "${APP_URL}/api/auto-trade/morning-alert" -H "Authorization: Bearer ${CRON_SECRET}" > /dev/null 2>&1
 
 # DCA 국내 아침 - 09:05 월~금
-5 9 * * 1-5 curl -s -X GET "${APP_URL}/api/auto-trade/dca/cron/morning?market=domestic" -H "Authorization: Bearer ${CRON_SECRET}" > /dev/null 2>&1
+#5 9 * * 1-5 curl -s -X GET "${APP_URL}/api/auto-trade/dca/cron/morning?market=domestic" -H "Authorization: Bearer ${CRON_SECRET}" > /dev/null 2>&1
 
 # DCA 국내 장마감 - 15:32 월~금
 32 15 * * 1-5 curl -s -X GET "${APP_URL}/api/auto-trade/dca/cron/preclose?market=domestic" -H "Authorization: Bearer ${CRON_SECRET}" > /dev/null 2>&1
 
 # DCA 해외 아침 (서머타임 EDT) - 22:30 월~금
-30 22 * * 1-5 curl -s -X GET "${APP_URL}/api/auto-trade/dca/cron/morning?market=overseas" -H "Authorization: Bearer ${CRON_SECRET}" > /dev/null 2>&1
+#30 22 * * 1-5 curl -s -X GET "${APP_URL}/api/auto-trade/dca/cron/morning?market=overseas" -H "Authorization: Bearer ${CRON_SECRET}" > /dev/null 2>&1
 
 # DCA 해외 아침 (표준시 EST) - 23:30 월~금
 # 서머타임 끝나면 위 22:30을 주석처리하고 아래 주석 해제

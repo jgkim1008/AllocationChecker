@@ -5,13 +5,124 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowLeft, RefreshCw, TrendingUp, TrendingDown,
-  ChevronRight, ChevronUp, ChevronDown, Layers,
+  ChevronRight, ChevronUp, ChevronDown, Layers, BarChart2,
 } from 'lucide-react';
 import { PremiumGate } from '@/components/PremiumGate';
 import { getClientCache, setClientCache, clearClientCache } from '@/lib/client-cache';
 import type { InbumBijagStock, InbumSignal } from '@/app/api/strategies/inbum-bijag/scan/route';
 
 const CACHE_KEY = '/api/strategies/inbum-bijag/scan';
+
+// ── 지수 비교 ─────────────────────────────────────────────────
+interface BenchmarkSeries {
+  id: string;
+  name: string;
+  color: string;
+  data: { date: string; value: number }[];
+}
+
+const PERIOD_WEEKS = { '1M': 4, '3M': 13, '6M': 26, '1Y': 52 } as const;
+type PeriodKey = keyof typeof PERIOD_WEEKS;
+
+function getPeriodReturn(data: { date: string; value: number }[], weeks: number): number | null {
+  if (data.length < 2) return null;
+  const last = data[data.length - 1].value;
+  const targetIdx = Math.max(0, data.length - 1 - weeks);
+  const base = data[targetIdx].value;
+  return Math.round((last / base - 1) * 1000) / 10;
+}
+
+function ReturnCell({ pct }: { pct: number | null }) {
+  if (pct === null) return <td className="px-3 py-2.5 text-right text-xs text-gray-300">-</td>;
+  const positive = pct >= 0;
+  return (
+    <td className={`px-3 py-2.5 text-right text-xs font-bold tabular-nums ${positive ? 'text-emerald-600' : 'text-red-500'}`}>
+      {positive ? '+' : ''}{pct.toFixed(1)}%
+    </td>
+  );
+}
+
+// 지수 id → 상세 페이지 이동 정보
+const INDEX_NAV: Record<string, { symbol: string; market: 'US' | 'KR'; name: string }> = {
+  KOSPI:  { symbol: '%5EKS11', market: 'KR', name: 'KOSPI' },
+  KOSDAQ: { symbol: '%5EKQ11', market: 'KR', name: 'KOSDAQ' },
+  SP500:  { symbol: '%5EGSPC', market: 'US', name: 'S&P 500' },
+  NASDAQ: { symbol: '%5EIXIC', market: 'US', name: 'NASDAQ' },
+  SOXL:   { symbol: 'SOXL',   market: 'US', name: 'SOXL' },
+};
+
+function IndexTable({ benchmarks, loading }: { benchmarks: BenchmarkSeries[]; loading: boolean }) {
+  const router = useRouter();
+
+  const handleRowClick = (id: string) => {
+    const nav = INDEX_NAV[id];
+    if (!nav) return;
+    router.push(
+      `/strategies/inbum-bijag/${nav.symbol}?market=${nav.market}&name=${encodeURIComponent(nav.name)}`
+    );
+  };
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden mb-6">
+      <div className="flex items-center gap-2 px-5 py-3 border-b border-gray-100 bg-gray-50">
+        <BarChart2 className="h-4 w-4 text-gray-400" />
+        <span className="text-sm font-black text-gray-700">5대 지수 수익률</span>
+        <span className="text-[10px] text-gray-400 ml-auto">주봉 기준 / 누적 수익률 · 클릭 시 상세 분석</span>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full">
+          <thead>
+            <tr className="border-b border-gray-100">
+              <th className="px-3 py-2.5 text-left text-[10px] font-black text-gray-400 uppercase tracking-wider">지수</th>
+              {(Object.keys(PERIOD_WEEKS) as PeriodKey[]).map(p => (
+                <th key={p} className="px-3 py-2.5 text-right text-[10px] font-black text-gray-400 uppercase tracking-wider">{p}</th>
+              ))}
+              <th className="px-2 py-2.5 w-8" />
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              Array.from({ length: 5 }).map((_, i) => (
+                <tr key={i} className="border-b border-gray-50">
+                  <td className="px-3 py-2.5"><div className="h-4 w-20 bg-gray-100 rounded animate-pulse" /></td>
+                  {[0,1,2,3].map(j => (
+                    <td key={j} className="px-3 py-2.5 text-right"><div className="h-4 w-12 bg-gray-100 rounded animate-pulse ml-auto" /></td>
+                  ))}
+                  <td className="px-2 py-2.5" />
+                </tr>
+              ))
+            ) : benchmarks.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="px-3 py-6 text-center text-xs text-gray-400">지수 데이터를 불러오는 중입니다...</td>
+              </tr>
+            ) : (
+              benchmarks.map(b => (
+                <tr
+                  key={b.id}
+                  onClick={() => handleRowClick(b.id)}
+                  className="border-b border-gray-50 hover:bg-violet-50 transition-colors cursor-pointer group"
+                >
+                  <td className="px-3 py-2.5">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: b.color }} />
+                      <span className="text-xs font-bold text-gray-700 group-hover:text-violet-700 transition-colors">{b.name}</span>
+                    </div>
+                  </td>
+                  {(Object.entries(PERIOD_WEEKS) as [PeriodKey, number][]).map(([period, weeks]) => (
+                    <ReturnCell key={period} pct={getPeriodReturn(b.data, weeks)} />
+                  ))}
+                  <td className="px-2 py-2.5">
+                    <ChevronRight className="h-4 w-4 text-gray-300 group-hover:text-violet-500 transition-colors" />
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
 
 type SortKey = 'signal' | 'symbol' | 'price' | 'channelLevel' | 'cloudThickness';
 type SortOrder = 'asc' | 'desc';
@@ -33,10 +144,10 @@ const SIGNAL_META: Record<InbumSignal, { label: string; cls: string; priority: n
 };
 
 function SignalBadge({ signal }: { signal: InbumSignal }) {
-  const { label, cls } = SIGNAL_META[signal];
+  const meta = SIGNAL_META[signal] ?? { label: signal, cls: 'bg-gray-100 text-gray-500' };
   return (
-    <span className={`inline-flex items-center px-2 py-1 rounded-lg text-xs font-black ${cls}`}>
-      {label}
+    <span className={`inline-flex items-center px-2 py-1 rounded-lg text-xs font-black ${meta.cls}`}>
+      {meta.label}
     </span>
   );
 }
@@ -157,6 +268,8 @@ export default function InbumBijagPage() {
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>('signal');
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
+  const [benchmarks, setBenchmarks] = useState<BenchmarkSeries[]>([]);
+  const [benchmarksLoading, setBenchmarksLoading] = useState(true);
 
   const fetchData = useCallback(async (force = false) => {
     if (!force) {
@@ -187,6 +300,19 @@ export default function InbumBijagPage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  // 지수 벤치마크 fetch (1년치 주봉)
+  useEffect(() => {
+    const from = new Date();
+    from.setFullYear(from.getFullYear() - 1);
+    const fromStr = from.toISOString().split('T')[0];
+    setBenchmarksLoading(true);
+    fetch(`/api/strategies/benchmark?from=${fromStr}`)
+      .then(r => r.json())
+      .then(d => { setBenchmarks(d.benchmarks || []); })
+      .catch(() => {})
+      .finally(() => setBenchmarksLoading(false));
+  }, []);
+
   const handleSort = useCallback((key: SortKey) => {
     if (sortKey === key) {
       setSortOrder(o => o === 'asc' ? 'desc' : 'asc');
@@ -200,7 +326,7 @@ export default function InbumBijagPage() {
     return [...stocks].sort((a, b) => {
       let cmp = 0;
       switch (sortKey) {
-        case 'signal':        cmp = SIGNAL_META[a.signal].priority - SIGNAL_META[b.signal].priority; break;
+        case 'signal':        cmp = (SIGNAL_META[a.signal]?.priority ?? 0) - (SIGNAL_META[b.signal]?.priority ?? 0); break;
         case 'symbol':        cmp = a.symbol.localeCompare(b.symbol); break;
         case 'price':         cmp = a.currentPrice - b.currentPrice; break;
         case 'channelLevel':  cmp = (a.channelLevel ?? 999) - (b.channelLevel ?? 999); break;
@@ -258,6 +384,9 @@ export default function InbumBijagPage() {
         </div>
 
         <PremiumGate featureName="인범 빗각 구름대 전략">
+
+          {/* 5대 지수 수익률 테이블 */}
+          <IndexTable benchmarks={benchmarks} loading={benchmarksLoading} />
 
           {/* 요약 통계 */}
           {!loading && stocks.length > 0 && (

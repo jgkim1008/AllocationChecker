@@ -150,6 +150,14 @@ export function useInfiniteBuyRecords(symbol: string, cycleNumber: number = 1) {
     fetchRecords();
   }, [fetchRecords]);
 
+  // 5초마다 자동 동기화 (다른 탭에서 데이터 변경 감지)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchRecords();
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [fetchRecords]);
+
   return {
     records,
     sellRecords,

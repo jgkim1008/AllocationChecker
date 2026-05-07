@@ -15,6 +15,20 @@
     "app/api/fibonacci/scan/route.ts": {
       "memory": 1024,
       "maxDuration": 300
+    },
+    "app/api/signal-trade/ma-ladder/execute/route.ts": {
+      "memory": 1024,
+      "maxDuration": 60
+    },
+    "app/api/signal-trade/ma-ladder/cron/route.ts": {
+      "memory": 1024,
+      "maxDuration": 60
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/signal-trade/ma-ladder/cron",
+      "schedule": "0 0 * * *"
+    }
+  ]
 }

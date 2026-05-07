@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import {
   createChart, ColorType, CrosshairMode,
-  CandlestickSeries, LineSeries, PriceScaleMode, createSeriesMarkers,
+  CandlestickSeries, LineSeries, AreaSeries, PriceScaleMode, createSeriesMarkers,
 } from 'lightweight-charts';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -87,7 +87,67 @@ function BijagChart({
       timeScale: { borderColor: '#374151', timeVisible: false },
     });
 
-    // ① 캔들
+    // ① 구름대 (캔들보다 먼저 그려 뒤에 위치)
+    const CHART_BG = '#111827';
+    if (showCloud && ichimoku.length > 0) {
+      // SpanA/B 매핑
+      type CloudPt = { time: string; spanA: number; spanB: number };
+      const cloudPts: CloudPt[] = [];
+      sorted.forEach(c => {
+        const ich = ichimoku.find(p => p.date === c.date);
+        if (ich?.spanA != null && ich?.spanB != null)
+          cloudPts.push({ time: c.date, spanA: ich.spanA, spanB: ich.spanB });
+      });
+
+      // 연속 구간 분리 (양운/음운)
+      interface CloudSeg { bullish: boolean; pts: CloudPt[] }
+      const segs: CloudSeg[] = [];
+      for (const pt of cloudPts) {
+        const bullish = pt.spanA >= pt.spanB;
+        if (!segs.length || segs[segs.length - 1].bullish !== bullish)
+          segs.push({ bullish, pts: [pt] });
+        else
+          segs[segs.length - 1].pts.push(pt);
+      }
+
+      for (const seg of segs) {
+        if (seg.pts.length < 1) continue;
+        const topData = seg.pts.map(p => ({ time: p.time as string, value: seg.bullish ? p.spanA : p.spanB }));
+        const botData = seg.pts.map(p => ({ time: p.time as string, value: seg.bullish ? p.spanB : p.spanA }));
+        const fillColor = seg.bullish ? 'rgba(22,163,74,0.28)' : 'rgba(220,38,38,0.28)';
+        const lineColor = seg.bullish ? '#16a34a' : '#dc2626';
+
+        // 색상 채우기 (위→0)
+        chart.addSeries(AreaSeries, {
+          lineColor,
+          lineWidth: 1,
+          topColor: fillColor,
+          bottomColor: fillColor,
+          priceLineVisible: false,
+          lastValueVisible: false,
+        }).setData(topData);
+
+        // 하단 마스킹 (하단선→0 영역을 bg로 덮어 색을 지움)
+        chart.addSeries(AreaSeries, {
+          lineColor: CHART_BG,
+          lineWidth: 1,
+          topColor: CHART_BG,
+          bottomColor: CHART_BG,
+          priceLineVisible: false,
+          lastValueVisible: false,
+        }).setData(botData);
+      }
+
+      // SpanA/B 외곽선 (구름 위에 점선으로 표시)
+      const spanALine = cloudPts.map(p => ({ time: p.time as string, value: p.spanA }));
+      const spanBLine = cloudPts.map(p => ({ time: p.time as string, value: p.spanB }));
+      if (spanALine.length > 0)
+        chart.addSeries(LineSeries, { color: '#16a34a', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: true, title: 'SpanA' }).setData(spanALine);
+      if (spanBLine.length > 0)
+        chart.addSeries(LineSeries, { color: '#dc2626', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: true, title: 'SpanB' }).setData(spanBLine);
+    }
+
+    // ② 캔들
     const candleSeries = chart.addSeries(CandlestickSeries, {
       upColor: '#ef4444', downColor: '#3b82f6',
       borderUpColor: '#ef4444', borderDownColor: '#3b82f6',
@@ -149,21 +209,6 @@ function BijagChart({
       addMarker(channel.p2, 'P2', isHHLType);
       addMarker(channel.p3, 'P3', !isHHLType);
       if (markers.length > 0) createSeriesMarkers(candleSeries as any, markers);
-    }
-
-    // ③ 구름대 SpanA/B
-    if (showCloud && ichimoku.length > 0) {
-      const spanAData: { time: string; value: number }[] = [];
-      const spanBData: { time: string; value: number }[] = [];
-      sorted.forEach(c => {
-        const ich = ichimoku.find(p => p.date === c.date);
-        if (ich?.spanA != null) spanAData.push({ time: c.date, value: ich.spanA });
-        if (ich?.spanB != null) spanBData.push({ time: c.date, value: ich.spanB });
-      });
-      if (spanAData.length > 0)
-        chart.addSeries(LineSeries, { color: '#16a34a', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: true, title: 'SpanA' }).setData(spanAData);
-      if (spanBData.length > 0)
-        chart.addSeries(LineSeries, { color: '#dc2626', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: true, title: 'SpanB' }).setData(spanBData);
     }
 
     // ④ 현재가 시그널 마커
