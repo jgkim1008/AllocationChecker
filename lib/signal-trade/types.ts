@@ -82,6 +82,9 @@ export interface SignalTradePosition {
   realized_pnl: number | null;
   realized_pnl_pct: number | null;
 
+  // 예약주문 (익절/손절)
+  auto_order_id: string | null;
+
   created_at: string;
   updated_at: string;
 }

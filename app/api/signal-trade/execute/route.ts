@@ -14,6 +14,7 @@ import { evaluateSignal, getCurrentPrice } from '@/lib/signal-trade/signal-evalu
 import { evaluateExit, calculatePnL } from '@/lib/signal-trade/exit-evaluator';
 import type { SignalTradeSettings, SignalTradePosition, SignalStrategyType } from '@/lib/signal-trade/types';
 import type { BrokerType, MarketType } from '@/lib/broker/types';
+import { KISClient } from '@/lib/broker/kis';
 
 const CRON_SECRET = process.env.CRON_SECRET;
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -165,6 +166,15 @@ export async function POST(request: NextRequest) {
           const exitResult = await evaluateExit(position, currentPrice, setting, toSignalMarket(market));
 
           if (exitResult.shouldExit && exitResult.reason) {
+            // 예약주문이 있으면 먼저 취소 (KIS 해외주식)
+            if (position.auto_order_id && broker_type === 'kis' && market === 'overseas' && clientResult.client instanceof KISClient) {
+              const kisClient = clientResult.client as KISClient;
+              const cancelResult = await kisClient.cancelOverseasAutoOrder(position.auto_order_id, symbol);
+              if (!cancelResult.success) {
+                console.warn('예약주문 취소 실패:', cancelResult.error?.message);
+              }
+            }
+
             // 매도 주문 실행
             const orderResult = await clientResult.client.createOrder({
               symbol,
@@ -186,6 +196,7 @@ export async function POST(request: NextRequest) {
                   exit_reason: exitResult.reason,
                   realized_pnl: realizedPnL,
                   realized_pnl_pct: exitResult.currentPnL,
+                  auto_order_id: null,  // 예약주문 ID 초기화
                   updated_at: new Date().toISOString(),
                 })
                 .eq('id', position.id);
@@ -256,6 +267,45 @@ export async function POST(request: NextRequest) {
               });
 
               if (orderResult.success) {
+                let autoOrderId: string | null = null;
+
+                // 해외주식이고 KIS인 경우, 익절/손절 예약주문 등록
+                if (market === 'overseas' && broker_type === 'kis' && clientResult.client instanceof KISClient) {
+                  const kisClient = clientResult.client as KISClient;
+
+                  // 익절/손절 가격 계산
+                  const takeProfitPrice = setting.take_profit_pct
+                    ? currentPrice * (1 + setting.take_profit_pct / 100)
+                    : undefined;
+                  const stopLossPrice = setting.stop_loss_pct
+                    ? currentPrice * (1 + setting.stop_loss_pct / 100)  // stop_loss_pct는 음수로 저장됨
+                    : undefined;
+
+                  // 익절 또는 손절 설정이 있을 때만 예약주문 등록
+                  if (takeProfitPrice || stopLossPrice) {
+                    // 유효기간: max_hold_days 또는 30일 (최대)
+                    const holdDays = Math.min(setting.max_hold_days || 30, 30);
+                    const expirationDate = new Date();
+                    expirationDate.setDate(expirationDate.getDate() + holdDays);
+                    const expDateStr = expirationDate.toISOString().split('T')[0].replace(/-/g, '');
+
+                    const autoOrderResult = await kisClient.createOverseasAutoOrder({
+                      symbol,
+                      side: 'sell',  // 보유 후 매도 예약
+                      quantity,
+                      takeProfitPrice,
+                      stopLossPrice,
+                      expirationDate: expDateStr,
+                    });
+
+                    if (autoOrderResult.success && autoOrderResult.data) {
+                      autoOrderId = autoOrderResult.data.reservationId;
+                    } else {
+                      console.warn('예약주문 등록 실패:', autoOrderResult.error?.message);
+                    }
+                  }
+                }
+
                 // 포지션 생성
                 await serviceClient
                   .from('signal_trade_positions')
@@ -270,8 +320,10 @@ export async function POST(request: NextRequest) {
                     entry_signal_type: strategy_type,
                     entry_sync_rate: signal.syncRate,
                     status: 'open',
+                    auto_order_id: autoOrderId,
                   });
 
+                const autoOrderMsg = autoOrderId ? ` [예약주문: ${autoOrderId}]` : '';
                 results.push({
                   settingId,
                   userId: user_id,
@@ -279,7 +331,7 @@ export async function POST(request: NextRequest) {
                   strategy: getStrategyName(strategy_type),
                   action: 'entry',
                   success: true,
-                  message: `진입: ${quantity}주 @ $${currentPrice.toFixed(2)} (싱크${signal.syncRate}%)`,
+                  message: `진입: ${quantity}주 @ $${currentPrice.toFixed(2)} (싱크${signal.syncRate}%)${autoOrderMsg}`,
                 });
               } else {
                 results.push({
