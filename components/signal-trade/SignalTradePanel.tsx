@@ -259,7 +259,7 @@ export function SignalTradePanel() {
                             일봉 전략
                           </div>
                           {SIGNAL_STRATEGIES.filter(
-                            (s) => s.category === 'daily' && s.autoTradeEnabled
+                            (s) => s.category === 'daily' && s.autoTradeEnabled && !s.id.startsWith('kis-')
                           ).map((s) => (
                             <SelectItem key={s.id} value={s.id}>
                               {s.name}
@@ -293,6 +293,17 @@ export function SignalTradePanel() {
                           </div>
                           {SIGNAL_STRATEGIES.filter(
                             (s) => s.category === 'monthly' && s.autoTradeEnabled
+                          ).map((s) => (
+                            <SelectItem key={s.id} value={s.id}>
+                              {s.name}
+                            </SelectItem>
+                          ))}
+                          {/* KIS Strategy Builder */}
+                          <div className="px-2 py-1 text-xs font-semibold text-amber-600 mt-1 border-t border-gray-100 pt-2">
+                            KIS 전략
+                          </div>
+                          {SIGNAL_STRATEGIES.filter(
+                            (s) => s.id.startsWith('kis-') && s.autoTradeEnabled
                           ).map((s) => (
                             <SelectItem key={s.id} value={s.id}>
                               {s.name}

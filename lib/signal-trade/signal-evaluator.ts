@@ -8,6 +8,17 @@ import { detectAllPatterns } from '@/lib/utils/chart-pattern-calculator';
 import { calculateMonthlyMA, fetchMonthlyCandles } from '@/lib/utils/monthly-ma-calculator';
 import { calculateForking, fetchMonthlyCandles as fetchForkingCandles } from '@/lib/utils/forking-calculator';
 import { fetchWeeklyCandles as fetchInbumWeekly, analyzeInbumBijag } from '@/lib/utils/inbum-bijag-calculator';
+// KIS Strategy Builder calculators
+import { calculateGoldenCross } from '@/lib/utils/kis-golden-cross-calculator';
+import { calculateMomentum } from '@/lib/utils/kis-momentum-calculator';
+import { calculateWeek52High } from '@/lib/utils/kis-week52-high-calculator';
+import { calculateConsecutive } from '@/lib/utils/kis-consecutive-calculator';
+import { calculateDisparity } from '@/lib/utils/kis-disparity-calculator';
+import { calculateBreakoutFail } from '@/lib/utils/kis-breakout-fail-calculator';
+import { calculateStrongClose } from '@/lib/utils/kis-strong-close-calculator';
+import { calculateVolatility } from '@/lib/utils/kis-volatility-calculator';
+import { calculateMeanReversion } from '@/lib/utils/kis-mean-reversion-calculator';
+import { calculateTrendFilter } from '@/lib/utils/kis-trend-filter-calculator';
 import type { SignalStrategyType, SignalResult } from './types';
 import { SIGNAL_STRATEGIES } from './types';
 
@@ -240,6 +251,87 @@ export async function evaluateSignal(
         criteria: { separateModule: true },
       };
     }
+    // ── KIS Strategy Builder 전략 ──
+    case 'kis-golden-cross': {
+      const calc = calculateGoldenCross(history, currentPrice, currentVolume);
+      result = {
+        syncRate: calc.syncRate,
+        criteria: calc.criteria,
+      };
+      break;
+    }
+    case 'kis-momentum': {
+      const calc = calculateMomentum(history, currentPrice, currentVolume);
+      result = {
+        syncRate: calc.syncRate,
+        criteria: calc.criteria,
+      };
+      break;
+    }
+    case 'kis-week52-high': {
+      const calc = calculateWeek52High(history, currentPrice, currentVolume);
+      result = {
+        syncRate: calc.syncRate,
+        criteria: calc.criteria,
+      };
+      break;
+    }
+    case 'kis-consecutive': {
+      const calc = calculateConsecutive(history);
+      result = {
+        syncRate: calc.syncRate,
+        criteria: calc.criteria,
+      };
+      break;
+    }
+    case 'kis-disparity': {
+      const calc = calculateDisparity(history, currentPrice);
+      result = {
+        syncRate: calc.syncRate,
+        criteria: calc.criteria,
+      };
+      break;
+    }
+    case 'kis-breakout-fail': {
+      const calc = calculateBreakoutFail(history, currentPrice, currentVolume);
+      result = {
+        syncRate: calc.syncRate,
+        criteria: calc.criteria,
+      };
+      break;
+    }
+    case 'kis-strong-close': {
+      const calc = calculateStrongClose(history, currentPrice, currentVolume);
+      result = {
+        syncRate: calc.syncRate,
+        criteria: calc.criteria,
+      };
+      break;
+    }
+    case 'kis-volatility': {
+      const calc = calculateVolatility(history, currentPrice, currentVolume);
+      result = {
+        syncRate: calc.syncRate,
+        criteria: calc.criteria,
+      };
+      break;
+    }
+    case 'kis-mean-reversion': {
+      const calc = calculateMeanReversion(history, currentPrice);
+      result = {
+        syncRate: calc.syncRate,
+        criteria: calc.criteria,
+      };
+      break;
+    }
+    case 'kis-trend-filter': {
+      const calc = calculateTrendFilter(history, currentPrice, currentVolume);
+      result = {
+        syncRate: calc.syncRate,
+        criteria: calc.criteria,
+      };
+      break;
+    }
     default:
       return {
         isActive: false,
@@ -318,6 +410,47 @@ function checkEntryConditions(
     case 'infinite-buy':
       // 무한매수법은 별도 모듈 사용
       return false;
+
+    // ── KIS Strategy Builder 전략 ──
+    case 'kis-golden-cross':
+      // 골든크로스 상태 + 최근 크로스 발생
+      return criteria.isGoldenCross === true && criteria.isFreshCross === true;
+
+    case 'kis-momentum':
+      // 60일 수익률 >= 30%
+      return criteria.isMomentumStrong === true;
+
+    case 'kis-week52-high':
+      // 52주 신고가 돌파
+      return criteria.isNewHigh === true;
+
+    case 'kis-consecutive':
+      // 5일 연속 상승
+      return criteria.isConsecutiveUp === true;
+
+    case 'kis-disparity':
+      // 이격도 < 90% (과매도)
+      return criteria.isOversold === true;
+
+    case 'kis-breakout-fail':
+      // 돌파 실패 (매도 신호이므로 isActive=true일 때 청산)
+      return criteria.isBreakoutFail === true;
+
+    case 'kis-strong-close':
+      // 종가 상위 80%
+      return criteria.isStrongClose === true;
+
+    case 'kis-volatility':
+      // 저변동 + 3% 돌파
+      return criteria.isVolatilityBreakout === true;
+
+    case 'kis-mean-reversion':
+      // MA5 × 97% 미만 (평균회귀 매수)
+      return criteria.isMeanReversion === true;
+
+    case 'kis-trend-filter':
+      // 종가 > MA60 AND 전일대비 상승
+      return criteria.isTrendUp === true && criteria.isPriceUp === true;
 
     default:
       return false;

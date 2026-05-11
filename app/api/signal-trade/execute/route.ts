@@ -62,6 +62,17 @@ function getStrategyName(type: SignalStrategyType): string {
     'decline-box': '하락 박스',
     'inbum-bijag': '인범 빗각+구름대',
     'infinite-buy': '무한매수법',
+    // KIS Strategy Builder 전략
+    'kis-golden-cross': '골든크로스',
+    'kis-momentum': '모멘텀',
+    'kis-week52-high': '52주 신고가',
+    'kis-consecutive': '연속 상승',
+    'kis-disparity': '이격도',
+    'kis-breakout-fail': '돌파 실패',
+    'kis-strong-close': '강한 종가',
+    'kis-volatility': '변동성 확장',
+    'kis-mean-reversion': '평균회귀',
+    'kis-trend-filter': '추세 필터',
   };
   return names[type] || type;
 }

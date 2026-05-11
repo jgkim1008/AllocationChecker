@@ -12,7 +12,18 @@ export type SignalStrategyType =
   | 'weekly-sr'              // 주봉 SR채널 전략
   | 'decline-box'            // 하락 박스 전략
   | 'inbum-bijag'            // 인범 빗각채널 + 구름대 전략
-  | 'infinite-buy';          // 무한매수법 (자동매매 비활성)
+  | 'infinite-buy'           // 무한매수법 (자동매매 비활성)
+  // KIS Strategy Builder 전략
+  | 'kis-golden-cross'       // 골든크로스 (MA5 > MA20 상향돌파)
+  | 'kis-momentum'           // 모멘텀 (60일 수익률 ≥ 30%)
+  | 'kis-week52-high'        // 52주 신고가
+  | 'kis-consecutive'        // 연속 상승 (5일 연속)
+  | 'kis-disparity'          // 이격도 (< 90% 과매도)
+  | 'kis-breakout-fail'      // 돌파 실패 (매도용)
+  | 'kis-strong-close'       // 강한 종가 (상위 80%)
+  | 'kis-volatility'         // 변동성 확장
+  | 'kis-mean-reversion'     // 평균회귀
+  | 'kis-trend-filter';      // 추세 필터
 
 export type ExitReason =
   | 'take_profit'
@@ -231,6 +242,88 @@ export const SIGNAL_STRATEGIES: SignalStrategyInfo[] = [
     category: 'system',
     autoTradeEnabled: false,  // 별도 DCA 모듈 사용
   },
+
+  // ── KIS Strategy Builder 전략 ──
+  {
+    id: 'kis-golden-cross',
+    name: '골든크로스',
+    description: 'MA5가 MA20을 상향 돌파할 때 매수',
+    requiredHistory: 25,
+    category: 'daily',
+    autoTradeEnabled: true,
+  },
+  {
+    id: 'kis-momentum',
+    name: '모멘텀',
+    description: '60일 수익률이 30% 이상인 강한 상승 모멘텀 종목 매수',
+    requiredHistory: 65,
+    category: 'daily',
+    autoTradeEnabled: true,
+  },
+  {
+    id: 'kis-week52-high',
+    name: '52주 신고가',
+    description: '현재가가 52주 최고가를 돌파할 때 매수',
+    requiredHistory: 252,
+    category: 'daily',
+    autoTradeEnabled: true,
+  },
+  {
+    id: 'kis-consecutive',
+    name: '연속 상승',
+    description: '5일 연속 상승 시 추세 추종 매수',
+    requiredHistory: 10,
+    category: 'daily',
+    autoTradeEnabled: true,
+  },
+  {
+    id: 'kis-disparity',
+    name: '이격도',
+    description: '이격도가 90% 미만(과매도)일 때 반등 매수',
+    requiredHistory: 25,
+    category: 'daily',
+    autoTradeEnabled: true,
+  },
+  {
+    id: 'kis-breakout-fail',
+    name: '돌파 실패',
+    description: '전고점 돌파 후 3일 내 3% 하락 시 매도 신호',
+    requiredHistory: 25,
+    category: 'daily',
+    autoTradeEnabled: true,
+  },
+  {
+    id: 'kis-strong-close',
+    name: '강한 종가',
+    description: '종가가 일중 범위의 상위 80%에 위치할 때 매수',
+    requiredHistory: 5,
+    category: 'daily',
+    autoTradeEnabled: true,
+  },
+  {
+    id: 'kis-volatility',
+    name: '변동성 확장',
+    description: '저변동성 구간에서 당일 3% 이상 상승 돌파 시 매수',
+    requiredHistory: 15,
+    category: 'daily',
+    autoTradeEnabled: true,
+  },
+  {
+    id: 'kis-mean-reversion',
+    name: '평균회귀',
+    description: '현재가가 MA5 × 97% 미만일 때 반등 매수',
+    requiredHistory: 10,
+    category: 'daily',
+    autoTradeEnabled: true,
+  },
+  {
+    id: 'kis-trend-filter',
+    name: '추세 필터',
+    description: '종가 > MA60 AND 전일대비 상승일 때 매수',
+    requiredHistory: 65,
+    category: 'daily',
+    autoTradeEnabled: true,
+  },
 ];
 
 // 전략별 핵심 조건 매핑
@@ -247,4 +340,15 @@ export const STRATEGY_ENTRY_CONDITIONS: Record<SignalStrategyType, string[]> = {
   'decline-box': ['isAtBoxBottom', 'isReboundSignal'],  // 박스 하단 + 반등 신호
   'inbum-bijag': ['isConfluence', 'isAboveCloud'],      // 채널+구름 동시 또는 N자 리테스트
   'infinite-buy': [],  // 별도 로직 (무한매수법 모듈 사용)
+  // KIS Strategy Builder 전략
+  'kis-golden-cross': ['isGoldenCross', 'isFreshCross'],   // MA5 > MA20 상향돌파
+  'kis-momentum': ['isMomentumStrong'],                     // 60일 수익률 ≥ 30%
+  'kis-week52-high': ['isNewHigh'],                         // 52주 신고가 돌파
+  'kis-consecutive': ['isConsecutiveUp'],                   // 5일 연속 상승
+  'kis-disparity': ['isOversold'],                          // 이격도 < 90%
+  'kis-breakout-fail': ['isBreakoutFail'],                  // 돌파 실패 (매도 신호)
+  'kis-strong-close': ['isStrongClose'],                    // 종가 상위 80%
+  'kis-volatility': ['isVolatilityBreakout'],               // 저변동 + 3% 돌파
+  'kis-mean-reversion': ['isMeanReversion'],                // MA5 × 97% 미만
+  'kis-trend-filter': ['isTrendUp', 'isPriceUp'],           // MA60 위 + 상승
 };

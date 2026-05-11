@@ -13,6 +13,16 @@ import { calculateInverseAlignment } from '@/lib/utils/inverse-alignment-calcula
 import { calculateDualRSI } from '@/lib/utils/dual-rsi-calculator';
 import { calculateRSIDivergence } from '@/lib/utils/rsi-divergence-calculator';
 import { analyzeInbumBijag } from '@/lib/utils/inbum-bijag-calculator';
+// KIS Strategy Builder calculators
+import { calculateGoldenCross } from '@/lib/utils/kis-golden-cross-calculator';
+import { calculateMomentum } from '@/lib/utils/kis-momentum-calculator';
+import { calculateWeek52High } from '@/lib/utils/kis-week52-high-calculator';
+import { calculateConsecutive } from '@/lib/utils/kis-consecutive-calculator';
+import { calculateDisparity } from '@/lib/utils/kis-disparity-calculator';
+import { calculateStrongClose } from '@/lib/utils/kis-strong-close-calculator';
+import { calculateVolatility } from '@/lib/utils/kis-volatility-calculator';
+import { calculateMeanReversion } from '@/lib/utils/kis-mean-reversion-calculator';
+import { calculateTrendFilter } from '@/lib/utils/kis-trend-filter-calculator';
 
 interface MonteCarloResult {
   currentPrice: number;
@@ -1420,6 +1430,54 @@ export default function AnalystAlphaDetailPage({ params }: { params: Promise<{ s
       };
     })();
 
+    // ── KIS Strategy Builder 전략들 ──
+    const currentVolume = historyForCalc[0]?.volume ?? 0;
+
+    // 골든크로스: MA5 > MA20 상향돌파
+    const goldenCrossResult = historyForCalc.length >= 25
+      ? calculateGoldenCross(historyForCalc, f.currentPrice, currentVolume)
+      : null;
+
+    // 모멘텀: 60일 수익률 ≥ 30%
+    const momentumResult = historyForCalc.length >= 65
+      ? calculateMomentum(historyForCalc, f.currentPrice, currentVolume)
+      : null;
+
+    // 52주 신고가
+    const week52HighResult = historyForCalc.length >= 252
+      ? calculateWeek52High(historyForCalc, f.currentPrice, currentVolume)
+      : null;
+
+    // 연속 상승: 5일 연속 상승
+    const consecutiveResult = historyForCalc.length >= 10
+      ? calculateConsecutive(historyForCalc)
+      : null;
+
+    // 이격도: < 90% 과매도
+    const disparityResult = historyForCalc.length >= 25
+      ? calculateDisparity(historyForCalc, f.currentPrice)
+      : null;
+
+    // 강한 종가: 상위 80%
+    const strongCloseResult = historyForCalc.length >= 5
+      ? calculateStrongClose(historyForCalc, f.currentPrice, currentVolume)
+      : null;
+
+    // 변동성 확장: 저변동 + 3% 돌파
+    const volatilityResult = historyForCalc.length >= 15
+      ? calculateVolatility(historyForCalc, f.currentPrice, currentVolume)
+      : null;
+
+    // 평균회귀: MA5 × 97% 미만
+    const meanReversionResult = historyForCalc.length >= 10
+      ? calculateMeanReversion(historyForCalc, f.currentPrice)
+      : null;
+
+    // 추세 필터: MA60 위 + 상승
+    const trendFilterResult = historyForCalc.length >= 65
+      ? calculateTrendFilter(historyForCalc, f.currentPrice, currentVolume)
+      : null;
+
     return {
       maAlignment: maResult ? {
         syncRate: maResult.syncRate,
@@ -1472,6 +1530,85 @@ export default function AnalystAlphaDetailPage({ params }: { params: Promise<{ s
       } : null,
       weeklySR: weeklySRResult,
       inbumBijag: inbumBijagResult,
+      // KIS Strategy Builder
+      kisGoldenCross: goldenCrossResult ? {
+        syncRate: goldenCrossResult.syncRate,
+        criteria: [
+          { label: 'MA5 > MA20 (골든크로스)', pass: goldenCrossResult.criteria.isGoldenCross },
+          { label: '최근 3일 내 크로스', pass: goldenCrossResult.criteria.isFreshCross },
+          { label: '현재가 > MA20', pass: goldenCrossResult.criteria.isPriceAboveMA20 },
+          { label: '거래량 증가', pass: goldenCrossResult.criteria.isVolumeUp },
+        ],
+      } : null,
+      kisMomentum: momentumResult ? {
+        syncRate: momentumResult.syncRate,
+        criteria: [
+          { label: `60일 수익률 ≥30% (${momentumResult.return60d.toFixed(1)}%)`, pass: momentumResult.criteria.isMomentumStrong },
+          { label: `20일 수익률 상승 (${momentumResult.return20d.toFixed(1)}%)`, pass: momentumResult.criteria.isShortTermUp },
+          { label: '거래량 증가', pass: momentumResult.criteria.isVolumeUp },
+        ],
+      } : null,
+      kisWeek52High: week52HighResult ? {
+        syncRate: week52HighResult.syncRate,
+        criteria: [
+          { label: '52주 신고가 돌파', pass: week52HighResult.criteria.isNewHigh },
+          { label: '52주 최고가 근접 (98%)', pass: week52HighResult.criteria.isNearHigh },
+          { label: '52주 범위 상위 50%', pass: week52HighResult.criteria.isAboveMiddle },
+          { label: '거래량 1.5배 이상', pass: week52HighResult.criteria.isVolumeUp },
+        ],
+      } : null,
+      kisConsecutive: consecutiveResult ? {
+        syncRate: consecutiveResult.syncRate,
+        criteria: [
+          { label: `5일 연속 상승 (${consecutiveResult.consecutiveUpDays}일)`, pass: consecutiveResult.criteria.isConsecutiveUp },
+          { label: '7일 이상 강한 추세', pass: consecutiveResult.criteria.isStrongTrend },
+          { label: `누적 수익률 (${consecutiveResult.totalGain.toFixed(1)}%)`, pass: consecutiveResult.totalGain >= 5 },
+          { label: '거래량 증가', pass: consecutiveResult.criteria.isVolumeUp },
+        ],
+      } : null,
+      kisDisparity: disparityResult ? {
+        syncRate: disparityResult.syncRate,
+        criteria: [
+          { label: `이격도 <90% (${disparityResult.disparity.toFixed(1)}%)`, pass: disparityResult.criteria.isOversold },
+          { label: '이격도 <85% (강한 과매도)', pass: disparityResult.criteria.isStrongOversold },
+          { label: '반등 시작 (전일대비↑)', pass: disparityResult.criteria.isRecovering },
+        ],
+      } : null,
+      kisStrongClose: strongCloseResult ? {
+        syncRate: strongCloseResult.syncRate,
+        criteria: [
+          { label: `종가 상위 80% (${strongCloseResult.closePosition.toFixed(0)}%)`, pass: strongCloseResult.criteria.isStrongClose },
+          { label: '종가 상위 90% (매우 강함)', pass: strongCloseResult.criteria.isVeryStrongClose },
+          { label: '3일 연속 강한 종가', pass: strongCloseResult.criteria.isConsistentStrong },
+          { label: '거래량 증가', pass: strongCloseResult.criteria.isVolumeUp },
+        ],
+      } : null,
+      kisVolatility: volatilityResult ? {
+        syncRate: volatilityResult.syncRate,
+        criteria: [
+          { label: '저변동 + 3% 돌파', pass: volatilityResult.criteria.isVolatilityBreakout },
+          { label: `저변동성 (ATR ${volatilityResult.atrPercent.toFixed(1)}%)`, pass: volatilityResult.criteria.isLowVolatility },
+          { label: `당일 3%↑ (${volatilityResult.todayChange.toFixed(1)}%)`, pass: volatilityResult.criteria.isTodayBreakout },
+          { label: '거래량 1.5배 이상', pass: volatilityResult.criteria.isVolumeUp },
+        ],
+      } : null,
+      kisMeanReversion: meanReversionResult ? {
+        syncRate: meanReversionResult.syncRate,
+        criteria: [
+          { label: `MA5 ×97% 미만 (${meanReversionResult.deviation.toFixed(1)}%)`, pass: meanReversionResult.criteria.isMeanReversion },
+          { label: 'MA5 ×95% 미만 (강한 이탈)', pass: meanReversionResult.criteria.isStrongReversion },
+          { label: '반등 시작 (전일대비↑)', pass: meanReversionResult.criteria.isRecovering },
+        ],
+      } : null,
+      kisTrendFilter: trendFilterResult ? {
+        syncRate: trendFilterResult.syncRate,
+        criteria: [
+          { label: `종가 > MA60 (${trendFilterResult.priceAboveMA.toFixed(1)}%)`, pass: trendFilterResult.criteria.isTrendUp },
+          { label: '전일대비 상승', pass: trendFilterResult.criteria.isPriceUp },
+          { label: 'MA60 상승 추세', pass: trendFilterResult.criteria.isMA60Rising },
+          { label: '거래량 증가', pass: trendFilterResult.criteria.isVolumeUp },
+        ],
+      } : null,
     };
   }, [data, f]);
 
@@ -1882,6 +2019,70 @@ export default function AnalystAlphaDetailPage({ params }: { params: Promise<{ s
                       href: `/strategies/inbum-bijag/${symbol}?market=${market}&name=${encodeURIComponent(f?.name ?? symbol)}`,
                       color: { bar: 'bg-violet-500', badge: 'bg-violet-50 text-violet-700', icon: 'text-violet-500' },
                       data: chartStrategySyncs.inbumBijag,
+                    },
+                    // ── KIS Strategy Builder 전략 ──
+                    {
+                      label: '골든크로스',
+                      sublabel: 'MA5 > MA20 상향 돌파',
+                      href: `/strategies/kis/golden-cross/${symbol}?market=${market}&name=${encodeURIComponent(f?.name ?? symbol)}`,
+                      color: { bar: 'bg-amber-500', badge: 'bg-amber-50 text-amber-700', icon: 'text-amber-500' },
+                      data: chartStrategySyncs.kisGoldenCross,
+                    },
+                    {
+                      label: '모멘텀',
+                      sublabel: '60일 수익률 ≥30% 강한 상승',
+                      href: `/strategies/kis/momentum/${symbol}?market=${market}&name=${encodeURIComponent(f?.name ?? symbol)}`,
+                      color: { bar: 'bg-red-500', badge: 'bg-red-50 text-red-700', icon: 'text-red-500' },
+                      data: chartStrategySyncs.kisMomentum,
+                    },
+                    {
+                      label: '52주 신고가',
+                      sublabel: '현재가 > 52주 최고가 돌파',
+                      href: `/strategies/kis/week52-high/${symbol}?market=${market}&name=${encodeURIComponent(f?.name ?? symbol)}`,
+                      color: { bar: 'bg-sky-500', badge: 'bg-sky-50 text-sky-700', icon: 'text-sky-500' },
+                      data: chartStrategySyncs.kisWeek52High,
+                    },
+                    {
+                      label: '연속 상승',
+                      sublabel: '5일 연속 상승 추세 추종',
+                      href: `/strategies/kis/consecutive/${symbol}?market=${market}&name=${encodeURIComponent(f?.name ?? symbol)}`,
+                      color: { bar: 'bg-emerald-500', badge: 'bg-emerald-50 text-emerald-700', icon: 'text-emerald-500' },
+                      data: chartStrategySyncs.kisConsecutive,
+                    },
+                    {
+                      label: '이격도',
+                      sublabel: '이격도 <90% 과매도 반등',
+                      href: `/strategies/kis/disparity/${symbol}?market=${market}&name=${encodeURIComponent(f?.name ?? symbol)}`,
+                      color: { bar: 'bg-cyan-500', badge: 'bg-cyan-50 text-cyan-700', icon: 'text-cyan-500' },
+                      data: chartStrategySyncs.kisDisparity,
+                    },
+                    {
+                      label: '강한 종가',
+                      sublabel: '종가 일중범위 상위 80%',
+                      href: `/strategies/kis/strong-close/${symbol}?market=${market}&name=${encodeURIComponent(f?.name ?? symbol)}`,
+                      color: { bar: 'bg-lime-500', badge: 'bg-lime-50 text-lime-700', icon: 'text-lime-500' },
+                      data: chartStrategySyncs.kisStrongClose,
+                    },
+                    {
+                      label: '변동성 확장',
+                      sublabel: '저변동성 + 당일 3% 돌파',
+                      href: `/strategies/kis/volatility/${symbol}?market=${market}&name=${encodeURIComponent(f?.name ?? symbol)}`,
+                      color: { bar: 'bg-fuchsia-500', badge: 'bg-fuchsia-50 text-fuchsia-700', icon: 'text-fuchsia-500' },
+                      data: chartStrategySyncs.kisVolatility,
+                    },
+                    {
+                      label: '평균회귀',
+                      sublabel: '현재가 < MA5 × 97% 반등',
+                      href: `/strategies/kis/mean-reversion/${symbol}?market=${market}&name=${encodeURIComponent(f?.name ?? symbol)}`,
+                      color: { bar: 'bg-teal-500', badge: 'bg-teal-50 text-teal-700', icon: 'text-teal-500' },
+                      data: chartStrategySyncs.kisMeanReversion,
+                    },
+                    {
+                      label: '추세 필터',
+                      sublabel: '종가 > MA60 + 전일대비 상승',
+                      href: `/strategies/kis/trend-filter/${symbol}?market=${market}&name=${encodeURIComponent(f?.name ?? symbol)}`,
+                      color: { bar: 'bg-slate-500', badge: 'bg-slate-50 text-slate-700', icon: 'text-slate-500' },
+                      data: chartStrategySyncs.kisTrendFilter,
                     },
                   ].map(({ label, sublabel, href, color, data: syncData }) => {
                     if (!syncData) return null;
