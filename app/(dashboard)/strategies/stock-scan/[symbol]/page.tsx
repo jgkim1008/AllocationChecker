@@ -23,6 +23,7 @@ import { calculateStrongClose } from '@/lib/utils/kis-strong-close-calculator';
 import { calculateVolatility } from '@/lib/utils/kis-volatility-calculator';
 import { calculateMeanReversion } from '@/lib/utils/kis-mean-reversion-calculator';
 import { calculateTrendFilter } from '@/lib/utils/kis-trend-filter-calculator';
+import { IndicatorDashboard } from '@/components/indicators/IndicatorDashboard';
 
 interface MonteCarloResult {
   currentPrice: number;
@@ -2140,7 +2141,25 @@ export default function AnalystAlphaDetailPage({ params }: { params: Promise<{ s
               </div>
             )}
 
-            {/* ── 9. 지수 비교 ── */}
+            {/* ── 9. 기술적 분석 대시보드 ── */}
+            {data?.priceHistory && data.priceHistory.length >= 30 && (
+              <IndicatorDashboard
+                history={[...data.priceHistory]
+                  .sort((a, b) => b.date.localeCompare(a.date))
+                  .map(h => ({
+                    date: h.date,
+                    price: h.close,
+                    high: h.high,
+                    low: h.low,
+                    open: h.open,
+                    volume: h.volume,
+                  }))}
+                symbol={symbol}
+                market={market as 'US' | 'KR'}
+              />
+            )}
+
+            {/* ── 10. 지수 비교 ── */}
             {(benchmarksLoading || benchmarks.length > 0) && data?.priceHistory && (
               <div className="bg-white rounded-[24px] border border-gray-200 p-6">
                 <div className="flex items-center gap-2 mb-5">
