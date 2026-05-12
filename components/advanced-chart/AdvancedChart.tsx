@@ -4,9 +4,9 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import {
   createChart, ColorType, CrosshairMode, CandlestickSeries, LineSeries,
   HistogramSeries, AreaSeries, LineStyle, Logical, IChartApi, ISeriesApi,
-  createSeriesMarkers, SeriesMarker, Time, type IPriceLine,
+  createSeriesMarkers, SeriesMarker, Time, PriceScaleMode,
 } from 'lightweight-charts';
-import { analyzeInbumBijag } from '@/lib/utils/inbum-bijag-calculator';
+import { analyzeInbumBijag, detectBijagChannel, priceAtLevel } from '@/lib/utils/inbum-bijag-calculator';
 import { Loader2, AlertCircle } from 'lucide-react';
 import { TimeRange, Indicators, CustomMA, DrawingMode } from '@/app/(dashboard)/advanced-chart/page';
 import { MACD, RSI, BollingerBands, SMA } from 'technicalindicators';
@@ -179,6 +179,14 @@ function calculateIchimoku(data: HistoryData[]) {
     cloudData,
   };
 }
+
+// 인범 빗각 채널 레벨 상수 (전략 상세 페이지와 동일)
+const BIJAG_LEVEL_COLORS: Record<string, string> = {
+  '-1.5': '#7c3aed', '-1': '#8b5cf6', '-0.5': '#a78bfa',
+  '0': '#ffffff',
+  '0.5': '#6ee7b7', '1': '#10b981', '1.5': '#059669', '2': '#047857', '2.5': '#065f46', '3': '#064e3b',
+};
+const BIJAG_LEVEL_WIDTHS: Record<string, 1 | 2> = { '0': 2, '1': 2, '-1': 2 };
 
 // 전략별 진입/청산 마커 계산
 function computeStrategyMarkers(data: ChartData[], strategyId: string | undefined): SeriesMarker<Time>[] {
@@ -503,8 +511,12 @@ export function AdvancedChart({ symbol, market, timeRange, indicators, drawingMo
     ichimokuCloudFills?: Array<{ series: ISeriesApi<'Area'>; fillColor: string; isMask: boolean }>;
   }>({});
 
-  // 피보나치 레벨 price lines
-  const fibPriceLinesRef = useRef<{ line: IPriceLine; series: ISeriesApi<'Candlestick'> }[]>([]);
+  // 피보나치 레벨 라인 시리즈
+  const fibSeriesRef = useRef<ISeriesApi<'Line'>[]>([]);
+  // 인범 빗각 채널 라인 시리즈
+  const bijagSeriesRef = useRef<ISeriesApi<'Line'>[]>([]);
+  // 월봉 패러럴 채널 라인 시리즈
+  const monthlyChSeriesRef = useRef<ISeriesApi<'Line'>[]>([]);
 
   // DrawingCanvas에 전달할 차트 인스턴스 state (ref는 re-render를 트리거하지 않으므로 state 사용)
   const [drawingRefs, setDrawingRefs] = useState<{
@@ -1040,28 +1052,11 @@ export function AdvancedChart({ symbol, market, timeRange, indicators, drawingMo
     const initialMarkers = computeStrategyMarkers(data, strategyIdRef.current);
     markersPluginRef.current = createSeriesMarkers(candlestick, initialMarkers) as { setMarkers: (m: SeriesMarker<Time>[]) => void };
 
-    // 피보나치 전략이 이미 선택된 상태라면 price line 즉시 추가
-    // (addFibLines useCallback은 아래 선언이지만, 인라인으로 동일 로직 수행)
-    if (strategyIdRef.current === 'fibonacci' && data.length >= 10) {
-      const lookback = Math.min(252, data.length);
-      const recent = data.slice(-lookback);
-      let hi2 = -Infinity, lo2 = Infinity;
-      for (const r of recent) { if (r.high > hi2) hi2 = r.high; if (r.low < lo2) lo2 = r.low; }
-      const range2 = hi2 - lo2;
-      if (range2 > 0) {
-        [{ l: 0, label: '0%', c: '#6b7280' }, { l: 0.236, label: '23.6%', c: '#22c55e' },
-         { l: 0.382, label: '38.2%', c: '#3b82f6' }, { l: 0.5, label: '50%', c: '#f59e0b' },
-         { l: 0.618, label: '61.8%', c: '#ef4444' }, { l: 0.786, label: '78.6%', c: '#a855f7' },
-         { l: 1, label: '100%', c: '#6b7280' }].forEach(({ l, label, c }) => {
-          const pl = candlestick.createPriceLine({ price: lo2 + range2 * l, color: c, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: label });
-          fibPriceLinesRef.current.push({ line: pl, series: candlestick });
-        });
-      }
-    }
-
     return () => {
-      // 차트 재생성 시 price line ref 초기화 (시리즈가 사라지므로)
-      fibPriceLinesRef.current = [];
+      // 차트 재생성 시 시리즈 ref 초기화 (차트가 사라지므로 removeSeries 불필요)
+      fibSeriesRef.current = [];
+      bijagSeriesRef.current = [];
+      monthlyChSeriesRef.current = [];
       markersPluginRef.current = null;
       window.removeEventListener('resize', handleResize);
       setDrawingRefs({ mainChart: null, candlestickSeries: null });
@@ -1073,8 +1068,8 @@ export function AdvancedChart({ symbol, market, timeRange, indicators, drawingMo
     };
   }, [data, market]);
 
-  // 피보나치 레벨 price line 추가 헬퍼
-  const addFibLines = useCallback((d: ChartData[], candleSeries: ISeriesApi<'Candlestick'>) => {
+  // 피보나치 레벨 LineSeries 추가 헬퍼
+  const addFibLines = useCallback((d: ChartData[], mainChart: IChartApi) => {
     if (d.length < 10) return;
     const lookback = Math.min(252, d.length);
     const recent = d.slice(-lookback);
@@ -1085,6 +1080,8 @@ export function AdvancedChart({ symbol, market, timeRange, indicators, drawingMo
     }
     const range = hi - lo;
     if (range <= 0) return;
+    const firstDate = d[0].date as any;
+    const lastDate = d[d.length - 1].date as any;
     const fibLevels = [
       { level: 0,     label: '0%',    color: '#6b7280' },
       { level: 0.236, label: '23.6%', color: '#22c55e' },
@@ -1096,37 +1093,215 @@ export function AdvancedChart({ symbol, market, timeRange, indicators, drawingMo
     ];
     fibLevels.forEach(({ level, label, color }) => {
       const price = lo + range * level;
-      const line = candleSeries.createPriceLine({
-        price,
-        color,
-        lineWidth: 1,
-        lineStyle: LineStyle.Dashed,
-        axisLabelVisible: true,
-        title: label,
+      const s = mainChart.addSeries(LineSeries, {
+        color, lineWidth: 1, lineStyle: LineStyle.Dashed,
+        lastValueVisible: true, priceLineVisible: false, crosshairMarkerVisible: false, title: label,
       });
-      fibPriceLinesRef.current.push({ line, series: candleSeries });
+      s.setData([{ time: firstDate, value: price }, { time: lastDate, value: price }]);
+      fibSeriesRef.current.push(s);
     });
   }, []);
 
-  // 전략 변경 시 마커 + 피보나치 레벨 업데이트
+  // 전략 변경 시 마커 업데이트
   useEffect(() => {
-    // 기존 피보나치 price line 정리
-    fibPriceLinesRef.current.forEach(({ line, series }) => {
-      try { series.removePriceLine(line); } catch {}
-    });
-    fibPriceLinesRef.current = [];
-
-    // 마커 업데이트 (plugin이 없으면 스킵, 피보나치 라인은 별도)
     const plugin = markersPluginRef.current;
     if (plugin) {
       plugin.setMarkers(computeStrategyMarkers(dataRef.current, strategyId));
     }
+  }, [strategyId]);
 
-    // 피보나치 전략 선택 시 레벨 선 추가 (plugin 유무 무관하게 시도)
-    if (strategyId === 'fibonacci' && seriesRef.current.candlestick && dataRef.current.length >= 10) {
-      addFibLines(dataRef.current, seriesRef.current.candlestick);
+  // 피보나치 레벨 라인 — 전략 OR 데이터 변경 시 동기화
+  // [data, market] effect가 먼저 선언되어 있어 차트가 항상 먼저 생성됨
+  useEffect(() => {
+    const mainChart = chartsRef.current.main;
+    // 기존 피보나치 시리즈 정리
+    fibSeriesRef.current.forEach(s => {
+      try { mainChart?.removeSeries(s); } catch {}
+    });
+    fibSeriesRef.current = [];
+
+    if (strategyId === 'fibonacci' && mainChart && data.length >= 10) {
+      addFibLines(data, mainChart);
     }
-  }, [strategyId, addFibLines]);
+  }, [strategyId, data, addFibLines]);
+
+  // 인범 빗각 채널 라인 — 전략 OR 데이터 변경 시 동기화
+  useEffect(() => {
+    const mainChart = chartsRef.current.main;
+    bijagSeriesRef.current.forEach(s => { try { mainChart?.removeSeries(s); } catch {} });
+    bijagSeriesRef.current = [];
+
+    if (strategyId !== 'inbum-bijag') {
+      // 다른 전략으로 전환 시 선형 스케일 복원
+      mainChart?.applyOptions({ rightPriceScale: { mode: PriceScaleMode.Normal } });
+      return;
+    }
+    if (!mainChart || data.length < 50) return;
+
+    // 로그 스케일 적용 (전략 상세 페이지와 동일)
+    mainChart.applyOptions({ rightPriceScale: { mode: PriceScaleMode.Logarithmic } });
+
+    // timeRange='1W'로 집계된 주봉 데이터로 채널 탐지
+    const candles = data.map(d => ({ date: d.date, open: d.open, high: d.high, low: d.low, close: d.close }));
+    const channel = detectBijagChannel(candles);
+    if (!channel) return;
+
+    // CHANNEL_LEVELS 전체 (-1.5 ~ 3), 전략 상세 페이지와 동일한 색상/굵기
+    const CHANNEL_LEVELS = [-1.5, -1, -0.5, 0, 0.5, 1, 1.5, 2, 2.5, 3];
+    CHANNEL_LEVELS.forEach(level => {
+      const key = String(level);
+      const color = BIJAG_LEVEL_COLORS[key] ?? '#4b5563';
+      const lineWidth = BIJAG_LEVEL_WIDTHS[key] ?? 1;
+      const lineStyle = level === 0 ? LineStyle.Solid : (Math.abs(level % 1) === 0.5 ? LineStyle.Dashed : LineStyle.Solid);
+
+      const lineData = data.map((d, i) => {
+        const price = priceAtLevel(i, level, channel);
+        return (price > 0 && isFinite(price)) ? { time: d.date as any, value: price } : null;
+      }).filter(Boolean) as { time: any; value: number }[];
+
+      if (lineData.length === 0) return;
+
+      const s = mainChart.addSeries(LineSeries, {
+        color, lineWidth, lineStyle,
+        lastValueVisible: level === 0,
+        title: level === 0 ? '빗각(0)' : level === 1 ? 'P3(1)' : undefined,
+        priceLineVisible: false, crosshairMarkerVisible: false,
+      });
+      s.setData(lineData);
+      bijagSeriesRef.current.push(s);
+    });
+  }, [strategyId, data]);
+
+  // 월봉 10이평 패러럴 채널 — strategyId='monthly-ma' 선택 시 표시
+  useEffect(() => {
+    const mainChart = chartsRef.current.main;
+    monthlyChSeriesRef.current.forEach(s => { try { mainChart?.removeSeries(s); } catch {} });
+    monthlyChSeriesRef.current = [];
+
+    if (strategyId !== 'monthly-ma' || !mainChart || data.length < 30) return;
+
+    // 일봉 → 월봉 집계 (마지막 거래일 기준)
+    const groups: Record<string, ChartData[]> = {};
+    data.forEach(d => {
+      const ym = d.date.substring(0, 7);
+      if (!groups[ym]) groups[ym] = [];
+      groups[ym].push(d);
+    });
+    const monthly = Object.entries(groups)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([, group]) => ({
+        date: group[group.length - 1].date,
+        open: group[0].open,
+        high: Math.max(...group.map(d => d.high)),
+        low: Math.min(...group.map(d => d.low)),
+        close: group[group.length - 1].close,
+      }));
+
+    if (monthly.length < 10) return;
+
+    const TOUCH_TOL = 0.015;
+    const BREAK_TOL = 0.005;
+    const PIVOT_W   = 3;
+    const lookback  = Math.min(60, monthly.length);
+    const slice     = monthly.slice(monthly.length - lookback);
+    const n         = slice.length;
+
+    const phForCh: { idx: number; price: number }[] = [];
+    for (let i = PIVOT_W; i < n - PIVOT_W; i++) {
+      const h = slice[i].high;
+      let ok = true;
+      for (let j = i - PIVOT_W; j <= i + PIVOT_W; j++) {
+        if (j !== i && slice[j].high >= h) { ok = false; break; }
+      }
+      if (ok) phForCh.push({ idx: i, price: h });
+    }
+
+    let chSlope: number | null = null;
+    let chIntercept: number | null = null;
+    let bestScore = -Infinity;
+
+    for (let a = 0; a < phForCh.length - 1; a++) {
+      for (let b = a + 1; b < phForCh.length; b++) {
+        const { idx: ia, price: ya } = phForCh[a];
+        const { idx: ib, price: yb } = phForCh[b];
+        const slope = (yb - ya) / (ib - ia);
+        const intercept = ya - slope * ia;
+        let valid = true;
+        let touches = 0;
+        for (let k = ia; k < n; k++) {
+          const lineAtK = slope * k + intercept;
+          if (lineAtK <= 0) { valid = false; break; }
+          if (slice[k].high > lineAtK * (1 + BREAK_TOL)) { valid = false; break; }
+          if (Math.abs(slice[k].high - lineAtK) / lineAtK < TOUCH_TOL) touches++;
+        }
+        if (!valid) continue;
+        const score = touches * 2 + (ib / n) * 3;
+        if (score > bestScore) {
+          bestScore = score; chSlope = slope; chIntercept = intercept;
+        }
+      }
+    }
+
+    if (chSlope === null || chIntercept === null) {
+      const xs = Array.from({ length: n }, (_, i) => i);
+      const ys = slice.map(c => c.close);
+      const sumX = xs.reduce((a: number, b: number) => a + b, 0);
+      const sumY = ys.reduce((a: number, b: number) => a + b, 0);
+      const sumXY = xs.reduce((s: number, x: number, i: number) => s + x * ys[i], 0);
+      const sumX2 = xs.reduce((s: number, x: number) => s + x * x, 0);
+      const denom = n * sumX2 - sumX * sumX;
+      if (denom !== 0) {
+        chSlope = (n * sumXY - sumX * sumY) / denom;
+        let maxAbove = -Infinity;
+        for (let i = 0; i < n; i++) {
+          const res = slice[i].high - chSlope * i;
+          if (res > maxAbove) maxAbove = res;
+        }
+        chIntercept = maxAbove;
+      }
+    }
+
+    if (chSlope === null || chIntercept === null) return;
+
+    let lowerOffset = 0;
+    for (let i = 0; i < n; i++) {
+      const res = slice[i].low - (chSlope * i + chIntercept);
+      if (res < lowerOffset) lowerOffset = res;
+    }
+
+    const chUpper: { time: any; value: number }[] = [];
+    const chMid:   { time: any; value: number }[] = [];
+    const chLower: { time: any; value: number }[] = [];
+
+    for (let i = 0; i < n; i++) {
+      const upper = chSlope * i + chIntercept;
+      const lower = upper + lowerOffset;
+      chUpper.push({ time: slice[i].date as any, value: upper });
+      chMid.push({   time: slice[i].date as any, value: (upper + lower) / 2 });
+      chLower.push({ time: slice[i].date as any, value: lower });
+    }
+
+    const upperSeries = mainChart.addSeries(LineSeries, {
+      color: '#f97316', lineWidth: 1, lineStyle: LineStyle.Solid,
+      priceLineVisible: false, lastValueVisible: true, title: '채널상단',
+    });
+    upperSeries.setData(chUpper);
+    monthlyChSeriesRef.current.push(upperSeries);
+
+    const midSeries = mainChart.addSeries(LineSeries, {
+      color: '#9ca3af', lineWidth: 1, lineStyle: LineStyle.Dashed,
+      priceLineVisible: false, lastValueVisible: false,
+    });
+    midSeries.setData(chMid);
+    monthlyChSeriesRef.current.push(midSeries);
+
+    const lowerSeries = mainChart.addSeries(LineSeries, {
+      color: '#06b6d4', lineWidth: 1, lineStyle: LineStyle.Solid,
+      priceLineVisible: false, lastValueVisible: true, title: '채널하단',
+    });
+    lowerSeries.setData(chLower);
+    monthlyChSeriesRef.current.push(lowerSeries);
+  }, [strategyId, data]);
 
   // MA/BB/Volume 토글 + 색상 변경 — series 재생성 없이 처리
   useEffect(() => {

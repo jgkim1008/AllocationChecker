@@ -35,6 +35,7 @@ const SIGNAL_TO_SYNC_KEY: Partial<Record<string, StrategyKey>> = {
   'inverse-alignment': 'inverseAlignment',
   'dual-rsi':          'dualRsi',
   'rsi-divergence':    'rsiDivergence',
+  'fibonacci':         'fibonacci',
   'weekly-sr':         'weeklySR',
   'monthly-ma':        'monthlyMA10',
   'inbum-bijag':       'inbumBijag',
@@ -47,6 +48,7 @@ const SYNC_KEY_TO_SIGNAL: Partial<Record<StrategyKey, SignalStrategyType>> = {
   inverseAlignment: 'inverse-alignment',
   dualRsi:          'dual-rsi',
   rsiDivergence:    'rsi-divergence',
+  fibonacci:        'fibonacci',
   weeklySR:         'weekly-sr',
   monthlyMA10:      'monthly-ma',
   inbumBijag:       'inbum-bijag',
@@ -73,9 +75,10 @@ const STRATEGY_PRESETS: Record<string, { indicators?: Partial<Omit<Indicators, '
   inverseAlignment: { indicators: { ma5: true, ma20: true, ma60: true, ma120: true, rsi: false, macd: false } },
   dualRsi:          { indicators: { rsi: true } },
   rsiDivergence:    { indicators: { rsi: true } },
+  fibonacci:        { indicators: { ma20: true, ma60: true, rsi: false, macd: false } },
   monthlyMA10:      { addCustomMAs: [{ period: 10, color: '#f59e0b' }] },
   weeklySR:         { indicators: { ma20: true, ma60: true, rsi: false, macd: false } },
-  inbumBijag:       { indicators: { ma20: true, ma60: true, rsi: false, macd: false } },
+  inbumBijag:       { indicators: { ma20: false, ma60: false, rsi: false, macd: false, ichimoku: true } },
   turtleTrading:    { indicators: { ma20: true, ma60: true, rsi: false, macd: false } },
 };
 
