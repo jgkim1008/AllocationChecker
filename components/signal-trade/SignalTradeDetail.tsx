@@ -22,8 +22,8 @@ import type { TimeRange, DrawingMode, MagnetMode, Indicators, CustomMA } from '@
 import type { Drawing } from '@/components/advanced-chart/DrawingCanvas';
 import { SIGNAL_STRATEGIES, type SignalStrategyType } from '@/lib/signal-trade/types';
 
-// StrategyOverlayChart를 사용하는 전략 키 (전용 오버레이 필요)
-const OVERLAY_CHART_KEYS = new Set<StrategyKey>(['inbumBijag', 'fibonacci']);
+// 모든 전략은 AdvancedChart를 사용 (일관된 UX)
+const OVERLAY_CHART_KEYS = new Set<StrategyKey>();
 
 // ─────────────────────────────────────────────
 // Strategy dropdown groups
