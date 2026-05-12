@@ -12,6 +12,7 @@ export type SignalStrategyType =
   | 'weekly-sr'              // 주봉 SR채널 전략
   | 'decline-box'            // 하락 박스 전략
   | 'inbum-bijag'            // 인범 빗각채널 + 구름대 전략
+  | 'turtle-trading'         // 터틀 투자법 (돈키안 채널 돌파)
   | 'infinite-buy'           // 무한매수법 (자동매매 비활성)
   // KIS Strategy Builder 전략
   | 'kis-golden-cross'       // 골든크로스 (MA5 > MA20 상향돌파)
@@ -236,6 +237,15 @@ export const SIGNAL_STRATEGIES: SignalStrategyInfo[] = [
     autoTradeEnabled: true,
   },
 
+  {
+    id: 'turtle-trading',
+    name: '터틀 투자법',
+    description: '20일(S1) / 55일(S2) 돈키안 채널 돌파 진입, ATR×2 손절 추세추종 시스템',
+    requiredHistory: 60,
+    category: 'daily',
+    autoTradeEnabled: false,
+  },
+
   // ── 시스템 전략 (자동매매 비활성) ──
   {
     id: 'infinite-buy',
@@ -342,6 +352,7 @@ export const STRATEGY_ENTRY_CONDITIONS: Record<SignalStrategyType, string[]> = {
   'weekly-sr': ['isAboveMA', 'isMaUptrend'],  // 주봉 10MA 위 + 상승 추세
   'decline-box': ['isAtBoxBottom', 'isReboundSignal'],  // 박스 하단 + 반등 신호
   'inbum-bijag': ['isConfluence', 'isAboveCloud'],      // 채널+구름 동시 또는 N자 리테스트
+  'turtle-trading': ['s1Breakout', 'uptrend'],          // S1/S2 돌파 + 추세
   'infinite-buy': [],  // 별도 로직 (무한매수법 모듈 사용)
   // KIS Strategy Builder 전략
   'kis-golden-cross': ['isGoldenCross', 'isFreshCross'],   // MA5 > MA20 상향돌파

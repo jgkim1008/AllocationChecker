@@ -62,6 +62,7 @@ function getStrategyName(type: SignalStrategyType): string {
     'weekly-sr': '주봉 SR채널',
     'decline-box': '하락 박스',
     'inbum-bijag': '인범 빗각+구름대',
+    'turtle-trading': '터틀 투자법',
     'infinite-buy': '무한매수법',
     // KIS Strategy Builder 전략
     'kis-golden-cross': '골든크로스',

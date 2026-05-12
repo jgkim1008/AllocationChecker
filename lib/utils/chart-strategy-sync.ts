@@ -15,6 +15,7 @@ import {
   FIBONACCI_LEVELS,
 } from './fibonacci-calculator';
 import { analyzeInbumBijag } from './inbum-bijag-calculator';
+import { analyzeTurtleTrading } from './turtle-trading-calculator';
 import type { FibonacciLevel } from '@/types/fibonacci';
 
 export interface PriceHistoryItem {
@@ -65,6 +66,7 @@ export interface ChartStrategySyncs {
   monthlyMA10: MonthlyMA10Sync | null;
   weeklySR: WeeklySRSync | null;
   inbumBijag: StrategySync | null;
+  turtleTrading: StrategySync | null;
 }
 
 /**
@@ -125,6 +127,9 @@ export function calculateChartStrategySyncs(
   // 인범 빗각 + 구름대 (일봉 → 주봉 집계)
   const inbumBijagResult = calculateInbumBijagSync(historyForCalc);
 
+  // 터틀 투자법 (돈키안 채널 돌파)
+  const turtleTradingResult = calculateTurtleTradingSync(historyForCalc);
+
   return {
     maAlignment: maResult ? {
       syncRate: maResult.syncRate,
@@ -169,6 +174,7 @@ export function calculateChartStrategySyncs(
     monthlyMA10: monthlyMA10Result,
     weeklySR: weeklySRResult,
     inbumBijag: inbumBijagResult,
+    turtleTrading: turtleTradingResult,
   };
 }
 
@@ -420,6 +426,39 @@ function calculateInbumBijagSync(
 }
 
 /**
+ * 터틀 투자법 싱크율 계산 (돈키안 채널 돌파)
+ */
+function calculateTurtleTradingSync(
+  historyForCalc: { date: string; price: number; high: number; low: number; volume: number }[]
+): StrategySync | null {
+  if (historyForCalc.length < 60) return null;
+
+  // historyForCalc is newest-first; reverse to oldest-first for analyzer
+  const candles = [...historyForCalc].reverse().map(h => ({
+    date: h.date,
+    open: h.price,
+    high: h.high,
+    low: h.low,
+    close: h.price,
+    volume: h.volume,
+  }));
+
+  const res = analyzeTurtleTrading(candles);
+  if (!res) return null;
+
+  return {
+    syncRate: res.syncRate,
+    criteria: [
+      { label: 'S2 돌파 (55일 채널)', pass: res.criteria.s2Breakout },
+      { label: 'S1 돌파 (20일 채널)', pass: res.criteria.s1Breakout },
+      { label: 'DC20 98% 접근',       pass: res.criteria.nearDC20 },
+      { label: '55일 채널 우상향',     pass: res.criteria.uptrend },
+      { label: '거래량 20일평균+20%',  pass: res.criteria.volumeAboveAvg },
+    ],
+  };
+}
+
+/**
  * 싱크율에 따른 레벨 반환
  */
 export function getSyncLevel(syncRate: number): 'high' | 'medium' | 'low' {
@@ -518,6 +557,13 @@ export const STRATEGY_META = {
     sublabel: '로그스케일 빗각채널 + 일목균형표',
     color: { bar: 'bg-violet-500', badge: 'bg-violet-50 text-violet-700', icon: 'text-violet-500' },
     requiredDays: 70,
+  },
+  turtleTrading: {
+    key: 'turtleTrading',
+    label: '터틀 투자법',
+    sublabel: '돈키안 채널 돌파 (S1: 20일 / S2: 55일)',
+    color: { bar: 'bg-amber-500', badge: 'bg-amber-50 text-amber-700', icon: 'text-amber-500' },
+    requiredDays: 60,
   },
 } as const;
 

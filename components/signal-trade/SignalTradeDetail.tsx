@@ -38,6 +38,7 @@ const SIGNAL_TO_SYNC_KEY: Partial<Record<string, StrategyKey>> = {
   'weekly-sr':         'weeklySR',
   'monthly-ma':        'monthlyMA10',
   'inbum-bijag':       'inbumBijag',
+  'turtle-trading':    'turtleTrading',
 };
 
 // StrategyKey → SignalStrategyType 역매핑
@@ -49,6 +50,7 @@ const SYNC_KEY_TO_SIGNAL: Partial<Record<StrategyKey, SignalStrategyType>> = {
   weeklySR:         'weekly-sr',
   monthlyMA10:      'monthly-ma',
   inbumBijag:       'inbum-bijag',
+  turtleTrading:    'turtle-trading',
 };
 
 // KIS 전략 목록
@@ -63,7 +65,7 @@ const defaultIndicators: Indicators = {
 const STRATEGY_TIMEFRAME: Record<string, TimeRange> = {
   maAlignment: '1D', inverseAlignment: '1D', dualRsi: '1D',
   rsiDivergence: '1D', fibonacci: '1D', monthlyMA10: '1M',
-  weeklySR: '1W', inbumBijag: '1W',
+  weeklySR: '1W', inbumBijag: '1W', turtleTrading: '1D',
 };
 
 const STRATEGY_PRESETS: Record<string, { indicators?: Partial<Omit<Indicators, 'customMAs'>>; addCustomMAs?: { period: number; color: string }[] }> = {
@@ -74,6 +76,7 @@ const STRATEGY_PRESETS: Record<string, { indicators?: Partial<Omit<Indicators, '
   monthlyMA10:      { addCustomMAs: [{ period: 10, color: '#f59e0b' }] },
   weeklySR:         { indicators: { ma20: true, ma60: true, rsi: false, macd: false } },
   inbumBijag:       { indicators: { ma20: true, ma60: true, rsi: false, macd: false } },
+  turtleTrading:    { indicators: { ma20: true, ma60: true, rsi: false, macd: false } },
 };
 
 // ─────────────────────────────────────────────

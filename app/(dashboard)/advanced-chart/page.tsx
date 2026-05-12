@@ -39,6 +39,11 @@ export type Indicators = {
   ichimokuSenkouAColor?: string;
   ichimokuSenkouBColor?: string;
   ichimokuChikouColor?: string;
+  ichimokuTenkanVisible?: boolean;
+  ichimokuKijunVisible?: boolean;
+  ichimokuSenkouAVisible?: boolean;
+  ichimokuSenkouBVisible?: boolean;
+  ichimokuChikouVisible?: boolean;
 };
 
 export default function AdvancedChartPage() {

@@ -372,6 +372,38 @@ function computeStrategyMarkers(data: ChartData[], strategyId: string | undefine
       }
       break;
     }
+    case 'turtle-trading': {
+      // S1: 20일 채널 돌파 진입 / 10일 저가 이탈 청산
+      // S2: 55일 채널 돌파 진입 / 20일 저가 이탈 청산
+      const donchianHigh = (arr: typeof data, period: number, idx: number) => {
+        if (idx < period) return null;
+        let max = -Infinity;
+        for (let j = idx - period; j < idx; j++) max = Math.max(max, arr[j].high);
+        return max;
+      };
+      const donchianLow = (arr: typeof data, period: number, idx: number) => {
+        if (idx < period) return null;
+        let min = Infinity;
+        for (let j = idx - period; j < idx; j++) min = Math.min(min, arr[j].low);
+        return min;
+      };
+      let inPos = false;
+      for (let i = 55; i < data.length; i++) {
+        const d = data[i];
+        const dc55 = donchianHigh(data, 55, i);
+        const dc20 = donchianHigh(data, 20, i);
+        const dc10Low = donchianLow(data, 10, i);
+        const dc20Low = donchianLow(data, 20, i);
+        if (!inPos) {
+          if (dc55 && d.close > dc55) { tryBuy(i, d.date, 'S2 진입'); inPos = true; }
+          else if (dc20 && d.close > dc20) { tryBuy(i, d.date, 'S1 진입'); inPos = true; }
+        } else {
+          if (dc10Low && d.close < dc10Low) { trySell(i, d.date, 'S1 청산'); inPos = false; }
+          else if (dc20Low && d.close < dc20Low) { trySell(i, d.date, 'S2 청산'); inPos = false; }
+        }
+      }
+      break;
+    }
   }
 
   return markers;
@@ -640,6 +672,89 @@ export function AdvancedChart({ symbol, market, timeRange, indicators, drawingMo
       },
     } as any);
 
+    // 일목균형표 — 캔들보다 먼저 추가해야 구름대가 뒤에 렌더링됨
+    {
+      const ichi = calculateIchimoku(data);
+      const visible = indicators.ichimoku;
+      const MASK_BG = '#111827'; // 메인 차트 배경색
+      const tc  = indicators.ichimokuTenkanColor  ?? '#ef4444';
+      const kc  = indicators.ichimokuKijunColor   ?? '#3b82f6';
+      const sac = indicators.ichimokuSenkouAColor ?? '#22c55e';
+      const sbc = indicators.ichimokuSenkouBColor ?? '#f97316';
+      const cc  = indicators.ichimokuChikouColor  ?? '#a855f7';
+
+      // ── 구름대 세그먼트별 AreaSeries (캔들 뒤에 위치)
+      type CloudSeg = { bullish: boolean; pts: typeof ichi.cloudData };
+      const segs: CloudSeg[] = [];
+      for (const pt of ichi.cloudData) {
+        const bullish = pt.spanA >= pt.spanB;
+        if (segs.length === 0 || segs[segs.length - 1].bullish !== bullish) segs.push({ bullish, pts: [] });
+        segs[segs.length - 1].pts.push(pt);
+      }
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const cloudFills: Array<{ applyOptions: (o: any) => void }> = [];
+      for (const seg of segs) {
+        if (seg.pts.length < 2) continue;
+        const fillColor = seg.bullish ? 'rgba(34,197,94,0.2)' : 'rgba(239,68,68,0.2)';
+        const lineColor = seg.bullish ? '#22c55e' : '#ef4444';
+        const topData = seg.pts.map(p => ({ time: p.time as any, value: seg.bullish ? p.spanA : p.spanB }));
+        const botData = seg.pts.map(p => ({ time: p.time as any, value: seg.bullish ? p.spanB : p.spanA }));
+
+        const topSeries = mainChart.addSeries(AreaSeries, {
+          lineColor, lineWidth: 0,
+          topColor: fillColor, bottomColor: fillColor,
+          lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false, visible,
+        } as any);
+        topSeries.setData(topData);
+        cloudFills.push(topSeries);
+
+        const botSeries = mainChart.addSeries(AreaSeries, {
+          lineColor: MASK_BG, lineWidth: 0,
+          topColor: MASK_BG, bottomColor: MASK_BG,
+          lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false, visible,
+        } as any);
+        botSeries.setData(botData);
+        cloudFills.push(botSeries);
+      }
+
+      // ── 전환선
+      const tenkanSeries = mainChart.addSeries(LineSeries, {
+        color: tc, lineWidth: 1, lastValueVisible: false, priceLineVisible: false, visible,
+      });
+      tenkanSeries.setData(ichi.tenkan.map(d => ({ time: d.time as any, value: d.value })));
+
+      // ── 기준선
+      const kijunSeries = mainChart.addSeries(LineSeries, {
+        color: kc, lineWidth: 2, lastValueVisible: false, priceLineVisible: false, visible,
+      });
+      kijunSeries.setData(ichi.kijun.map(d => ({ time: d.time as any, value: d.value })));
+
+      // ── 후행스팬
+      const chikouSeries = mainChart.addSeries(LineSeries, {
+        color: cc, lineWidth: 1, lineStyle: LineStyle.Dashed, lastValueVisible: false, priceLineVisible: false, visible,
+      });
+      chikouSeries.setData(ichi.chikou.map(d => ({ time: d.time as any, value: d.value })));
+
+      // ── 선행스팬 A/B 외곽선
+      const senkouASeries = mainChart.addSeries(LineSeries, {
+        color: sac, lineWidth: 1, lineStyle: LineStyle.Dashed, lastValueVisible: false, priceLineVisible: false, visible,
+      });
+      senkouASeries.setData(ichi.senkouA.map(d => ({ time: d.time as any, value: d.value })));
+
+      const senkouBSeries = mainChart.addSeries(LineSeries, {
+        color: sbc, lineWidth: 1, lineStyle: LineStyle.Dashed, lastValueVisible: false, priceLineVisible: false, visible,
+      });
+      senkouBSeries.setData(ichi.senkouB.map(d => ({ time: d.time as any, value: d.value })));
+
+      seriesRef.current.ichimokuTenkan = tenkanSeries;
+      seriesRef.current.ichimokuKijun = kijunSeries;
+      seriesRef.current.ichimokuSenkouA = senkouASeries;
+      seriesRef.current.ichimokuSenkouB = senkouBSeries;
+      seriesRef.current.ichimokuChikou = chikouSeries;
+      seriesRef.current.ichimokuCloudFills = cloudFills;
+    }
+
     const candlestick = mainChart.addSeries(CandlestickSeries, {
       upColor: '#ef4444',
       downColor: '#3b82f6',
@@ -765,91 +880,6 @@ export function AdvancedChart({ symbol, market, timeRange, indicators, drawingMo
       seriesRef.current.bbUpper = bbUpper;
       seriesRef.current.bbMiddle = bbMiddle;
       seriesRef.current.bbLower = bbLower;
-    }
-
-    // 일목균형표 — 항상 생성, visibility는 별도 effect에서 토글
-    {
-      const ichi = calculateIchimoku(data);
-      const visible = indicators.ichimoku;
-      const MASK_BG = '#111827'; // 메인 차트 배경색
-      const tc  = indicators.ichimokuTenkanColor  ?? '#ef4444';
-      const kc  = indicators.ichimokuKijunColor   ?? '#3b82f6';
-      const sac = indicators.ichimokuSenkouAColor ?? '#22c55e';
-      const sbc = indicators.ichimokuSenkouBColor ?? '#f97316';
-      const cc  = indicators.ichimokuChikouColor  ?? '#a855f7';
-
-      // ── 전환선
-      const tenkanSeries = mainChart.addSeries(LineSeries, {
-        color: tc, lineWidth: 1, lastValueVisible: false, priceLineVisible: false, visible,
-      });
-      tenkanSeries.setData(ichi.tenkan.map(d => ({ time: d.time as any, value: d.value })));
-
-      // ── 기준선
-      const kijunSeries = mainChart.addSeries(LineSeries, {
-        color: kc, lineWidth: 2, lastValueVisible: false, priceLineVisible: false, visible,
-      });
-      kijunSeries.setData(ichi.kijun.map(d => ({ time: d.time as any, value: d.value })));
-
-      // ── 후행스팬
-      const chikouSeries = mainChart.addSeries(LineSeries, {
-        color: cc, lineWidth: 1, lineStyle: LineStyle.Dashed, lastValueVisible: false, priceLineVisible: false, visible,
-      });
-      chikouSeries.setData(ichi.chikou.map(d => ({ time: d.time as any, value: d.value })));
-
-      // ── 구름대 세그먼트별 AreaSeries (상승=녹, 하락=적)
-      type CloudSeg = { bullish: boolean; pts: typeof ichi.cloudData };
-      const segs: CloudSeg[] = [];
-      for (const pt of ichi.cloudData) {
-        const bullish = pt.spanA >= pt.spanB;
-        if (segs.length === 0 || segs[segs.length - 1].bullish !== bullish) segs.push({ bullish, pts: [] });
-        segs[segs.length - 1].pts.push(pt);
-      }
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const cloudFills: Array<{ applyOptions: (o: any) => void }> = [];
-      for (const seg of segs) {
-        if (seg.pts.length < 2) continue;
-        const fillColor = seg.bullish ? 'rgba(34,197,94,0.2)' : 'rgba(239,68,68,0.2)';
-        const lineColor = seg.bullish ? '#22c55e' : '#ef4444';
-        const topData = seg.pts.map(p => ({ time: p.time as any, value: seg.bullish ? p.spanA : p.spanB }));
-        const botData = seg.pts.map(p => ({ time: p.time as any, value: seg.bullish ? p.spanB : p.spanA }));
-
-        // 위쪽 면 (색상 채우기)
-        const topSeries = mainChart.addSeries(AreaSeries, {
-          lineColor, lineWidth: 0,
-          topColor: fillColor, bottomColor: fillColor,
-          lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false, visible,
-        } as any);
-        topSeries.setData(topData);
-        cloudFills.push(topSeries);
-
-        // 아래쪽 마스크 (배경색으로 덮어서 밴드 표현)
-        const botSeries = mainChart.addSeries(AreaSeries, {
-          lineColor: MASK_BG, lineWidth: 0,
-          topColor: MASK_BG, bottomColor: MASK_BG,
-          lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false, visible,
-        } as any);
-        botSeries.setData(botData);
-        cloudFills.push(botSeries);
-      }
-
-      // ── 선행스팬 A/B 외곽선
-      const senkouASeries = mainChart.addSeries(LineSeries, {
-        color: sac, lineWidth: 1, lineStyle: LineStyle.Dashed, lastValueVisible: false, priceLineVisible: false, visible,
-      });
-      senkouASeries.setData(ichi.senkouA.map(d => ({ time: d.time as any, value: d.value })));
-
-      const senkouBSeries = mainChart.addSeries(LineSeries, {
-        color: sbc, lineWidth: 1, lineStyle: LineStyle.Dashed, lastValueVisible: false, priceLineVisible: false, visible,
-      });
-      senkouBSeries.setData(ichi.senkouB.map(d => ({ time: d.time as any, value: d.value })));
-
-      seriesRef.current.ichimokuTenkan = tenkanSeries;
-      seriesRef.current.ichimokuKijun = kijunSeries;
-      seriesRef.current.ichimokuSenkouA = senkouASeries;
-      seriesRef.current.ichimokuSenkouB = senkouBSeries;
-      seriesRef.current.ichimokuChikou = chikouSeries;
-      seriesRef.current.ichimokuCloudFills = cloudFills;
     }
 
     // 볼륨 차트
@@ -979,15 +1009,17 @@ export function AdvancedChart({ symbol, market, timeRange, indicators, drawingMo
     seriesRef.current.bbMiddle?.applyOptions({ visible: indicators.bollingerBands });
     seriesRef.current.bbLower?.applyOptions({ visible: indicators.bollingerBands });
     seriesRef.current.volume?.applyOptions({ visible: indicators.volume });
-    const ichiVisible = indicators.ichimoku;
-    seriesRef.current.ichimokuTenkan?.applyOptions({ visible: ichiVisible, color: indicators.ichimokuTenkanColor  ?? '#ef4444' });
-    seriesRef.current.ichimokuKijun?.applyOptions({ visible: ichiVisible, color: indicators.ichimokuKijunColor   ?? '#3b82f6' });
-    seriesRef.current.ichimokuSenkouA?.applyOptions({ visible: ichiVisible, color: indicators.ichimokuSenkouAColor ?? '#22c55e' });
-    seriesRef.current.ichimokuSenkouB?.applyOptions({ visible: ichiVisible, color: indicators.ichimokuSenkouBColor ?? '#f97316' });
-    seriesRef.current.ichimokuChikou?.applyOptions({ visible: ichiVisible, color: indicators.ichimokuChikouColor  ?? '#a855f7' });
-    seriesRef.current.ichimokuCloudFills?.forEach(s => s.applyOptions({ visible: ichiVisible }));
+    const m = indicators.ichimoku;
+    seriesRef.current.ichimokuTenkan?.applyOptions({ visible: m && (indicators.ichimokuTenkanVisible  ?? true), color: indicators.ichimokuTenkanColor  ?? '#ef4444' });
+    seriesRef.current.ichimokuKijun?.applyOptions({ visible: m && (indicators.ichimokuKijunVisible   ?? true), color: indicators.ichimokuKijunColor   ?? '#3b82f6' });
+    seriesRef.current.ichimokuSenkouA?.applyOptions({ visible: m && (indicators.ichimokuSenkouAVisible ?? true), color: indicators.ichimokuSenkouAColor ?? '#22c55e' });
+    seriesRef.current.ichimokuSenkouB?.applyOptions({ visible: m && (indicators.ichimokuSenkouBVisible ?? true), color: indicators.ichimokuSenkouBColor ?? '#f97316' });
+    seriesRef.current.ichimokuChikou?.applyOptions({ visible: m && (indicators.ichimokuChikouVisible  ?? true), color: indicators.ichimokuChikouColor  ?? '#a855f7' });
+    // 구름대: 선행스팬A 표시 여부에 연동
+    const cloudVisible = m && (indicators.ichimokuSenkouAVisible ?? true);
+    seriesRef.current.ichimokuCloudFills?.forEach(s => s.applyOptions({ visible: cloudVisible }));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [indicators.ma5, indicators.ma5Color, indicators.ma20, indicators.ma20Color, indicators.ma60, indicators.ma60Color, indicators.ma120, indicators.ma120Color, indicators.bollingerBands, indicators.volume, indicators.ichimoku, indicators.ichimokuTenkanColor, indicators.ichimokuKijunColor, indicators.ichimokuSenkouAColor, indicators.ichimokuSenkouBColor, indicators.ichimokuChikouColor]);
+  }, [indicators.ma5, indicators.ma5Color, indicators.ma20, indicators.ma20Color, indicators.ma60, indicators.ma60Color, indicators.ma120, indicators.ma120Color, indicators.bollingerBands, indicators.volume, indicators.ichimoku, indicators.ichimokuTenkanColor, indicators.ichimokuKijunColor, indicators.ichimokuSenkouAColor, indicators.ichimokuSenkouBColor, indicators.ichimokuChikouColor, indicators.ichimokuTenkanVisible, indicators.ichimokuKijunVisible, indicators.ichimokuSenkouAVisible, indicators.ichimokuSenkouBVisible, indicators.ichimokuChikouVisible]);
 
   // 커스텀 MA 추가/제거/토글 — chart 재생성 없이 처리
   useEffect(() => {

@@ -351,12 +351,18 @@ function VolumeSettings({ indicators, onIndicatorsChange }: { indicators: Indica
 // ─── 일목균형표 설정 ─────────────────────────────────────────────────
 
 function IchimokuSettings({ indicators, onIndicatorsChange }: { indicators: Indicators; onIndicatorsChange: (n: Indicators) => void }) {
-  const lines: { colorKey: keyof Indicators; defaultColor: string; label: string; desc: string }[] = [
-    { colorKey: 'ichimokuTenkanColor',  defaultColor: '#ef4444', label: '전환선',    desc: '9일 고저 중간선 (단기 추세)' },
-    { colorKey: 'ichimokuKijunColor',   defaultColor: '#3b82f6', label: '기준선',    desc: '26일 고저 중간선 (중기 추세)' },
-    { colorKey: 'ichimokuSenkouAColor', defaultColor: '#22c55e', label: '선행스팬 A', desc: '(전환+기준)/2, 26봉 선행' },
-    { colorKey: 'ichimokuSenkouBColor', defaultColor: '#f97316', label: '선행스팬 B', desc: '52일 고저 중간선, 26봉 선행' },
-    { colorKey: 'ichimokuChikouColor',  defaultColor: '#a855f7', label: '후행스팬',   desc: '종가를 26봉 뒤에 표시' },
+  const lines: {
+    colorKey: keyof Indicators;
+    visibleKey: keyof Indicators;
+    defaultColor: string;
+    label: string;
+    desc: string;
+  }[] = [
+    { colorKey: 'ichimokuTenkanColor',  visibleKey: 'ichimokuTenkanVisible',  defaultColor: '#ef4444', label: '전환선',    desc: '9일 고저 중간선 (단기 추세)' },
+    { colorKey: 'ichimokuKijunColor',   visibleKey: 'ichimokuKijunVisible',   defaultColor: '#3b82f6', label: '기준선',    desc: '26일 고저 중간선 (중기 추세)' },
+    { colorKey: 'ichimokuSenkouAColor', visibleKey: 'ichimokuSenkouAVisible', defaultColor: '#22c55e', label: '선행스팬 A', desc: '(전환+기준)/2, 26봉 선행' },
+    { colorKey: 'ichimokuSenkouBColor', visibleKey: 'ichimokuSenkouBVisible', defaultColor: '#f97316', label: '선행스팬 B', desc: '52일 고저 중간선, 26봉 선행' },
+    { colorKey: 'ichimokuChikouColor',  visibleKey: 'ichimokuChikouVisible',  defaultColor: '#a855f7', label: '후행스팬',   desc: '종가를 26봉 뒤에 표시' },
   ];
 
   return (
@@ -370,21 +376,32 @@ function IchimokuSettings({ indicators, onIndicatorsChange }: { indicators: Indi
         />
       </div>
 
-      {/* 개별 선 색상 */}
-      <div className="space-y-3">
-        <p className="text-xs text-[#4a4a6a] uppercase tracking-wider">선 색상</p>
-        {lines.map(({ colorKey, defaultColor, label, desc }) => (
-          <div key={colorKey} className="flex items-center gap-3">
-            <div className="flex-1 min-w-0">
-              <span className="text-sm text-[#9ca3af]">{label}</span>
-              <p className="text-[10px] text-[#4a4a6a] mt-0.5 truncate">{desc}</p>
+      {/* 개별 선 색상 + 토글 */}
+      <div className="space-y-1">
+        <div className="flex items-center gap-3 mb-2 text-xs text-[#4a4a6a] px-1">
+          <span className="flex-1">선</span>
+          <span className="w-8 text-center">색상</span>
+          <span className="w-9 text-center">표시</span>
+        </div>
+        {lines.map(({ colorKey, visibleKey, defaultColor, label, desc }) => {
+          const isVisible = (indicators[visibleKey] as boolean | undefined) ?? true;
+          return (
+            <div key={colorKey as string} className="flex items-center gap-3 py-2 border-b border-[#2a2a3e]">
+              <div className="flex-1 min-w-0">
+                <span className="text-sm text-[#9ca3af]">{label}</span>
+                <p className="text-[10px] text-[#4a4a6a] mt-0.5 truncate">{desc}</p>
+              </div>
+              <ColorSwatch
+                color={(indicators[colorKey] as string | undefined) ?? defaultColor}
+                onChange={(c) => onIndicatorsChange({ ...indicators, [colorKey]: c })}
+              />
+              <Toggle
+                checked={isVisible}
+                onChange={(v) => onIndicatorsChange({ ...indicators, [visibleKey]: v })}
+              />
             </div>
-            <ColorSwatch
-              color={(indicators[colorKey] as string | undefined) ?? defaultColor}
-              onChange={(c) => onIndicatorsChange({ ...indicators, [colorKey]: c })}
-            />
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* 구름대 안내 */}
@@ -392,7 +409,7 @@ function IchimokuSettings({ indicators, onIndicatorsChange }: { indicators: Indi
         <p className="text-xs text-[#6b7280] font-medium">구름대 (쿠모)</p>
         <p className="text-[11px] text-[#4a4a6a]">선행A &gt; B → 상승 구름 <span className="text-green-500">●</span></p>
         <p className="text-[11px] text-[#4a4a6a]">선행A &lt; B → 하락 구름 <span className="text-red-500">●</span></p>
-        <p className="text-[11px] text-[#4a4a6a] mt-1">구름대 색상은 자동으로 결정됩니다</p>
+        <p className="text-[11px] text-[#4a4a6a] mt-1">선행스팬A OFF 시 구름대도 숨겨집니다</p>
       </div>
     </div>
   );

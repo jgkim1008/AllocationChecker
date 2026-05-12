@@ -7,6 +7,16 @@ import { PremiumGate } from '@/components/PremiumGate';
 
 const STRATEGIES = [
   {
+    id: 'turtle-trading',
+    title: '터틀 투자법',
+    description: '1983년 리처드 데니스의 전설적인 추세추종 시스템. 20일(S1) / 55일(S2) 돈키안 채널 돌파 진입, ATR×2 손절로 리스크를 관리합니다. "추세를 따르는 자는 이긴다"는 철학으로 대형 추세를 포착합니다. S&P 500 + KOSPI 200 전종목 스캔.',
+    icon: Activity,
+    href: '/strategies/turtle-trading',
+    color: 'bg-amber-50 text-amber-600',
+    tag: '신규',
+    tagColor: 'bg-amber-100 text-amber-700',
+  },
+  {
     id: 'inbum-bijag',
     title: '인범 빗각 + 구름대 전략',
     description: 'InbumTV 유튜브 분석 기반 — 빗각채널 하단 + 일목균형표 구름대 지지가 동시에 충족되는 고확률 매수 구간을 포착합니다. N자형 리테스트로 추세 지속 신호를 확인합니다. S&P 500 + KOSPI 200 전종목 스캔.',

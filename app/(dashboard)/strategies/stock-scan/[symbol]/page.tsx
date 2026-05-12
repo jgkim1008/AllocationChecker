@@ -13,6 +13,7 @@ import { calculateInverseAlignment } from '@/lib/utils/inverse-alignment-calcula
 import { calculateDualRSI } from '@/lib/utils/dual-rsi-calculator';
 import { calculateRSIDivergence } from '@/lib/utils/rsi-divergence-calculator';
 import { analyzeInbumBijag } from '@/lib/utils/inbum-bijag-calculator';
+import { analyzeTurtleTrading } from '@/lib/utils/turtle-trading-calculator';
 // KIS Strategy Builder calculators
 import { calculateGoldenCross } from '@/lib/utils/kis-golden-cross-calculator';
 import { calculateMomentum } from '@/lib/utils/kis-momentum-calculator';
@@ -1531,6 +1532,24 @@ export default function AnalystAlphaDetailPage({ params }: { params: Promise<{ s
       } : null,
       weeklySR: weeklySRResult,
       inbumBijag: inbumBijagResult,
+      turtleTrading: (() => {
+        if (historyForCalc.length < 60) return null;
+        const candles = [...historyForCalc].reverse().map(h => ({
+          date: h.date, open: h.price, high: h.high, low: h.low, close: h.price, volume: h.volume,
+        }));
+        const res = analyzeTurtleTrading(candles);
+        if (!res) return null;
+        return {
+          syncRate: res.syncRate,
+          criteria: [
+            { label: 'S2 돌파 (55일 채널)', pass: res.criteria.s2Breakout },
+            { label: 'S1 돌파 (20일 채널)', pass: res.criteria.s1Breakout },
+            { label: 'DC20 98% 접근',       pass: res.criteria.nearDC20 },
+            { label: '55일 채널 우상향',     pass: res.criteria.uptrend },
+            { label: '거래량 20일평균+20%',  pass: res.criteria.volumeAboveAvg },
+          ],
+        };
+      })(),
       // KIS Strategy Builder
       kisGoldenCross: goldenCrossResult ? {
         syncRate: goldenCrossResult.syncRate,
@@ -2020,6 +2039,13 @@ export default function AnalystAlphaDetailPage({ params }: { params: Promise<{ s
                       href: `/strategies/inbum-bijag/${symbol}?market=${market}&name=${encodeURIComponent(f?.name ?? symbol)}`,
                       color: { bar: 'bg-violet-500', badge: 'bg-violet-50 text-violet-700', icon: 'text-violet-500' },
                       data: chartStrategySyncs.inbumBijag,
+                    },
+                    {
+                      label: '터틀 투자법',
+                      sublabel: '돈키안 채널 돌파 (S1: 20일 / S2: 55일)',
+                      href: `/strategies/turtle-trading/${symbol}?market=${market}&name=${encodeURIComponent(f?.name ?? symbol)}`,
+                      color: { bar: 'bg-amber-500', badge: 'bg-amber-50 text-amber-700', icon: 'text-amber-500' },
+                      data: chartStrategySyncs.turtleTrading,
                     },
                     // ── KIS Strategy Builder 전략 ──
                     {
