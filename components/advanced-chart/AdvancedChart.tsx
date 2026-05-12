@@ -4,8 +4,9 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import {
   createChart, ColorType, CrosshairMode, CandlestickSeries, LineSeries,
   HistogramSeries, AreaSeries, LineStyle, Logical, IChartApi, ISeriesApi,
-  createSeriesMarkers, SeriesMarker, Time,
+  createSeriesMarkers, SeriesMarker, Time, type IPriceLine,
 } from 'lightweight-charts';
+import { analyzeInbumBijag } from '@/lib/utils/inbum-bijag-calculator';
 import { Loader2, AlertCircle } from 'lucide-react';
 import { TimeRange, Indicators, CustomMA, DrawingMode } from '@/app/(dashboard)/advanced-chart/page';
 import { MACD, RSI, BollingerBands, SMA } from 'technicalindicators';
@@ -252,8 +253,63 @@ function computeStrategyMarkers(data: ChartData[], strategyId: string | undefine
       }
       break;
     }
+    case 'fibonacci': {
+      // 피보나치는 price line으로 표시; 여기서는 52주 고저가 도달 마커만 추가
+      const lookback = Math.min(252, data.length);
+      const recent = data.slice(-lookback);
+      let hi = -Infinity, lo = Infinity;
+      for (const r of recent) {
+        if (r.high > hi) hi = r.high;
+        if (r.low < lo) lo = r.low;
+      }
+      const range = hi - lo;
+      const fib618 = lo + range * 0.618;
+      const fib382 = lo + range * 0.382;
+      for (let i = 1; i < data.length; i++) {
+        const d = data[i], p = data[i - 1];
+        if (p.close < fib382 && d.close >= fib382) tryBuy(i, d.date, '38.2%');
+        if (p.close < fib618 && d.close >= fib618) tryBuy(i, d.date, '61.8%');
+        if (p.close > fib618 && d.close <= fib618) trySell(i, d.date, '61.8%↓');
+      }
+      break;
+    }
+    case 'inbum-bijag': {
+      // 주봉 집계 후 inbum-bijag 시그널 마커
+      if (data.length < 50) break;
+      const weekly: { date: string; open: number; high: number; low: number; close: number }[] = [];
+      for (let i = 4; i < data.length; i += 5) {
+        const week = data.slice(i - 4, i + 1);
+        weekly.push({
+          date:  week[week.length - 1].date,
+          open:  week[0].close,
+          high:  Math.max(...week.map(d => d.high)),
+          low:   Math.min(...week.map(d => d.low)),
+          close: week[week.length - 1].close,
+        });
+      }
+      if (weekly.length < 30) break;
+      type InbumResult = { signal: string };
+      let prevSignal = '';
+      for (let wi = 30; wi < weekly.length; wi++) {
+        const slice = weekly.slice(0, wi + 1);
+        try {
+          const res = analyzeInbumBijag(slice) as InbumResult;
+          const wDate = weekly[wi].date;
+          const di = data.findIndex(d => d.date >= wDate);
+          if (di < 0) { prevSignal = res.signal; continue; }
+          if (res.signal !== prevSignal) {
+            if (res.signal === 'BREAKOUT_BUY' || res.signal === 'CHANNEL_BOTTOM' || res.signal === 'BIJAG_TOUCH') {
+              tryBuy(di, data[di].date, res.signal === 'BREAKOUT_BUY' ? '돌파' : res.signal === 'CHANNEL_BOTTOM' ? '채널하단' : '빗각');
+            } else if (res.signal === 'BREAKDOWN') {
+              trySell(di, data[di].date, '이탈');
+            }
+          }
+          prevSignal = res.signal;
+        } catch { break; }
+      }
+      break;
+    }
     case 'weekly-sr':
-    case 'inbum-bijag':
     case 'decline-box': {
       for (let i = 1; i < data.length; i++) {
         const d = data[i], p = data[i - 1];
@@ -444,8 +500,11 @@ export function AdvancedChart({ symbol, market, timeRange, indicators, drawingMo
     ichimokuSenkouB?: ISeriesApi<'Line'>;
     ichimokuChikou?: ISeriesApi<'Line'>;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ichimokuCloudFills?: Array<{ applyOptions: (o: any) => void }>;
+    ichimokuCloudFills?: Array<{ series: ISeriesApi<'Area'>; fillColor: string; isMask: boolean }>;
   }>({});
+
+  // 피보나치 레벨 price lines
+  const fibPriceLinesRef = useRef<{ line: IPriceLine; series: ISeriesApi<'Candlestick'> }[]>([]);
 
   // DrawingCanvas에 전달할 차트 인스턴스 state (ref는 re-render를 트리거하지 않으므로 state 사용)
   const [drawingRefs, setDrawingRefs] = useState<{
@@ -692,30 +751,32 @@ export function AdvancedChart({ symbol, market, timeRange, indicators, drawingMo
         segs[segs.length - 1].pts.push(pt);
       }
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const cloudFills: Array<{ applyOptions: (o: any) => void }> = [];
+      const cloudFills: Array<{ series: ISeriesApi<'Area'>; fillColor: string; isMask: boolean }> = [];
       for (const seg of segs) {
         if (seg.pts.length < 2) continue;
         const fillColor = seg.bullish ? 'rgba(34,197,94,0.2)' : 'rgba(239,68,68,0.2)';
-        const lineColor = seg.bullish ? '#22c55e' : '#ef4444';
         const topData = seg.pts.map(p => ({ time: p.time as any, value: seg.bullish ? p.spanA : p.spanB }));
         const botData = seg.pts.map(p => ({ time: p.time as any, value: seg.bullish ? p.spanB : p.spanA }));
 
+        // 색상 기반 토글 (visible 프로퍼티 대신 color alpha 사용 — AreaSeries visible 토글 버그 우회)
+        const shownFill = visible ? fillColor : 'rgba(0,0,0,0)';
+        const shownMask = visible ? MASK_BG : 'rgba(0,0,0,0)';
+
         const topSeries = mainChart.addSeries(AreaSeries, {
-          lineColor, lineWidth: 0,
-          topColor: fillColor, bottomColor: fillColor,
-          lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false, visible,
+          lineColor: 'rgba(0,0,0,0)', lineWidth: 0,
+          topColor: shownFill, bottomColor: shownFill,
+          lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false,
         } as any);
         topSeries.setData(topData);
-        cloudFills.push(topSeries);
+        cloudFills.push({ series: topSeries, fillColor, isMask: false });
 
         const botSeries = mainChart.addSeries(AreaSeries, {
-          lineColor: MASK_BG, lineWidth: 0,
-          topColor: MASK_BG, bottomColor: MASK_BG,
-          lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false, visible,
+          lineColor: 'rgba(0,0,0,0)', lineWidth: 0,
+          topColor: shownMask, bottomColor: shownMask,
+          lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false,
         } as any);
         botSeries.setData(botData);
-        cloudFills.push(botSeries);
+        cloudFills.push({ series: botSeries, fillColor: MASK_BG, isMask: true });
       }
 
       // ── 전환선
@@ -991,11 +1052,52 @@ export function AdvancedChart({ symbol, market, timeRange, indicators, drawingMo
     };
   }, [data, market]);
 
-  // 전략 변경 시 마커만 업데이트 (차트 재생성 없음)
+  // 전략 변경 시 마커 + 피보나치 레벨 업데이트
   useEffect(() => {
+    // 기존 피보나치 price line 정리
+    fibPriceLinesRef.current.forEach(({ line, series }) => {
+      try { series.removePriceLine(line); } catch {}
+    });
+    fibPriceLinesRef.current = [];
+
     const plugin = markersPluginRef.current;
     if (!plugin) return;
     plugin.setMarkers(computeStrategyMarkers(dataRef.current, strategyId));
+
+    // 피보나치 전략 선택 시 레벨 선 추가
+    if (strategyId === 'fibonacci' && seriesRef.current.candlestick) {
+      const d = dataRef.current;
+      if (d.length < 10) return;
+      const lookback = Math.min(252, d.length);
+      const recent = d.slice(-lookback);
+      let hi = -Infinity, lo = Infinity;
+      for (const r of recent) {
+        if (r.high > hi) hi = r.high;
+        if (r.low < lo) lo = r.low;
+      }
+      const range = hi - lo;
+      const fibLevels = [
+        { level: 0,     label: '0%',    color: '#6b7280' },
+        { level: 0.236, label: '23.6%', color: '#22c55e' },
+        { level: 0.382, label: '38.2%', color: '#3b82f6' },
+        { level: 0.5,   label: '50%',   color: '#f59e0b' },
+        { level: 0.618, label: '61.8%', color: '#ef4444' },
+        { level: 0.786, label: '78.6%', color: '#a855f7' },
+        { level: 1,     label: '100%',  color: '#6b7280' },
+      ];
+      fibLevels.forEach(({ level, label, color }) => {
+        const price = lo + range * level;
+        const line = seriesRef.current.candlestick!.createPriceLine({
+          price,
+          color,
+          lineWidth: 1,
+          lineStyle: LineStyle.Dashed,
+          axisLabelVisible: true,
+          title: label,
+        });
+        fibPriceLinesRef.current.push({ line, series: seriesRef.current.candlestick! });
+      });
+    }
   }, [strategyId]);
 
   // MA/BB/Volume 토글 + 색상 변경 — series 재생성 없이 처리
@@ -1015,9 +1117,12 @@ export function AdvancedChart({ symbol, market, timeRange, indicators, drawingMo
     seriesRef.current.ichimokuSenkouA?.applyOptions({ visible: m && (indicators.ichimokuSenkouAVisible ?? true), color: indicators.ichimokuSenkouAColor ?? '#22c55e' });
     seriesRef.current.ichimokuSenkouB?.applyOptions({ visible: m && (indicators.ichimokuSenkouBVisible ?? true), color: indicators.ichimokuSenkouBColor ?? '#f97316' });
     seriesRef.current.ichimokuChikou?.applyOptions({ visible: m && (indicators.ichimokuChikouVisible  ?? true), color: indicators.ichimokuChikouColor  ?? '#a855f7' });
-    // 구름대: 선행스팬A 표시 여부에 연동
+    // 구름대: 색상 기반 토글 (visible 대신 topColor/bottomColor로 show/hide)
     const cloudVisible = m && (indicators.ichimokuSenkouAVisible ?? true);
-    seriesRef.current.ichimokuCloudFills?.forEach(s => s.applyOptions({ visible: cloudVisible }));
+    seriesRef.current.ichimokuCloudFills?.forEach(({ series, fillColor, isMask }) => {
+      const c = cloudVisible ? fillColor : 'rgba(0,0,0,0)';
+      series.applyOptions({ topColor: c, bottomColor: c } as any);
+    });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [indicators.ma5, indicators.ma5Color, indicators.ma20, indicators.ma20Color, indicators.ma60, indicators.ma60Color, indicators.ma120, indicators.ma120Color, indicators.bollingerBands, indicators.volume, indicators.ichimoku, indicators.ichimokuTenkanColor, indicators.ichimokuKijunColor, indicators.ichimokuSenkouAColor, indicators.ichimokuSenkouBColor, indicators.ichimokuChikouColor, indicators.ichimokuTenkanVisible, indicators.ichimokuKijunVisible, indicators.ichimokuSenkouAVisible, indicators.ichimokuSenkouBVisible, indicators.ichimokuChikouVisible]);
 
