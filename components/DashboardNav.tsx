@@ -15,6 +15,7 @@ const NAV_LINKS = [
   { href: '/strategies', label: '전략' },
   { href: '/backtesting', label: '백테스팅' },
   { href: '/auto-trade', label: '자동매매' },
+  { href: '/advanced-chart', label: '고급차트' },
 ];
 
 // 모바일 하단 네비게이션 (주요 5개)

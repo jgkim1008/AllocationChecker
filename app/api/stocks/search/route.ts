@@ -6,9 +6,14 @@ export async function GET(request: NextRequest) {
   const query = searchParams.get('q')?.trim();
 
   if (!query || query.length < 1) {
-    return NextResponse.json([]);
+    return NextResponse.json({ stocks: [] });
   }
 
-  const results = await searchStocks(query);
-  return NextResponse.json(results.slice(0, 8));
+  try {
+    const results = await searchStocks(query);
+    return NextResponse.json({ stocks: results.slice(0, 10) });
+  } catch (error) {
+    console.error('Search error:', error);
+    return NextResponse.json({ stocks: [] });
+  }
 }

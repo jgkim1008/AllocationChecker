@@ -21,7 +21,9 @@ export function useStockSearch() {
       const res = await fetch(`/api/stocks/search?${params.toString()}`);
       if (!res.ok) throw new Error('Search failed');
 
-      const data: StockSearchResult[] = await res.json();
+      const json = await res.json();
+      // API는 { stocks: [...] } 또는 배열 형태 모두 지원
+      const data: StockSearchResult[] = Array.isArray(json) ? json : (json.stocks ?? []);
       setResults(data);
     } catch {
       setResults([]);

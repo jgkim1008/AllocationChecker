@@ -51,6 +51,7 @@ export async function GET(
     // 3. 결과 합치기
     const processedResults = history.map((h, i) => ({
         ...h,
+        close: h.price, // 차트용 close 필드 추가
         ma5: ma5[i],
         ma60: ma60[i],
         ma112: ma112[i],

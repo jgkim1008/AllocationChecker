@@ -6,6 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { BrokerConnect, AutoTradePanel, OrderHistory, BalancePanel, PositionSync } from '@/components/auto-trade';
 import { SignalTradePanel } from '@/components/signal-trade';
 
+
 const DCAPanel = dynamic(() => import('@/components/auto-trade/DCAPanel'), { ssr: false });
 import { PremiumGate } from '@/components/PremiumGate';
 import { Skeleton } from '@/components/ui/skeleton';
