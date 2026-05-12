@@ -1040,7 +1040,28 @@ export function AdvancedChart({ symbol, market, timeRange, indicators, drawingMo
     const initialMarkers = computeStrategyMarkers(data, strategyIdRef.current);
     markersPluginRef.current = createSeriesMarkers(candlestick, initialMarkers) as { setMarkers: (m: SeriesMarker<Time>[]) => void };
 
+    // 피보나치 전략이 이미 선택된 상태라면 price line 즉시 추가
+    // (addFibLines useCallback은 아래 선언이지만, 인라인으로 동일 로직 수행)
+    if (strategyIdRef.current === 'fibonacci' && data.length >= 10) {
+      const lookback = Math.min(252, data.length);
+      const recent = data.slice(-lookback);
+      let hi2 = -Infinity, lo2 = Infinity;
+      for (const r of recent) { if (r.high > hi2) hi2 = r.high; if (r.low < lo2) lo2 = r.low; }
+      const range2 = hi2 - lo2;
+      if (range2 > 0) {
+        [{ l: 0, label: '0%', c: '#6b7280' }, { l: 0.236, label: '23.6%', c: '#22c55e' },
+         { l: 0.382, label: '38.2%', c: '#3b82f6' }, { l: 0.5, label: '50%', c: '#f59e0b' },
+         { l: 0.618, label: '61.8%', c: '#ef4444' }, { l: 0.786, label: '78.6%', c: '#a855f7' },
+         { l: 1, label: '100%', c: '#6b7280' }].forEach(({ l, label, c }) => {
+          const pl = candlestick.createPriceLine({ price: lo2 + range2 * l, color: c, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: label });
+          fibPriceLinesRef.current.push({ line: pl, series: candlestick });
+        });
+      }
+    }
+
     return () => {
+      // 차트 재생성 시 price line ref 초기화 (시리즈가 사라지므로)
+      fibPriceLinesRef.current = [];
       markersPluginRef.current = null;
       window.removeEventListener('resize', handleResize);
       setDrawingRefs({ mainChart: null, candlestickSeries: null });
@@ -1052,6 +1073,41 @@ export function AdvancedChart({ symbol, market, timeRange, indicators, drawingMo
     };
   }, [data, market]);
 
+  // 피보나치 레벨 price line 추가 헬퍼
+  const addFibLines = useCallback((d: ChartData[], candleSeries: ISeriesApi<'Candlestick'>) => {
+    if (d.length < 10) return;
+    const lookback = Math.min(252, d.length);
+    const recent = d.slice(-lookback);
+    let hi = -Infinity, lo = Infinity;
+    for (const r of recent) {
+      if (r.high > hi) hi = r.high;
+      if (r.low < lo) lo = r.low;
+    }
+    const range = hi - lo;
+    if (range <= 0) return;
+    const fibLevels = [
+      { level: 0,     label: '0%',    color: '#6b7280' },
+      { level: 0.236, label: '23.6%', color: '#22c55e' },
+      { level: 0.382, label: '38.2%', color: '#3b82f6' },
+      { level: 0.5,   label: '50%',   color: '#f59e0b' },
+      { level: 0.618, label: '61.8%', color: '#ef4444' },
+      { level: 0.786, label: '78.6%', color: '#a855f7' },
+      { level: 1,     label: '100%',  color: '#6b7280' },
+    ];
+    fibLevels.forEach(({ level, label, color }) => {
+      const price = lo + range * level;
+      const line = candleSeries.createPriceLine({
+        price,
+        color,
+        lineWidth: 1,
+        lineStyle: LineStyle.Dashed,
+        axisLabelVisible: true,
+        title: label,
+      });
+      fibPriceLinesRef.current.push({ line, series: candleSeries });
+    });
+  }, []);
+
   // 전략 변경 시 마커 + 피보나치 레벨 업데이트
   useEffect(() => {
     // 기존 피보나치 price line 정리
@@ -1060,45 +1116,17 @@ export function AdvancedChart({ symbol, market, timeRange, indicators, drawingMo
     });
     fibPriceLinesRef.current = [];
 
+    // 마커 업데이트 (plugin이 없으면 스킵, 피보나치 라인은 별도)
     const plugin = markersPluginRef.current;
-    if (!plugin) return;
-    plugin.setMarkers(computeStrategyMarkers(dataRef.current, strategyId));
-
-    // 피보나치 전략 선택 시 레벨 선 추가
-    if (strategyId === 'fibonacci' && seriesRef.current.candlestick) {
-      const d = dataRef.current;
-      if (d.length < 10) return;
-      const lookback = Math.min(252, d.length);
-      const recent = d.slice(-lookback);
-      let hi = -Infinity, lo = Infinity;
-      for (const r of recent) {
-        if (r.high > hi) hi = r.high;
-        if (r.low < lo) lo = r.low;
-      }
-      const range = hi - lo;
-      const fibLevels = [
-        { level: 0,     label: '0%',    color: '#6b7280' },
-        { level: 0.236, label: '23.6%', color: '#22c55e' },
-        { level: 0.382, label: '38.2%', color: '#3b82f6' },
-        { level: 0.5,   label: '50%',   color: '#f59e0b' },
-        { level: 0.618, label: '61.8%', color: '#ef4444' },
-        { level: 0.786, label: '78.6%', color: '#a855f7' },
-        { level: 1,     label: '100%',  color: '#6b7280' },
-      ];
-      fibLevels.forEach(({ level, label, color }) => {
-        const price = lo + range * level;
-        const line = seriesRef.current.candlestick!.createPriceLine({
-          price,
-          color,
-          lineWidth: 1,
-          lineStyle: LineStyle.Dashed,
-          axisLabelVisible: true,
-          title: label,
-        });
-        fibPriceLinesRef.current.push({ line, series: seriesRef.current.candlestick! });
-      });
+    if (plugin) {
+      plugin.setMarkers(computeStrategyMarkers(dataRef.current, strategyId));
     }
-  }, [strategyId]);
+
+    // 피보나치 전략 선택 시 레벨 선 추가 (plugin 유무 무관하게 시도)
+    if (strategyId === 'fibonacci' && seriesRef.current.candlestick && dataRef.current.length >= 10) {
+      addFibLines(dataRef.current, seriesRef.current.candlestick);
+    }
+  }, [strategyId, addFibLines]);
 
   // MA/BB/Volume 토글 + 색상 변경 — series 재생성 없이 처리
   useEffect(() => {
