@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, RefreshCw, TrendingUp, TrendingDown, Activity, Target, Shield } from 'lucide-react';
+import { ArrowLeft, RefreshCw, TrendingUp, TrendingDown, Activity, Target, Shield, HelpCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import { TurtleTradingChart } from '@/components/turtle-trading/TurtleTradingChart';
 import type { TurtleCandle, TurtleResult } from '@/lib/utils/turtle-trading-calculator';
 
@@ -50,6 +50,7 @@ export default function TurtleTradingDetailPage() {
   const [result, setResult] = useState<TurtleResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showGuide, setShowGuide] = useState(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -116,6 +117,135 @@ export default function TurtleTradingDetailPage() {
             <div><span className="text-gray-400 text-xs">권장 투자 기간</span><p className="font-bold text-gray-900 mt-0.5">중기 (수주~수개월)</p></div>
             <div><span className="text-gray-400 text-xs">기준 일봉</span><p className="font-bold text-gray-900 mt-0.5">System 1: 20일 / S2: 55일</p></div>
           </div>
+        </div>
+
+        {/* 초보자를 위한 쉬운 설명 */}
+        <div className="bg-gradient-to-r from-amber-50 to-orange-50 rounded-2xl border border-amber-200 mb-6 overflow-hidden">
+          <button
+            onClick={() => setShowGuide(!showGuide)}
+            className="w-full px-5 py-4 flex items-center justify-between hover:bg-amber-100/50 transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <HelpCircle className="h-5 w-5 text-amber-600" />
+              <span className="text-sm font-black text-amber-800">초보자를 위한 쉬운 설명</span>
+              <span className="text-xs text-amber-600 bg-amber-100 px-2 py-0.5 rounded-full">클릭해서 펼치기</span>
+            </div>
+            {showGuide ? <ChevronUp className="h-5 w-5 text-amber-600" /> : <ChevronDown className="h-5 w-5 text-amber-600" />}
+          </button>
+
+          {showGuide && (
+            <div className="px-5 pb-5 space-y-5">
+              {/* 핵심 아이디어 */}
+              <div className="bg-white rounded-xl p-4 border border-amber-100">
+                <h3 className="text-sm font-black text-gray-800 mb-2">💡 핵심 아이디어 (한 줄 요약)</h3>
+                <p className="text-base font-bold text-amber-700">
+                  &quot;주가가 최근 고점을 뚫고 올라가면 매수, 최근 저점을 뚫고 내려가면 매도&quot;
+                </p>
+                <p className="text-xs text-gray-500 mt-2">
+                  1983년 전설적인 트레이더 리처드 데니스가 초보자들에게 2주 만에 가르쳐서 수백억을 벌게 한 전략입니다.
+                </p>
+              </div>
+
+              {/* 두 가지 시스템 */}
+              <div>
+                <h3 className="text-sm font-black text-gray-800 mb-3">📊 두 가지 시스템</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="bg-emerald-50 rounded-xl p-4 border border-emerald-200">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-lg">🟢</span>
+                      <span className="font-black text-emerald-800">System 1 (단기, 공격적)</span>
+                    </div>
+                    <ul className="text-sm text-emerald-700 space-y-1">
+                      <li><strong>매수:</strong> 최근 20일 중 가장 높은 가격 돌파</li>
+                      <li><strong>매도:</strong> 최근 10일 중 가장 낮은 가격 이탈</li>
+                    </ul>
+                  </div>
+                  <div className="bg-blue-50 rounded-xl p-4 border border-blue-200">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-lg">🔵</span>
+                      <span className="font-black text-blue-800">System 2 (장기, 보수적)</span>
+                    </div>
+                    <ul className="text-sm text-blue-700 space-y-1">
+                      <li><strong>매수:</strong> 최근 55일 중 가장 높은 가격 돌파</li>
+                      <li><strong>매도:</strong> 최근 20일 중 가장 낮은 가격 이탈</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+
+              {/* 실제 예시 */}
+              <div className="bg-gray-800 rounded-xl p-4 text-sm font-mono">
+                <h3 className="text-amber-400 font-bold mb-3">📝 예시로 이해하기</h3>
+                <div className="space-y-2 text-gray-300">
+                  <p>삼성전자 최근 20일 최고가: <span className="text-white font-bold">80,000원</span></p>
+                  <p>오늘 종가: <span className="text-white font-bold">81,000원</span></p>
+                  <p className="text-emerald-400">→ 🟢 S1 매수 신호 발생!</p>
+                  <div className="border-t border-gray-600 my-3" />
+                  <p>삼성전자 최근 55일 최고가: <span className="text-white font-bold">85,000원</span></p>
+                  <p>오늘 종가: <span className="text-white font-bold">86,000원</span></p>
+                  <p className="text-blue-400">→ 🔵 S2 매수 신호 발생! (더 강한 신호)</p>
+                </div>
+              </div>
+
+              {/* 왜 효과가 있을까 */}
+              <div>
+                <h3 className="text-sm font-black text-gray-800 mb-3">🤔 왜 효과가 있을까?</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div className="bg-white rounded-xl p-3 border border-gray-200 text-center">
+                    <p className="text-2xl mb-1">📈</p>
+                    <p className="text-xs font-bold text-gray-800">추세 추종</p>
+                    <p className="text-[11px] text-gray-500 mt-1">오르는 주식은 계속 오르는 경향</p>
+                  </div>
+                  <div className="bg-white rounded-xl p-3 border border-gray-200 text-center">
+                    <p className="text-2xl mb-1">🤖</p>
+                    <p className="text-xs font-bold text-gray-800">감정 배제</p>
+                    <p className="text-[11px] text-gray-500 mt-1">&quot;살까 말까&quot; 고민 없이 숫자로 결정</p>
+                  </div>
+                  <div className="bg-white rounded-xl p-3 border border-gray-200 text-center">
+                    <p className="text-2xl mb-1">🛡️</p>
+                    <p className="text-xs font-bold text-gray-800">손절 명확</p>
+                    <p className="text-[11px] text-gray-500 mt-1">언제 팔지 미리 정해짐</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* 차트 보는 법 */}
+              <div className="bg-white rounded-xl p-4 border border-gray-200">
+                <h3 className="text-sm font-black text-gray-800 mb-3">📉 차트에서 보는 법</h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <tbody>
+                      <tr className="border-b border-gray-100">
+                        <td className="py-2 pr-3"><span className="inline-block w-4 h-1 bg-blue-500 rounded" /></td>
+                        <td className="py-2 font-bold text-gray-800">DC55 (파란선)</td>
+                        <td className="py-2 text-gray-600">이 위로 뚫으면 S2 매수 신호 (강한 신호)</td>
+                      </tr>
+                      <tr className="border-b border-gray-100">
+                        <td className="py-2 pr-3"><span className="inline-block w-4 h-1 bg-emerald-500 rounded" /></td>
+                        <td className="py-2 font-bold text-gray-800">DC20 (초록선)</td>
+                        <td className="py-2 text-gray-600">이 위로 뚫으면 S1 매수 신호</td>
+                      </tr>
+                      <tr>
+                        <td className="py-2 pr-3"><span className="inline-block w-4 h-1 bg-amber-500 rounded" /></td>
+                        <td className="py-2 font-bold text-gray-800">DC10 (주황선)</td>
+                        <td className="py-2 text-gray-600">이 아래로 빠지면 S1 매도 신호</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* 주의사항 */}
+              <div className="bg-red-50 rounded-xl p-4 border border-red-200">
+                <h3 className="text-sm font-black text-red-800 mb-2">⚠️ 이런 경우 조심!</h3>
+                <ul className="text-sm text-red-700 space-y-1 list-disc list-inside">
+                  <li><strong>횡보장에 약함:</strong> 오르락내리락하면 잦은 손절로 손실</li>
+                  <li><strong>추세장에 강함:</strong> 한 방향으로 쭉 가는 장에서 큰 수익</li>
+                  <li><strong>분할 매수 권장:</strong> 한 번에 몰빵 X, 나눠서 진입</li>
+                </ul>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* 핵심 수치 */}
