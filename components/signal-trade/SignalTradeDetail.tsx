@@ -508,30 +508,26 @@ export function SignalTradeDetail() {
                     <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">채널 오버레이</span>
                   </div>
                   <div className="flex flex-wrap gap-1.5">
-                    {selectedSignalStrategy === 'monthly-ma' && (
-                      <button
-                        onClick={() => handleIndicatorChange('parallelChannel', !indicators.parallelChannel)}
-                        className={`px-3 py-1.5 text-xs font-semibold rounded-lg border transition-all ${
-                          indicators.parallelChannel
-                            ? 'border-cyan-400 bg-cyan-50 text-cyan-700'
-                            : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
-                        }`}
-                      >
-                        패러럴 채널
-                      </button>
-                    )}
-                    {selectedSignalStrategy === 'inbum-bijag' && (
-                      <button
-                        onClick={() => handleIndicatorChange('bijagChannel', !indicators.bijagChannel)}
-                        className={`px-3 py-1.5 text-xs font-semibold rounded-lg border transition-all ${
-                          indicators.bijagChannel
-                            ? 'border-violet-400 bg-violet-50 text-violet-700'
-                            : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
-                        }`}
-                      >
-                        빗각 채널
-                      </button>
-                    )}
+                    <button
+                      onClick={() => handleIndicatorChange('parallelChannel', !indicators.parallelChannel)}
+                      className={`px-3 py-1.5 text-xs font-semibold rounded-lg border transition-all ${
+                        indicators.parallelChannel
+                          ? 'border-cyan-400 bg-cyan-50 text-cyan-700'
+                          : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                      }`}
+                    >
+                      패러럴 채널
+                    </button>
+                    <button
+                      onClick={() => handleIndicatorChange('bijagChannel', !indicators.bijagChannel)}
+                      className={`px-3 py-1.5 text-xs font-semibold rounded-lg border transition-all ${
+                        indicators.bijagChannel
+                          ? 'border-violet-400 bg-violet-50 text-violet-700'
+                          : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                      }`}
+                    >
+                      빗각 채널
+                    </button>
                   </div>
                 </div>
               )}
