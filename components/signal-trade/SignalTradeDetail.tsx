@@ -70,16 +70,34 @@ const STRATEGY_TIMEFRAME: Record<string, TimeRange> = {
   weeklySR: '1W', inbumBijag: '1W', turtleTrading: '1D',
 };
 
+// 모든 지표 기본 OFF 상태 (전략 전환 시 리셋용)
+const baseIndicators: Omit<Indicators, 'customMAs'> = {
+  ma5: false, ma5Color: '#ec4899', ma20: false, ma20Color: '#3b82f6',
+  ma60: false, ma60Color: '#f59e0b', ma120: false, ma120Color: '#10b981',
+  volume: true, rsi: false, macd: false, bollingerBands: false, ichimoku: false,
+};
+
 const STRATEGY_PRESETS: Record<string, { indicators?: Partial<Omit<Indicators, 'customMAs'>>; addCustomMAs?: { period: number; color: string }[] }> = {
-  maAlignment:      { indicators: { ma5: true, ma20: true, ma60: true, ma120: true, rsi: false, macd: false } },
-  inverseAlignment: { indicators: { ma5: true, ma20: true, ma60: true, ma120: true, rsi: false, macd: false } },
+  maAlignment:      { indicators: { ma5: true, ma20: true, ma60: true, ma120: true } },
+  inverseAlignment: { indicators: { ma5: true, ma20: true, ma60: true, ma120: true } },
   dualRsi:          { indicators: { rsi: true } },
   rsiDivergence:    { indicators: { rsi: true } },
-  fibonacci:        { indicators: { ma20: true, ma60: true, rsi: false, macd: false } },
+  fibonacci:        { indicators: { ma20: true, ma60: true, bollingerBands: true } },
   monthlyMA10:      { addCustomMAs: [{ period: 10, color: '#f59e0b' }] },
-  weeklySR:         { indicators: { ma20: true, ma60: true, rsi: false, macd: false } },
-  inbumBijag:       { indicators: { ma20: false, ma60: false, rsi: false, macd: false, ichimoku: true } },
-  turtleTrading:    { indicators: { ma20: true, ma60: true, rsi: false, macd: false } },
+  weeklySR:         { indicators: { ma20: true, ma60: true } },
+  inbumBijag:       { indicators: { ichimoku: true } },
+  turtleTrading:    { indicators: { ma20: true } },
+  // KIS 전략
+  'kis-golden-cross':    { indicators: { ma5: true, ma20: true } },
+  'kis-momentum':        { indicators: { ma60: true } },
+  'kis-week52-high':     { indicators: { ma20: true } },
+  'kis-consecutive':     { indicators: { ma5: true } },
+  'kis-disparity':       { indicators: { ma20: true } },
+  'kis-breakout-fail':   { indicators: { ma20: true } },
+  'kis-strong-close':    { indicators: { volume: true } },
+  'kis-volatility':      { indicators: { bollingerBands: true } },
+  'kis-mean-reversion':  { indicators: { ma5: true } },
+  'kis-trend-filter':    { indicators: { ma60: true } },
 };
 
 // ─────────────────────────────────────────────
@@ -145,25 +163,40 @@ export function SignalTradeDetail() {
   const handleStrategySelect = useCallback((id: SignalStrategyType) => {
     setSelectedSignalStrategy(id);
 
+    // 전략에 해당하는 syncKey 또는 전략 ID 자체로 프리셋 조회
     const syncKey = SIGNAL_TO_SYNC_KEY[id];
+    const presetKey = syncKey || id;
+
+    // 타임프레임 설정
     if (syncKey) {
       const tf = STRATEGY_TIMEFRAME[syncKey];
       if (tf) setTimeRange(tf);
-      const preset = STRATEGY_PRESETS[syncKey];
-      if (preset) {
-        setIndicators(prev => {
-          let next = { ...prev, ...(preset.indicators ?? {}) };
-          if (preset.addCustomMAs) {
-            const existingPeriods = new Set(prev.customMAs.map(m => m.period));
-            const toAdd: CustomMA[] = preset.addCustomMAs
-              .filter(m => !existingPeriods.has(m.period))
-              .map(m => ({ id: `strategy-${id}-${m.period}`, period: m.period, color: m.color, enabled: true }));
-            if (toAdd.length > 0) next = { ...next, customMAs: [...next.customMAs, ...toAdd] };
-          }
-          return next;
-        });
-      }
     }
+
+    // 지표 리셋 후 전략별 프리셋 적용
+    const preset = STRATEGY_PRESETS[presetKey];
+    setIndicators(prev => {
+      // 기존 customMAs 중 전략용이 아닌 것만 유지
+      const nonStrategyMAs = prev.customMAs.filter(m => !m.id.startsWith('strategy-'));
+
+      // 기본값으로 리셋 + 프리셋 적용
+      let next: Indicators = {
+        ...baseIndicators,
+        ...(preset?.indicators ?? {}),
+        customMAs: nonStrategyMAs,
+      };
+
+      // 전략 전용 customMA 추가
+      if (preset?.addCustomMAs) {
+        const existingPeriods = new Set(nonStrategyMAs.map(m => m.period));
+        const toAdd: CustomMA[] = preset.addCustomMAs
+          .filter(m => !existingPeriods.has(m.period))
+          .map(m => ({ id: `strategy-${id}-${m.period}`, period: m.period, color: m.color, enabled: true }));
+        next = { ...next, customMAs: [...next.customMAs, ...toAdd] };
+      }
+
+      return next;
+    });
   }, []);
 
   // ── 종목 검색 ──────────────────────────────
