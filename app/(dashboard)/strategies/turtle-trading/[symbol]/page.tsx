@@ -284,6 +284,59 @@ export default function TurtleTradingDetailPage() {
                 </p>
               </div>
 
+              {/* 종가 vs 고가/저가 설명 */}
+              <div className="bg-white rounded-xl p-4 border border-gray-200">
+                <h3 className="text-sm font-black text-gray-800 mb-3">📊 종가 기준일까? 고가/저가 기준일까?</h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-gray-200">
+                        <th className="py-2 text-left text-xs font-bold text-gray-500">항목</th>
+                        <th className="py-2 text-left text-xs font-bold text-gray-500">사용 가격</th>
+                        <th className="py-2 text-left text-xs font-bold text-gray-500">설명</th>
+                      </tr>
+                    </thead>
+                    <tbody className="text-gray-700">
+                      <tr className="border-b border-gray-100">
+                        <td className="py-2 font-bold text-blue-700">DC 고가 (진입선)</td>
+                        <td className="py-2"><span className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded text-xs font-bold">고가</span></td>
+                        <td className="py-2 text-xs text-gray-500">N일 중 가장 높은 <strong>고가</strong></td>
+                      </tr>
+                      <tr className="border-b border-gray-100">
+                        <td className="py-2 font-bold text-amber-700">DC 저가 (청산선)</td>
+                        <td className="py-2"><span className="bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded text-xs font-bold">저가</span></td>
+                        <td className="py-2 text-xs text-gray-500">N일 중 가장 낮은 <strong>저가</strong></td>
+                      </tr>
+                      <tr className="border-b border-gray-100">
+                        <td className="py-2 font-bold text-emerald-700">돌파 판단</td>
+                        <td className="py-2"><span className="bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded text-xs font-bold">종가</span></td>
+                        <td className="py-2 text-xs text-gray-500">오늘 <strong>종가</strong>가 DC 고가를 넘었는지</td>
+                      </tr>
+                      <tr>
+                        <td className="py-2 font-bold text-red-700">ATR 계산</td>
+                        <td className="py-2"><span className="bg-gray-100 text-gray-700 px-1.5 py-0.5 rounded text-xs font-bold">전부</span></td>
+                        <td className="py-2 text-xs text-gray-500">고가, 저가, 전일 종가 모두 사용</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div className="bg-gray-800 rounded-lg p-3 mt-3 text-xs font-mono">
+                  <p className="text-gray-400 mb-2">예시) 최근 20일 데이터</p>
+                  <div className="space-y-1 text-gray-300">
+                    <p>• 1일차: 고가 $105, 저가 $95</p>
+                    <p>• 2일차: 고가 <span className="text-blue-400 font-bold">$108</span>, 저가 $98 ← 최고 고가</p>
+                    <p>• ...</p>
+                    <p>• 20일차: 고가 $103, 저가 <span className="text-amber-400 font-bold">$92</span> ← 최저 저가</p>
+                  </div>
+                  <div className="border-t border-gray-600 mt-2 pt-2 text-gray-400">
+                    <p>DC20 고가 = <span className="text-blue-400">$108</span> (20일 중 최고 고가)</p>
+                    <p>DC20 저가 = <span className="text-amber-400">$92</span> (20일 중 최저 저가)</p>
+                    <p className="mt-1">오늘 종가 = <span className="text-white">$109</span></p>
+                    <p className="text-emerald-400">→ 종가 $109 &gt; DC20 고가 $108 → <strong>S1 돌파!</strong></p>
+                  </div>
+                </div>
+              </div>
+
               {/* 주의사항 */}
               <div className="bg-red-50 rounded-xl p-4 border border-red-200">
                 <h3 className="text-sm font-black text-red-800 mb-2">⚠️ 이런 경우 조심!</h3>
