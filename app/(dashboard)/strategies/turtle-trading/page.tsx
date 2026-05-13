@@ -296,7 +296,9 @@ export default function TurtleTradingPage() {
     S2_BREAKOUT: 5, S1_BREAKOUT: 4, NEAR_BREAKOUT: 3, IN_CHANNEL: 2, BEARISH: 1,
   };
 
-  const sorted = [...stocks].sort((a, b) => {
+  // 중복 제거 후 정렬
+  const unique = stocks.filter((s, i, arr) => arr.findIndex(x => x.symbol === s.symbol && x.market === s.market) === i);
+  const sorted = unique.sort((a, b) => {
     let diff = 0;
     switch (sortKey) {
       case 'signal': diff = signalPriority[b.signal] - signalPriority[a.signal]; break;
@@ -307,9 +309,9 @@ export default function TurtleTradingPage() {
     return sortOrder === 'asc' ? -diff : diff;
   });
 
-  const s2Count = stocks.filter(s => s.signal === 'S2_BREAKOUT').length;
-  const s1Count = stocks.filter(s => s.signal === 'S1_BREAKOUT').length;
-  const nearCount = stocks.filter(s => s.signal === 'NEAR_BREAKOUT').length;
+  const s2Count = unique.filter(s => s.signal === 'S2_BREAKOUT').length;
+  const s1Count = unique.filter(s => s.signal === 'S1_BREAKOUT').length;
+  const nearCount = unique.filter(s => s.signal === 'NEAR_BREAKOUT').length;
 
   return (
     <PremiumGate>
