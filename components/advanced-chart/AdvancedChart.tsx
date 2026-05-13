@@ -1125,14 +1125,16 @@ export function AdvancedChart({ symbol, market, timeRange, indicators, drawingMo
     }
   }, [strategyId, data, addFibLines]);
 
-  // 인범 빗각 채널 라인 — 전략 OR 데이터 변경 시 동기화
+  // 인범 빗각 채널 라인 — bijagChannel 토글 또는 전략 선택 시 동기화
   useEffect(() => {
     const mainChart = chartsRef.current.main;
     bijagSeriesRef.current.forEach(s => { try { mainChart?.removeSeries(s); } catch {} });
     bijagSeriesRef.current = [];
 
-    if (strategyId !== 'inbum-bijag') {
-      // 다른 전략으로 전환 시 선형 스케일 복원
+    // indicators.bijagChannel 또는 strategyId='inbum-bijag'일 때 표시
+    const showBijag = indicators.bijagChannel || strategyId === 'inbum-bijag';
+    if (!showBijag) {
+      // 빗각 채널 OFF 시 선형 스케일 복원
       mainChart?.applyOptions({ rightPriceScale: { mode: PriceScaleMode.Normal } });
       return;
     }
@@ -1170,15 +1172,17 @@ export function AdvancedChart({ symbol, market, timeRange, indicators, drawingMo
       s.setData(lineData);
       bijagSeriesRef.current.push(s);
     });
-  }, [strategyId, data]);
+  }, [strategyId, data, indicators.bijagChannel]);
 
-  // 월봉 10이평 패러럴 채널 — strategyId='monthly-ma' 선택 시 표시
+  // 월봉 10이평 패러럴 채널 — parallelChannel 토글 또는 strategyId='monthly-ma' 선택 시 표시
   useEffect(() => {
     const mainChart = chartsRef.current.main;
     monthlyChSeriesRef.current.forEach(s => { try { mainChart?.removeSeries(s); } catch {} });
     monthlyChSeriesRef.current = [];
 
-    if (strategyId !== 'monthly-ma' || !mainChart || data.length < 30) return;
+    // indicators.parallelChannel 또는 strategyId='monthly-ma'일 때 표시
+    const showParallel = indicators.parallelChannel || strategyId === 'monthly-ma';
+    if (!showParallel || !mainChart || data.length < 30) return;
 
     // 일봉 → 월봉 집계 (마지막 거래일 기준)
     const groups: Record<string, ChartData[]> = {};
@@ -1301,7 +1305,7 @@ export function AdvancedChart({ symbol, market, timeRange, indicators, drawingMo
     });
     lowerSeries.setData(chLower);
     monthlyChSeriesRef.current.push(lowerSeries);
-  }, [strategyId, data]);
+  }, [strategyId, data, indicators.parallelChannel]);
 
   // MA/BB/Volume 토글 + 색상 변경 — series 재생성 없이 처리
   useEffect(() => {

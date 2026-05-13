@@ -44,6 +44,9 @@ export type Indicators = {
   ichimokuSenkouAVisible?: boolean;
   ichimokuSenkouBVisible?: boolean;
   ichimokuChikouVisible?: boolean;
+  // 월봉 전략 채널 오버레이
+  parallelChannel?: boolean;   // 패러럴 채널 (월봉 10이평)
+  bijagChannel?: boolean;      // 빗각 채널 (인범 빗각)
 };
 
 export default function AdvancedChartPage() {

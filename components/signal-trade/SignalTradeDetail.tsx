@@ -4,7 +4,7 @@ import { useState, useRef, useCallback } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import {
-  Search, Loader2, CheckCircle2, XCircle, Star,
+  Search, Loader2, CheckCircle2, XCircle, Star, Layers,
 } from 'lucide-react';
 import { useStockSearch } from '@/hooks/useStockSearch';
 import {
@@ -75,6 +75,7 @@ const baseIndicators: Omit<Indicators, 'customMAs'> = {
   ma5: false, ma5Color: '#ec4899', ma20: false, ma20Color: '#3b82f6',
   ma60: false, ma60Color: '#f59e0b', ma120: false, ma120Color: '#10b981',
   volume: true, rsi: false, macd: false, bollingerBands: false, ichimoku: false,
+  parallelChannel: false, bijagChannel: false,
 };
 
 const STRATEGY_PRESETS: Record<string, { indicators?: Partial<Omit<Indicators, 'customMAs'>>; addCustomMAs?: { period: number; color: string }[] }> = {
@@ -83,9 +84,9 @@ const STRATEGY_PRESETS: Record<string, { indicators?: Partial<Omit<Indicators, '
   dualRsi:          { indicators: { rsi: true } },
   rsiDivergence:    { indicators: { rsi: true } },
   fibonacci:        { indicators: { ma20: true, ma60: true, bollingerBands: true } },
-  monthlyMA10:      { addCustomMAs: [{ period: 10, color: '#f59e0b' }] },
+  monthlyMA10:      { indicators: { parallelChannel: true }, addCustomMAs: [{ period: 10, color: '#f59e0b' }] },
   weeklySR:         { indicators: { ma20: true, ma60: true } },
-  inbumBijag:       { indicators: { ichimoku: true } },
+  inbumBijag:       { indicators: { ichimoku: true, bijagChannel: true } },
   turtleTrading:    { indicators: { ma20: true } },
   // KIS 전략
   'kis-golden-cross':    { indicators: { ma5: true, ma20: true } },
@@ -498,6 +499,42 @@ export function SignalTradeDetail() {
                   })}
                 </div>
               </div>
+
+              {/* 채널 오버레이 옵션 (월봉 10이평 또는 인범 빗각 선택 시) */}
+              {(selectedSignalStrategy === 'monthly-ma' || selectedSignalStrategy === 'inbum-bijag') && (
+                <div className="pt-2 mt-2 border-t border-gray-100">
+                  <div className="flex items-center gap-1.5 px-1 pb-1.5">
+                    <Layers className="h-3 w-3 text-gray-400" />
+                    <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">채널 오버레이</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {selectedSignalStrategy === 'monthly-ma' && (
+                      <button
+                        onClick={() => handleIndicatorChange('parallelChannel', !indicators.parallelChannel)}
+                        className={`px-3 py-1.5 text-xs font-semibold rounded-lg border transition-all ${
+                          indicators.parallelChannel
+                            ? 'border-cyan-400 bg-cyan-50 text-cyan-700'
+                            : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                        }`}
+                      >
+                        패러럴 채널
+                      </button>
+                    )}
+                    {selectedSignalStrategy === 'inbum-bijag' && (
+                      <button
+                        onClick={() => handleIndicatorChange('bijagChannel', !indicators.bijagChannel)}
+                        className={`px-3 py-1.5 text-xs font-semibold rounded-lg border transition-all ${
+                          indicators.bijagChannel
+                            ? 'border-violet-400 bg-violet-50 text-violet-700'
+                            : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                        }`}
+                      >
+                        빗각 채널
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
