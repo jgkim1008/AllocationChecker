@@ -217,18 +217,23 @@ export default function TurtleTradingDetailPage() {
                     <tbody>
                       <tr className="border-b border-gray-100">
                         <td className="py-2 pr-3"><span className="inline-block w-4 h-1 bg-blue-500 rounded" /></td>
-                        <td className="py-2 font-bold text-gray-800">DC55 (파란선)</td>
-                        <td className="py-2 text-gray-600">이 위로 뚫으면 S2 매수 신호 (강한 신호)</td>
+                        <td className="py-2 font-bold text-gray-800">DC55 고가</td>
+                        <td className="py-2 text-gray-600">이 위로 뚫으면 <strong className="text-blue-600">S2 매수</strong> (강한 신호)</td>
                       </tr>
                       <tr className="border-b border-gray-100">
                         <td className="py-2 pr-3"><span className="inline-block w-4 h-1 bg-emerald-500 rounded" /></td>
-                        <td className="py-2 font-bold text-gray-800">DC20 (초록선)</td>
-                        <td className="py-2 text-gray-600">이 위로 뚫으면 S1 매수 신호</td>
+                        <td className="py-2 font-bold text-gray-800">DC20 고가</td>
+                        <td className="py-2 text-gray-600">이 위로 뚫으면 <strong className="text-emerald-600">S1 매수</strong></td>
+                      </tr>
+                      <tr className="border-b border-gray-100">
+                        <td className="py-2 pr-3"><span className="inline-block w-4 h-1 bg-blue-300 rounded" /></td>
+                        <td className="py-2 font-bold text-gray-800">DC20 저가</td>
+                        <td className="py-2 text-gray-600">이 아래로 빠지면 <strong className="text-blue-600">S2 매도</strong> (청산)</td>
                       </tr>
                       <tr>
                         <td className="py-2 pr-3"><span className="inline-block w-4 h-1 bg-amber-500 rounded" /></td>
-                        <td className="py-2 font-bold text-gray-800">DC10 (주황선)</td>
-                        <td className="py-2 text-gray-600">이 아래로 빠지면 S1 매도 신호</td>
+                        <td className="py-2 font-bold text-gray-800">DC10 저가</td>
+                        <td className="py-2 text-gray-600">이 아래로 빠지면 <strong className="text-amber-600">S1 매도</strong> (청산)</td>
                       </tr>
                     </tbody>
                   </table>
@@ -250,13 +255,13 @@ export default function TurtleTradingDetailPage() {
 
         {/* 핵심 수치 */}
         {result && last && (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
             <div className="bg-white rounded-2xl border border-gray-200 p-4">
               <p className="text-xs text-gray-400 font-bold">현재가</p>
               <p className="text-lg font-black text-gray-900 mt-1">{formatPrice(last.close, market)}</p>
             </div>
             <div className="bg-white rounded-2xl border border-blue-100 p-4">
-              <p className="text-xs text-gray-400 font-bold">DC55 고가 (S2 진입선)</p>
+              <p className="text-xs text-gray-400 font-bold">DC55 고가 (S2 진입)</p>
               <p className="text-lg font-black text-blue-700 mt-1">
                 {result.dc55High ? formatPrice(result.dc55High, market) : '-'}
               </p>
@@ -266,14 +271,36 @@ export default function TurtleTradingDetailPage() {
                 </p>
               )}
             </div>
+            <div className="bg-white rounded-2xl border border-blue-50 p-4">
+              <p className="text-xs text-gray-400 font-bold">DC20 저가 (S2 청산)</p>
+              <p className="text-lg font-black text-blue-500 mt-1">
+                {result.dc20Low ? formatPrice(result.dc20Low, market) : '-'}
+              </p>
+              {result.dc20Low && (
+                <p className={`text-xs font-bold mt-0.5 ${last.close <= result.dc20Low ? 'text-red-600' : 'text-gray-400'}`}>
+                  {last.close <= result.dc20Low ? '이탈 ⚠️' : `${((last.close - result.dc20Low) / last.close * 100).toFixed(1)}% 여유`}
+                </p>
+              )}
+            </div>
             <div className="bg-white rounded-2xl border border-emerald-100 p-4">
-              <p className="text-xs text-gray-400 font-bold">DC20 고가 (S1 진입선)</p>
+              <p className="text-xs text-gray-400 font-bold">DC20 고가 (S1 진입)</p>
               <p className="text-lg font-black text-emerald-700 mt-1">
                 {result.dc20High ? formatPrice(result.dc20High, market) : '-'}
               </p>
               {result.dc20High && (
                 <p className={`text-xs font-bold mt-0.5 ${last.close >= result.dc20High ? 'text-emerald-600' : 'text-gray-400'}`}>
                   {last.close >= result.dc20High ? '돌파 ✓' : `${((result.dc20High - last.close) / result.dc20High * 100).toFixed(1)}% 남음`}
+                </p>
+              )}
+            </div>
+            <div className="bg-white rounded-2xl border border-amber-100 p-4">
+              <p className="text-xs text-gray-400 font-bold">DC10 저가 (S1 청산)</p>
+              <p className="text-lg font-black text-amber-600 mt-1">
+                {result.dc10Low ? formatPrice(result.dc10Low, market) : '-'}
+              </p>
+              {result.dc10Low && (
+                <p className={`text-xs font-bold mt-0.5 ${last.close <= result.dc10Low ? 'text-red-600' : 'text-gray-400'}`}>
+                  {last.close <= result.dc10Low ? '이탈 ⚠️' : `${((last.close - result.dc10Low) / last.close * 100).toFixed(1)}% 여유`}
                 </p>
               )}
             </div>
