@@ -240,6 +240,50 @@ export default function TurtleTradingDetailPage() {
                 </div>
               </div>
 
+              {/* ATR 손절 vs DC 청산 차이 */}
+              <div className="bg-white rounded-xl p-4 border border-gray-200">
+                <h3 className="text-sm font-black text-gray-800 mb-3">🤔 ATR×2 손절 vs DC 저가 청산, 뭐가 다를까?</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+                  <div className="bg-red-50 rounded-lg p-3 border border-red-100">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-lg">🛑</span>
+                      <span className="font-bold text-red-800">ATR×2 손절</span>
+                    </div>
+                    <ul className="text-xs text-red-700 space-y-1">
+                      <li><strong>역할:</strong> 비상 탈출 (안전벨트)</li>
+                      <li><strong>기준:</strong> 진입가 − ATR×2 <span className="text-red-500">(고정)</span></li>
+                      <li><strong>작동:</strong> 급락 시 최대 손실 제한</li>
+                    </ul>
+                  </div>
+                  <div className="bg-blue-50 rounded-lg p-3 border border-blue-100">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-lg">🚪</span>
+                      <span className="font-bold text-blue-800">DC 저가 청산</span>
+                    </div>
+                    <ul className="text-xs text-blue-700 space-y-1">
+                      <li><strong>역할:</strong> 정상 청산 (추세 추종)</li>
+                      <li><strong>기준:</strong> N일 최저가 <span className="text-blue-500">(매일 변동)</span></li>
+                      <li><strong>작동:</strong> 추세 전환 시 수익 확보</li>
+                    </ul>
+                  </div>
+                </div>
+                <div className="bg-gray-800 rounded-lg p-3 text-xs font-mono">
+                  <p className="text-gray-400 mb-2">예시) 진입가 $100, ATR $5</p>
+                  <div className="space-y-1 text-gray-300">
+                    <p>• ATR×2 손절: $100 − $10 = <span className="text-red-400 font-bold">$90</span> (고정)</p>
+                    <p>• DC20 저가: <span className="text-blue-400 font-bold">$95</span> (매일 변동)</p>
+                  </div>
+                  <div className="border-t border-gray-600 mt-2 pt-2 text-gray-400">
+                    <p>→ 보통 DC20 저가($95)가 먼저 걸림 = <span className="text-emerald-400">정상 청산</span></p>
+                    <p>→ 급락 시 ATR×2($90)가 작동 = <span className="text-red-400">비상 탈출</span></p>
+                  </div>
+                </div>
+                <p className="text-[11px] text-gray-500 mt-3">
+                  💡 <strong>결론:</strong> ATR×2는 &quot;최악의 경우 여기서 무조건 나간다&quot;는 <strong>보험</strong>,
+                  DC 저가는 &quot;추세가 꺾이면 나간다&quot;는 <strong>전략</strong>입니다.
+                </p>
+              </div>
+
               {/* 주의사항 */}
               <div className="bg-red-50 rounded-xl p-4 border border-red-200">
                 <h3 className="text-sm font-black text-red-800 mb-2">⚠️ 이런 경우 조심!</h3>
