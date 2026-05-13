@@ -87,7 +87,7 @@ const STRATEGY_PRESETS: Record<string, { indicators?: Partial<Omit<Indicators, '
   monthlyMA10:      { indicators: { parallelChannel: true }, addCustomMAs: [{ period: 10, color: '#f59e0b' }] },
   weeklySR:         { indicators: { ma20: true, ma60: true } },
   inbumBijag:       { indicators: { ichimoku: true, bijagChannel: true } },
-  turtleTrading:    { indicators: { ma20: true } },
+  turtleTrading:    { indicators: { ma20: true }, addCustomMAs: [{ period: 10, color: '#22c55e' }, { period: 55, color: '#ef4444' }] },
   // KIS 전략
   'kis-golden-cross':    { indicators: { ma5: true, ma20: true } },
   'kis-momentum':        { indicators: { ma60: true } },
