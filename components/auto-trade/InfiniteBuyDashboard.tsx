@@ -255,24 +255,24 @@ export function InfiniteBuyDashboard() {
         <div className="flex items-center gap-3">
           <button
             onClick={() => setSelectedSymbol(null)}
-            className="flex items-center gap-1.5 text-gray-500 hover:text-gray-900 transition-colors"
+            className="flex items-center gap-1.5 text-slate-600 hover:text-black transition-colors"
           >
             <ChevronLeft className="h-5 w-5" />
             <span className="text-sm">목록</span>
           </button>
           <div className="flex items-center gap-2">
             <span className="font-bold text-xl">{p.symbol}</span>
-            <span className="text-sm text-gray-400">{p.symbol} · {isOverseas ? 'AMEX' : 'KRX'} · {p.strategy_version}</span>
+            <span className="text-sm text-slate-500">{p.symbol} · {isOverseas ? 'AMEX' : 'KRX'} · {p.strategy_version}</span>
           </div>
         </div>
 
         {/* 액션 버튼 */}
         <div className="flex gap-2">
-          <button className="flex items-center gap-1.5 px-3 py-2 text-sm text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+          <button className="flex items-center gap-1.5 px-3 py-2 text-sm text-slate-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
             <Menu className="h-4 w-4" />
             일시정지
           </button>
-          <button className="flex items-center gap-1.5 px-3 py-2 text-sm text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+          <button className="flex items-center gap-1.5 px-3 py-2 text-sm text-slate-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
             <Trash2 className="h-4 w-4" />
             삭제
           </button>
@@ -284,9 +284,9 @@ export function InfiniteBuyDashboard() {
 
         {/* 현재가 카드 */}
         <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <div className="text-xs text-gray-400 mb-1">현재가</div>
+          <div className="text-xs text-slate-600 font-medium mb-1">현재가</div>
           <div className="flex items-baseline gap-2">
-            <span className="text-4xl font-bold tracking-tight">{formatPrice(p.currentPrice ?? 0, p.symbol)}</span>
+            <span className="text-4xl font-bold tracking-tight text-black">{formatPrice(p.currentPrice ?? 0, p.symbol)}</span>
             {(p.change ?? 0) !== 0 && (
               <span className={`text-sm font-medium ${(p.changeRate ?? 0) >= 0 ? 'text-red-500' : 'text-blue-500'}`}>
                 ▲ {formatPrice(Math.abs(p.change ?? 0), p.symbol)} ({(p.changeRate ?? 0) >= 0 ? '+' : ''}{(p.changeRate ?? 0).toFixed(2)}%)
@@ -296,16 +296,16 @@ export function InfiniteBuyDashboard() {
 
           <div className="grid grid-cols-3 gap-4 mt-6 pt-4 border-t border-gray-100">
             <div>
-              <div className="text-xs text-gray-400 mb-1">평단가</div>
-              <div className="text-sm font-medium">{formatPrice(p.avgCost ?? 0, p.symbol)}</div>
+              <div className="text-xs text-slate-600 font-medium mb-1">평단가</div>
+              <div className="text-sm font-bold text-black">{formatPrice(p.avgCost ?? 0, p.symbol)}</div>
             </div>
             <div>
-              <div className="text-xs text-gray-400 mb-1">익절 (+{(p.starPct ?? 0).toFixed(0)}%)</div>
-              <div className="text-sm font-medium text-red-500">{formatPrice(p.targetPrice ?? 0, p.symbol)}</div>
+              <div className="text-xs text-slate-600 font-medium mb-1">익절 (+{(p.starPct ?? 0).toFixed(0)}%)</div>
+              <div className="text-sm font-bold text-red-500">{formatPrice(p.targetPrice ?? 0, p.symbol)}</div>
             </div>
             <div>
-              <div className="text-xs text-gray-400 mb-1">보유 수량</div>
-              <div className="text-sm font-medium">{(p.shares ?? 0).toLocaleString()} 주</div>
+              <div className="text-xs text-slate-600 font-medium mb-1">보유 수량</div>
+              <div className="text-sm font-bold text-black">{(p.shares ?? 0).toLocaleString()} 주</div>
             </div>
           </div>
         </div>
@@ -313,27 +313,27 @@ export function InfiniteBuyDashboard() {
         {/* V4.0 사이클 상태 */}
         <div className="bg-white rounded-xl border border-gray-200 p-5">
           <div className="flex items-center justify-between mb-5">
-            <span className="font-medium">{p.strategy_version.toUpperCase()} 사이클 상태</span>
-            <span className="text-xs px-2 py-1 bg-gray-100 text-gray-600 rounded-md">일반 모드</span>
+            <span className="font-medium text-black">{p.strategy_version.toUpperCase()} 사이클 상태</span>
+            <span className="text-xs px-2 py-1 bg-gray-100 text-slate-800 rounded-md font-medium">일반 모드</span>
           </div>
 
           <div className="grid grid-cols-2 gap-8">
             <div>
-              <div className="text-xs text-gray-400 mb-1">T 값</div>
-              <div className="text-3xl font-bold">{t.toFixed(1)}</div>
-              <div className="text-xs text-gray-400 mt-1">{investedPct.toFixed(1)}% (N={divisions})</div>
+              <div className="text-xs text-slate-600 font-medium mb-1">T 값</div>
+              <div className="text-3xl font-bold text-black">{t.toFixed(1)}</div>
+              <div className="text-xs text-slate-700 mt-1">{investedPct.toFixed(1)}% (N={divisions})</div>
             </div>
             <div>
-              <div className="text-xs text-gray-400 mb-1">잔금 ({isOverseas ? 'USD' : 'KRW'})</div>
-              <div className="text-3xl font-bold">{formatMoney(remainingCapital, p.symbol)}</div>
-              <div className="text-xs text-gray-400 mt-1">1회매수: 잔금/(N-T)</div>
+              <div className="text-xs text-slate-600 font-medium mb-1">잔금 ({isOverseas ? 'USD' : 'KRW'})</div>
+              <div className="text-3xl font-bold text-black">{formatMoney(remainingCapital, p.symbol)}</div>
+              <div className="text-xs text-slate-700 mt-1">1회매수: 잔금/(N-T)</div>
             </div>
           </div>
 
           <div className="mt-6 pt-4 border-t border-gray-100">
-            <div className="text-xs text-gray-400 mb-1">다음 단계</div>
-            <div className="font-medium">{nextStep}</div>
-            <div className="text-xs text-gray-400 mt-0.5">{nextStepDesc}</div>
+            <div className="text-xs text-slate-600 font-medium mb-1">다음 단계</div>
+            <div className="font-medium text-black">{nextStep}</div>
+            <div className="text-xs text-slate-700 mt-0.5">{nextStepDesc}</div>
             <div className="mt-3 h-2 bg-gray-100 rounded-full overflow-hidden">
               <div
                 className="h-full bg-red-400 rounded-full transition-all"
@@ -346,32 +346,32 @@ export function InfiniteBuyDashboard() {
         {/* 예산 현황 */}
         <div className="bg-white rounded-xl border border-gray-200 p-5">
           <div className="flex items-center justify-between mb-5">
-            <span className="font-medium">예산 현황</span>
-            <span className="text-xs text-gray-400">투입률 {investedPct.toFixed(1)}%</span>
+            <span className="font-medium text-black">예산 현황</span>
+            <span className="text-xs text-slate-700 font-medium">투입률 {investedPct.toFixed(1)}%</span>
           </div>
 
           <div className="grid grid-cols-2 gap-x-8 gap-y-5">
             <div>
-              <div className="text-xs text-gray-400 mb-1">원금</div>
-              <div className="font-medium">{formatMoney(p.total_capital, p.symbol)}</div>
+              <div className="text-xs text-slate-600 font-medium mb-1">원금</div>
+              <div className="font-bold text-black">{formatMoney(p.total_capital, p.symbol)}</div>
             </div>
             <div>
-              <div className="text-xs text-gray-400 mb-1">투입액</div>
-              <div className="font-medium">{formatMoney(p.invested ?? 0, p.symbol)}</div>
-              <div className="text-xs text-gray-400">{investedPct.toFixed(1)}%</div>
+              <div className="text-xs text-slate-600 font-medium mb-1">투입액</div>
+              <div className="font-bold text-black">{formatMoney(p.invested ?? 0, p.symbol)}</div>
+              <div className="text-xs text-slate-700">{investedPct.toFixed(1)}%</div>
             </div>
             <div>
-              <div className="text-xs text-gray-400 mb-1">잔여 예산</div>
-              <div className="font-medium">{formatMoney(remainingCapital, p.symbol)}</div>
-              <div className="text-xs text-gray-400">{remainingPct.toFixed(1)}%</div>
+              <div className="text-xs text-slate-600 font-medium mb-1">잔여 예산</div>
+              <div className="font-bold text-black">{formatMoney(remainingCapital, p.symbol)}</div>
+              <div className="text-xs text-slate-700">{remainingPct.toFixed(1)}%</div>
               <div className="mt-2 h-1.5 bg-gray-100 rounded-full overflow-hidden">
                 <div className="h-full bg-red-400 rounded-full" style={{ width: `${remainingPct}%` }} />
               </div>
             </div>
             <div>
-              <div className="text-xs text-gray-400 mb-1">평가액</div>
-              <div className="font-medium">{formatMoney(p.evalAmount ?? 0, p.symbol)}</div>
-              <div className={`text-xs ${(p.pnl ?? 0) >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+              <div className="text-xs text-slate-600 font-medium mb-1">평가액</div>
+              <div className="font-bold text-black">{formatMoney(p.evalAmount ?? 0, p.symbol)}</div>
+              <div className={`text-xs font-medium ${(p.pnl ?? 0) >= 0 ? 'text-green-600' : 'text-red-500'}`}>
                 {(p.pnl ?? 0) >= 0 ? '+' : ''}{formatMoney(p.pnl ?? 0, p.symbol)} ({(p.pnl ?? 0) >= 0 ? '+' : ''}{(p.pnlRate ?? 0).toFixed(2)}%)
               </div>
               <div className="mt-2 h-1.5 bg-gray-100 rounded-full overflow-hidden">
@@ -397,7 +397,7 @@ export function InfiniteBuyDashboard() {
               className={`px-2.5 py-1 text-xs rounded-full transition-colors ${
                 activePreset === 'laor'
                   ? 'bg-red-500 text-white'
-                  : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                  : 'bg-gray-100 text-slate-600 hover:bg-gray-200'
               }`}
             >
               라오어 무한매수법
@@ -407,7 +407,7 @@ export function InfiniteBuyDashboard() {
               className={`px-2.5 py-1 text-xs rounded-full transition-colors ${
                 activePreset === 'v4'
                   ? 'bg-gray-800 text-white'
-                  : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                  : 'bg-gray-100 text-slate-600 hover:bg-gray-200'
               }`}
             >
               무매 V4.0
@@ -417,14 +417,14 @@ export function InfiniteBuyDashboard() {
               className={`px-2.5 py-1 text-xs rounded-full transition-colors ${
                 activePreset === 'real'
                   ? 'bg-gray-800 text-white'
-                  : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                  : 'bg-gray-100 text-slate-600 hover:bg-gray-200'
               }`}
             >
               실계좌
             </button>
           </div>
         </div>
-        <p className="text-sm text-gray-400">
+        <p className="text-sm text-slate-500">
           {portfolios.length}개 종목 자동 운용중
           {lastUpdate && ` · 마지막 갱신 ${lastUpdate.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`}
         </p>
@@ -438,10 +438,10 @@ export function InfiniteBuyDashboard() {
 
       {loading ? (
         <div className="flex items-center justify-center py-20">
-          <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+          <Loader2 className="h-8 w-8 animate-spin text-slate-500" />
         </div>
       ) : portfolios.length === 0 ? (
-        <div className="text-center py-16 text-gray-400">
+        <div className="text-center py-16 text-slate-500">
           <div className="text-4xl mb-3">📊</div>
           <p className="font-medium">등록된 포트폴리오가 없습니다</p>
           <p className="text-sm mt-1">위 버튼을 눌러 새 포트폴리오를 추가하세요</p>
@@ -452,43 +452,43 @@ export function InfiniteBuyDashboard() {
           <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100">
             {/* 총 평가액 */}
             <div className="flex items-center justify-between px-4 py-3">
-              <span className="text-sm text-gray-500">총 평가액</span>
+              <span className="text-sm text-slate-800 font-medium">총 평가액</span>
               <div className="text-right">
                 <span className="font-bold text-green-600">{formatMoney(summary.totalEval)}</span>
                 <span className="text-green-600 ml-2">
                   ({summary.totalPnlRate >= 0 ? '+' : ''}{summary.totalPnlRate.toFixed(2)}%)
                 </span>
-                <div className="text-xs text-green-500">
+                <div className="text-xs text-green-500 font-medium">
                   {summary.totalPnl >= 0 ? '+' : ''}{formatMoney(summary.totalPnl)}
                 </div>
               </div>
             </div>
             {/* 시드 투입률 */}
             <div className="flex items-center justify-between px-4 py-3">
-              <span className="text-sm text-gray-500">시드 투입률</span>
+              <span className="text-sm text-slate-800 font-medium">시드 투입률</span>
               <div className="text-right">
-                <span className="font-bold">{summary.investedRate.toFixed(1)}%</span>
-                <div className="text-xs text-gray-400">
+                <span className="font-bold text-black">{summary.investedRate.toFixed(1)}%</span>
+                <div className="text-xs text-slate-700">
                   {formatMoney(summary.totalInvested)} / {formatMoney(summary.totalCapital)}
                 </div>
               </div>
             </div>
             {/* 미투입 예산 */}
             <div className="flex items-center justify-between px-4 py-3">
-              <span className="text-sm text-gray-500">미투입 예산</span>
+              <span className="text-sm text-slate-800 font-medium">미투입 예산</span>
               <div className="text-right">
-                <span className="font-bold">{formatMoney(summary.remainingBudget)}</span>
-                <div className="text-xs text-gray-400">
+                <span className="font-bold text-black">{formatMoney(summary.remainingBudget)}</span>
+                <div className="text-xs text-slate-700">
                   총 원금 {formatMoney(summary.totalCapital)}
                 </div>
               </div>
             </div>
             {/* 대기중 주문 */}
             <div className="flex items-center justify-between px-4 py-3">
-              <span className="text-sm text-gray-500">대기중 주문</span>
+              <span className="text-sm text-slate-800 font-medium">대기중 주문</span>
               <div className="text-right">
-                <span className="font-bold">{summary.pendingOrders} 건</span>
-                <div className="text-xs text-gray-400">
+                <span className="font-bold text-black">{summary.pendingOrders} 건</span>
+                <div className="text-xs text-slate-700">
                   LOC · 장마감 체결 대기
                 </div>
               </div>
@@ -499,14 +499,14 @@ export function InfiniteBuyDashboard() {
           <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
             <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
               <div className="flex items-center gap-2">
-                <span className="font-medium">운용중 포트폴리오</span>
-                <span className="text-sm text-gray-400">{portfolios.length}</span>
+                <span className="font-medium text-black">운용중 포트폴리오</span>
+                <span className="text-sm text-slate-700">{portfolios.length}</span>
               </div>
               <div className="flex gap-1 text-xs">
                 <button
                   onClick={() => setFilterTab('all')}
                   className={`px-2 py-1 rounded transition-colors ${
-                    filterTab === 'all' ? 'bg-gray-800 text-white' : 'text-gray-400 hover:bg-gray-100'
+                    filterTab === 'all' ? 'bg-gray-800 text-white' : 'text-slate-700 hover:bg-gray-100'
                   }`}
                 >
                   전체 {portfolios.length}
@@ -514,7 +514,7 @@ export function InfiniteBuyDashboard() {
                 <button
                   onClick={() => setFilterTab('profit')}
                   className={`px-2 py-1 rounded transition-colors ${
-                    filterTab === 'profit' ? 'bg-red-500 text-white' : 'text-gray-400 hover:bg-gray-100'
+                    filterTab === 'profit' ? 'bg-red-500 text-white' : 'text-slate-700 hover:bg-gray-100'
                   }`}
                 >
                   수익 {profitCount}
@@ -522,7 +522,7 @@ export function InfiniteBuyDashboard() {
                 <button
                   onClick={() => setFilterTab('loss')}
                   className={`px-2 py-1 rounded transition-colors ${
-                    filterTab === 'loss' ? 'bg-blue-500 text-white' : 'text-gray-400 hover:bg-gray-100'
+                    filterTab === 'loss' ? 'bg-blue-500 text-white' : 'text-slate-700 hover:bg-gray-100'
                   }`}
                 >
                   손실 {lossCount}
@@ -543,18 +543,18 @@ export function InfiniteBuyDashboard() {
                   >
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className="font-bold">{p.symbol}</span>
-                        <span className="text-xs text-gray-400">{p.strategy_version}</span>
+                        <span className="font-bold text-black">{p.symbol}</span>
+                        <span className="text-xs text-slate-600">{p.strategy_version}</span>
                       </div>
-                      <div className="flex items-center gap-1 mt-1 text-xs text-gray-400 flex-wrap">
+                      <div className="flex items-center gap-1 mt-1 text-xs text-slate-700 flex-wrap">
                         <span>평단 {formatPrice(p.avgCost ?? 0, p.symbol)}</span>
-                        <span className={isProfit ? 'text-red-400' : 'text-blue-400'}>
+                        <span className={isProfit ? 'text-red-500' : 'text-blue-500'}>
                           T+{(p.starPct ?? 0).toFixed(0)}%
                         </span>
-                        <span className={isProfit ? 'text-red-400' : 'text-blue-400'}>
+                        <span className={isProfit ? 'text-red-500' : 'text-blue-500'}>
                           {formatPrice(p.targetPrice ?? 0, p.symbol)}
                         </span>
-                        <span className="text-gray-300">—</span>
+                        <span className="text-slate-500">—</span>
                         <span>{p.cycle}회차</span>
                         <span>·</span>
                         <span>{investedPct.toFixed(0)}%</span>
@@ -562,15 +562,15 @@ export function InfiniteBuyDashboard() {
                     </div>
                     <div className="text-right ml-4 shrink-0">
                       <div className="flex items-center gap-2 justify-end">
-                        <span className="font-bold">{formatPrice(p.currentPrice ?? 0, p.symbol)}</span>
-                        <span className="text-gray-400">·</span>
-                        <span className="text-gray-500">{(p.shares ?? 0).toLocaleString()}주</span>
+                        <span className="font-bold text-black">{formatPrice(p.currentPrice ?? 0, p.symbol)}</span>
+                        <span className="text-slate-600">·</span>
+                        <span className="text-slate-800">{(p.shares ?? 0).toLocaleString()}주</span>
                         <span className={`font-bold ${isProfit ? 'text-red-500' : 'text-blue-500'}`}>
                           {isProfit ? '+' : ''}{(p.pnlRate ?? 0).toFixed(2)}%
                         </span>
                       </div>
                     </div>
-                    <ChevronRight className="h-4 w-4 text-gray-300 ml-2 shrink-0" />
+                    <ChevronRight className="h-4 w-4 text-slate-500 ml-2 shrink-0" />
                   </button>
                 );
               })}
@@ -580,32 +580,32 @@ export function InfiniteBuyDashboard() {
           {/* 금일 체결 */}
           <div className="bg-white rounded-xl border border-gray-200 p-4">
             <div className="flex items-center gap-2 mb-3">
-              <span className="font-medium">금일 체결</span>
-              <span className="flex items-center gap-1 text-xs text-green-500">
+              <span className="font-medium text-black">금일 체결</span>
+              <span className="flex items-center gap-1 text-xs text-green-600 font-medium">
                 <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
                 LIVE
               </span>
             </div>
-            <div className="text-sm text-gray-400">
+            <div className="text-sm text-slate-800">
               <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-300">01:14:48</span>
-                <span className="text-gray-500">일반</span>
-                <span>무한매수 SOXL · v4.0</span>
+                <span className="text-xs text-slate-600">01:14:48</span>
+                <span className="text-slate-700">일반</span>
+                <span className="text-black">무한매수 SOXL · v4.0</span>
               </div>
-              <div className="text-xs text-gray-400 mt-1 ml-14">11건 모두 건너뛰었습니다.</div>
+              <div className="text-xs text-slate-700 mt-1 ml-14">11건 모두 건너뛰었습니다.</div>
             </div>
-            <button className="text-xs text-gray-400 hover:text-gray-600 mt-3 block">
+            <button className="text-xs text-slate-600 hover:text-slate-800 mt-3 block font-medium">
               전체 로그 보기 →
             </button>
           </div>
 
           {/* 주의 알림 */}
           <div className="bg-white rounded-xl border border-red-200 p-4">
-            <div className="flex items-center gap-2 text-red-500 mb-2">
+            <div className="flex items-center gap-2 text-red-600 mb-2">
               <AlertTriangle className="h-4 w-4" />
               <span className="font-medium">주의 알림</span>
             </div>
-            <p className="text-sm text-gray-500">
+            <p className="text-sm text-slate-800">
               현재 주의가 필요한 종목이 없습니다.
             </p>
           </div>
