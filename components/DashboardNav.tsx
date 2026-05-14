@@ -37,6 +37,11 @@ export function DashboardNav() {
   const isAdmin = username === ADMIN_USERNAME;
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
+  // 어드민만 자동매매 탭 표시
+  const visibleNavLinks = NAV_LINKS.filter(
+    (link) => link.href !== '/auto-trade' || isAdmin
+  );
+
   const handleLogout = async () => {
     await logout();
     router.replace('/login');
@@ -50,7 +55,7 @@ export function DashboardNav() {
           <div className="flex items-center gap-6">
             <span className="font-bold text-gray-900 text-sm">AllocationChecker</span>
             <nav className="hidden sm:flex items-center gap-1">
-              {NAV_LINKS.map((link) => {
+              {visibleNavLinks.map((link) => {
                 const isActive = link.href === '/strategies'
                   ? pathname === '/strategies' || (pathname.startsWith('/strategies/') && !pathname.startsWith('/strategies/stock-scan'))
                   : pathname.startsWith(link.href);
@@ -109,7 +114,7 @@ export function DashboardNav() {
         {mobileMenuOpen && (
           <div className="sm:hidden bg-white border-t border-gray-100 px-4 py-2 shadow-lg">
             <div className="flex flex-col gap-1">
-              {NAV_LINKS.map((link) => {
+              {visibleNavLinks.map((link) => {
                 const isActive = link.href === '/strategies'
                   ? pathname === '/strategies' || (pathname.startsWith('/strategies/') && !pathname.startsWith('/strategies/stock-scan'))
                   : pathname.startsWith(link.href);
