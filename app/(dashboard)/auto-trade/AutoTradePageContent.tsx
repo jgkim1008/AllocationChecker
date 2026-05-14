@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { BrokerConnect, AutoTradePanel, OrderHistory, BalancePanel, PositionSync } from '@/components/auto-trade';
+import { BrokerConnect, AutoTradePanel, InfiniteBuyDashboard, OrderHistory, BalancePanel, PositionSync } from '@/components/auto-trade';
 import { SignalTradePanel } from '@/components/signal-trade';
 
 
@@ -11,7 +11,7 @@ const DCAPanel = dynamic(() => import('@/components/auto-trade/DCAPanel'), { ssr
 import { PremiumGate } from '@/components/PremiumGate';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Bot, Link, History, TrendingUp, Wallet, GitCompare, Zap, TrendingDown, Loader2 } from 'lucide-react';
+import { Bot, Link, History, TrendingUp, Wallet, GitCompare, Zap, TrendingDown, Loader2, LayoutDashboard, Settings } from 'lucide-react';
 
 interface ConnectedCredential {
   credentialId: string;
@@ -111,7 +111,24 @@ export default function AutoTradePageContent() {
         </TabsList>
 
         <TabsContent value="trade">
-          <AutoTradePanel />
+          <Tabs defaultValue="dashboard" className="w-full">
+            <TabsList className="mb-4 w-full sm:w-auto grid grid-cols-2 sm:flex">
+              <TabsTrigger value="dashboard" className="flex items-center gap-2">
+                <LayoutDashboard className="h-4 w-4" />
+                대시보드
+              </TabsTrigger>
+              <TabsTrigger value="manual" className="flex items-center gap-2">
+                <Settings className="h-4 w-4" />
+                수동 설정
+              </TabsTrigger>
+            </TabsList>
+            <TabsContent value="dashboard">
+              <InfiniteBuyDashboard />
+            </TabsContent>
+            <TabsContent value="manual">
+              <AutoTradePanel />
+            </TabsContent>
+          </Tabs>
         </TabsContent>
 
         <TabsContent value="dca">

@@ -1,5 +1,6 @@
 export { BrokerConnect } from './BrokerConnect';
 export { AutoTradePanel } from './AutoTradePanel';
+export { InfiniteBuyDashboard } from './InfiniteBuyDashboard';
 export { OrderHistory } from './OrderHistory';
 export { BalancePanel } from './BalancePanel';
 export { PositionSync } from './PositionSync';
