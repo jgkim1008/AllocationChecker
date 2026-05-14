@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import {
@@ -238,6 +238,20 @@ export function SignalTradeDetail() {
     setQuery(''); reset();
   };
 
+  // 기본 종목 선택 (122630 KODEX 레버리지)
+  useEffect(() => {
+    const defaultStock: StockSearchResult = {
+      symbol: '122630',
+      name: 'KODEX 레버리지',
+      exchange: 'KOSPI',
+      market: 'KR',
+      currency: 'KRW',
+    };
+    setSelected(defaultStock);
+    setQuery(defaultStock.symbol);
+    fetchStockData(defaultStock.symbol, defaultStock.market);
+  }, [fetchStockData]);
+
   const selectedStrategyInfo = selectedSignalStrategy
     ? SIGNAL_STRATEGIES.find(s => s.id === selectedSignalStrategy)
     : null;
@@ -347,6 +361,9 @@ export function SignalTradeDetail() {
                     { symbol: 'TQQQ', market: 'US' as const },
                     { symbol: 'QLD',  market: 'US' as const },
                     { symbol: 'NVDA', market: 'US' as const },
+                    { symbol: '122630', market: 'KR' as const },
+                    { symbol: '418660', market: 'KR' as const },
+                    { symbol: '0183J0', market: 'KR' as const },
                   ].map(({ symbol, market: m }) => (
                     <button
                       key={symbol}

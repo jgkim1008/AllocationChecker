@@ -19,6 +19,31 @@ interface ConnectedCredential {
   accountAlias?: string;
 }
 
+function InfiniteBuyTabs() {
+  const [innerTab, setInnerTab] = useState<'dashboard' | 'manual'>('dashboard');
+
+  return (
+    <Tabs value={innerTab} onValueChange={(v) => setInnerTab(v as 'dashboard' | 'manual')} className="w-full">
+      <TabsList className="mb-4 w-full sm:w-auto grid grid-cols-2 sm:flex">
+        <TabsTrigger value="dashboard" className="flex items-center gap-2">
+          <LayoutDashboard className="h-4 w-4" />
+          대시보드
+        </TabsTrigger>
+        <TabsTrigger value="manual" className="flex items-center gap-2">
+          <Settings className="h-4 w-4" />
+          수동 설정
+        </TabsTrigger>
+      </TabsList>
+      <TabsContent value="dashboard">
+        <InfiniteBuyDashboard onNavigateToManual={() => setInnerTab('manual')} />
+      </TabsContent>
+      <TabsContent value="manual">
+        <AutoTradePanel />
+      </TabsContent>
+    </Tabs>
+  );
+}
+
 export default function AutoTradePageContent() {
   const [mounted, setMounted] = useState(false);
   const [connectedCredentials, setConnectedCredentials] = useState<ConnectedCredential[]>([]);
@@ -111,24 +136,7 @@ export default function AutoTradePageContent() {
         </TabsList>
 
         <TabsContent value="trade">
-          <Tabs defaultValue="dashboard" className="w-full">
-            <TabsList className="mb-4 w-full sm:w-auto grid grid-cols-2 sm:flex">
-              <TabsTrigger value="dashboard" className="flex items-center gap-2">
-                <LayoutDashboard className="h-4 w-4" />
-                대시보드
-              </TabsTrigger>
-              <TabsTrigger value="manual" className="flex items-center gap-2">
-                <Settings className="h-4 w-4" />
-                수동 설정
-              </TabsTrigger>
-            </TabsList>
-            <TabsContent value="dashboard">
-              <InfiniteBuyDashboard />
-            </TabsContent>
-            <TabsContent value="manual">
-              <AutoTradePanel />
-            </TabsContent>
-          </Tabs>
+          <InfiniteBuyTabs />
         </TabsContent>
 
         <TabsContent value="dca">
