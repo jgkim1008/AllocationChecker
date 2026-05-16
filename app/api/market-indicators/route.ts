@@ -90,12 +90,25 @@ async function fetchSymbol(cfg: IndicatorConfig) {
   if (!res.ok) throw new Error(`Yahoo ${cfg.symbol}: ${res.status}`);
 
   const data = await res.json();
-  const result  = data?.chart?.result?.[0];
-  const meta    = result?.meta;
-  const rawCloses: (number | null)[] =
-    result?.indicators?.quote?.[0]?.close ?? [];
-  const closes = rawCloses.filter((c): c is number => c !== null);
+  const result     = data?.chart?.result?.[0];
+  const meta       = result?.meta;
+  const timestamps: number[]          = result?.timestamp ?? [];
+  const rawCloses:  (number | null)[] = result?.indicators?.quote?.[0]?.close ?? [];
 
+  // 히스토리 — timestamp(Unix초) → YYYY-MM-DD, null 제거
+  const history: { time: string; value: number }[] = [];
+  timestamps.forEach((ts, i) => {
+    const v = rawCloses[i];
+    if (v == null) return;
+    const d   = new Date(ts * 1000);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    history.push({
+      time:  `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`,
+      value: v,
+    });
+  });
+
+  const closes = history.map(h => h.value);
   const price: number     = meta?.regularMarketPrice ?? closes.at(-1) ?? 0;
   const prevClose: number = meta?.chartPreviousClose ?? meta?.previousClose ?? price;
   const changePercent     = prevClose !== 0
@@ -114,6 +127,7 @@ async function fetchSymbol(cfg: IndicatorConfig) {
     trendText,
     trendDir,
     alertLevel:    cfg.alertFn(price),
+    history,
   };
 }
 
@@ -134,6 +148,7 @@ export async function GET() {
         trendText:     '조회 실패',
         trendDir:      'flat' as TrendDir,
         alertLevel:    'neutral' as AlertLevel,
+        history:       [] as { time: string; value: number }[],
       };
     });
 

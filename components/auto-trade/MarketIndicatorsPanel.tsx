@@ -1,7 +1,14 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
-import { TrendingUp, TrendingDown, Minus, AlertTriangle, Flame, Activity, RefreshCw } from 'lucide-react';
+import { useEffect, useState, useCallback, useRef } from 'react';
+import {
+  createChart, ColorType, CrosshairMode, AreaSeries, LineSeries, LineStyle,
+  type IChartApi,
+} from 'lightweight-charts';
+import {
+  TrendingUp, TrendingDown, Minus,
+  AlertTriangle, Flame, Activity, RefreshCw, ChevronDown, X,
+} from 'lucide-react';
 
 type AlertLevel = 'danger' | 'warning' | 'neutral' | 'positive';
 type TrendDir   = 'up' | 'down' | 'flat';
@@ -16,6 +23,7 @@ interface IndicatorData {
   trendText:     string;
   trendDir:      TrendDir;
   alertLevel:    AlertLevel;
+  history:       { time: string; value: number }[];
 }
 
 interface MarketResponse {
@@ -25,11 +33,18 @@ interface MarketResponse {
 }
 
 // ── 스타일 맵 ───────────────────────────────────────────────────────────
-const ALERT_STYLES: Record<AlertLevel, { badge: string; row: string; dot: string }> = {
-  danger:   { badge: 'bg-red-100 text-red-700',         row: 'bg-red-50/60',         dot: 'bg-red-400' },
-  warning:  { badge: 'bg-amber-100 text-amber-700',     row: 'bg-amber-50/40',       dot: 'bg-amber-400' },
-  neutral:  { badge: 'bg-gray-100 text-gray-600',       row: '',                     dot: 'bg-gray-300' },
-  positive: { badge: 'bg-emerald-100 text-emerald-700', row: 'bg-emerald-50/40',     dot: 'bg-emerald-400' },
+const ALERT_STYLES: Record<AlertLevel, { badge: string; row: string; rowActive: string }> = {
+  danger:   { badge: 'bg-red-100 text-red-700',         row: 'hover:bg-red-50/60',         rowActive: 'bg-red-50' },
+  warning:  { badge: 'bg-amber-100 text-amber-700',     row: 'hover:bg-amber-50/40',       rowActive: 'bg-amber-50' },
+  neutral:  { badge: 'bg-gray-100 text-gray-600',       row: 'hover:bg-gray-50',           rowActive: 'bg-gray-50' },
+  positive: { badge: 'bg-emerald-100 text-emerald-700', row: 'hover:bg-emerald-50/40',     rowActive: 'bg-emerald-50' },
+};
+
+const ALERT_CHART: Record<AlertLevel, { line: string; top: string; bottom: string }> = {
+  danger:   { line: '#ef4444', top: 'rgba(239,68,68,0.18)',    bottom: 'rgba(239,68,68,0)' },
+  warning:  { line: '#f59e0b', top: 'rgba(245,158,11,0.18)',   bottom: 'rgba(245,158,11,0)' },
+  neutral:  { line: '#6b7280', top: 'rgba(107,114,128,0.12)',  bottom: 'rgba(107,114,128,0)' },
+  positive: { line: '#10b981', top: 'rgba(16,185,129,0.18)',   bottom: 'rgba(16,185,129,0)' },
 };
 
 const COMMENT_STYLES: Record<string, string> = {
@@ -51,6 +66,7 @@ function SkeletonRow() {
       <td className="px-4 py-3 text-right"><div className="ml-auto h-4 w-16 animate-pulse rounded bg-gray-100" /></td>
       <td className="px-4 py-3"><div className="h-5 w-24 animate-pulse rounded-full bg-gray-100" /></td>
       <td className="hidden px-4 py-3 sm:table-cell"><div className="h-4 w-48 animate-pulse rounded bg-gray-100" /></td>
+      <td className="px-2 py-3 w-6" />
     </tr>
   );
 }
@@ -60,15 +76,101 @@ function formatUpdatedAt(iso: string): string {
     const d = new Date(iso);
     const pad = (n: number) => String(n).padStart(2, '0');
     return `${d.getFullYear()}.${pad(d.getMonth() + 1)}.${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  } catch {
-    return iso;
-  }
+  } catch { return iso; }
 }
 
+// ── 인디케이터 차트 ─────────────────────────────────────────────────────
+function IndicatorChart({ indicator }: { indicator: IndicatorData }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const chartRef     = useRef<IChartApi | null>(null);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || indicator.history.length < 2) return;
+
+    const colors = ALERT_CHART[indicator.alertLevel];
+
+    const chart = createChart(el, {
+      width:  el.clientWidth,
+      height: 220,
+      layout: {
+        background: { type: ColorType.Solid, color: '#111827' },
+        textColor:  '#9ca3af',
+        fontSize:   11,
+        attributionLogo: false,
+      },
+      grid: {
+        vertLines: { color: '#1f2937' },
+        horzLines: { color: '#1f2937' },
+      },
+      crosshair:      { mode: CrosshairMode.Normal },
+      rightPriceScale: { borderColor: '#374151', scaleMargins: { top: 0.1, bottom: 0.1 } },
+      timeScale:      { borderColor: '#374151', timeVisible: true, secondsVisible: false },
+      handleScroll:   { mouseWheel: true, pressedMouseMove: true },
+      handleScale:    { mouseWheel: true, pinch: true },
+    } as any);
+
+    const areaSeries = chart.addSeries(AreaSeries, {
+      lineColor:   colors.line,
+      topColor:    colors.top,
+      bottomColor: colors.bottom,
+      lineWidth:   2,
+      lastValueVisible:   true,
+      priceLineVisible:   true,
+      crosshairMarkerVisible: true,
+    });
+    areaSeries.setData(indicator.history as any);
+
+    // 현재가 수평선
+    chart.addSeries(LineSeries, {
+      color:     colors.line,
+      lineWidth: 1,
+      lineStyle: LineStyle.Dashed,
+      lastValueVisible: false,
+      priceLineVisible: false,
+      crosshairMarkerVisible: false,
+    }).setData([
+      { time: indicator.history[0].time as any,  value: indicator.rawValue },
+      { time: indicator.history.at(-1)!.time as any, value: indicator.rawValue },
+    ]);
+
+    chart.timeScale().fitContent();
+    chartRef.current = chart;
+
+    const observer = new ResizeObserver(() => {
+      if (el && chartRef.current) chartRef.current.applyOptions({ width: el.clientWidth });
+    });
+    observer.observe(el);
+
+    return () => {
+      observer.disconnect();
+      try { chart.remove(); } catch {}
+      chartRef.current = null;
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [indicator.symbol]);
+
+  if (indicator.history.length < 2) {
+    return (
+      <div className="flex h-[220px] items-center justify-center text-sm text-gray-400">
+        차트 데이터 없음
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative">
+      <div ref={containerRef} className="w-full" />
+    </div>
+  );
+}
+
+// ── 메인 컴포넌트 ───────────────────────────────────────────────────────
 export function MarketIndicatorsPanel() {
-  const [data, setData]       = useState<MarketResponse | null>(null);
+  const [data,    setData]    = useState<MarketResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError]     = useState(false);
+  const [error,   setError]   = useState(false);
+  const [selected, setSelected] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -93,6 +195,11 @@ export function MarketIndicatorsPanel() {
   }, [load]);
 
   const dangerCount = data?.indicators.filter(i => i.alertLevel === 'danger').length ?? 0;
+
+  const toggle = (symbol: string) =>
+    setSelected(prev => (prev === symbol ? null : symbol));
+
+  const selectedIndicator = data?.indicators.find(i => i.symbol === selected);
 
   return (
     <div className="space-y-5">
@@ -140,7 +247,7 @@ export function MarketIndicatorsPanel() {
         </div>
       )}
 
-      {/* 지표 테이블 */}
+      {/* 지표 테이블 + 인라인 차트 */}
       <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white">
         <table className="w-full">
           <thead>
@@ -149,38 +256,84 @@ export function MarketIndicatorsPanel() {
               <th className="px-4 py-2.5 text-right text-[11px] font-black uppercase tracking-wider text-gray-400">현재값</th>
               <th className="px-4 py-2.5 text-left text-[11px] font-black uppercase tracking-wider text-gray-400">추세</th>
               <th className="hidden px-4 py-2.5 text-left text-[11px] font-black uppercase tracking-wider text-gray-400 sm:table-cell">해석</th>
+              <th className="w-8 px-2 py-2.5" />
             </tr>
           </thead>
           <tbody>
             {loading
               ? Array.from({ length: 4 }).map((_, i) => <SkeletonRow key={i} />)
               : data?.indicators.map((row) => {
-                  const st = ALERT_STYLES[row.alertLevel];
+                  const st       = ALERT_STYLES[row.alertLevel];
+                  const isActive = selected === row.symbol;
                   return (
-                    <tr key={row.symbol} className={`border-b border-gray-50 last:border-0 transition-colors ${st.row}`}>
-                      <td className="px-4 py-3">
-                        <span className="text-sm font-bold text-gray-800">{row.name}</span>
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <div className="flex flex-col items-end">
-                          <span className="text-sm font-black tabular-nums text-gray-900">{row.value}</span>
-                          {row.changePercent !== 0 && (
-                            <span className={`text-[10px] tabular-nums ${row.changePercent > 0 ? 'text-red-500' : 'text-blue-500'}`}>
-                              {row.changePercent > 0 ? '+' : ''}{row.changePercent.toFixed(2)}%
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold ${st.badge}`}>
-                          <TrendIcon dir={row.trendDir} />
-                          {row.trendText}
-                        </span>
-                      </td>
-                      <td className="hidden px-4 py-3 sm:table-cell">
-                        <span className="text-xs text-gray-500">{row.note}</span>
-                      </td>
-                    </tr>
+                    <>
+                      <tr
+                        key={row.symbol}
+                        onClick={() => toggle(row.symbol)}
+                        className={`cursor-pointer border-b border-gray-50 last:border-0 transition-colors ${isActive ? st.rowActive : st.row}`}
+                      >
+                        <td className="px-4 py-3">
+                          <span className="text-sm font-bold text-gray-800">{row.name}</span>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <div className="flex flex-col items-end">
+                            <span className="text-sm font-black tabular-nums text-gray-900">{row.value}</span>
+                            {row.changePercent !== 0 && (
+                              <span className={`text-[10px] tabular-nums ${row.changePercent > 0 ? 'text-red-500' : 'text-blue-500'}`}>
+                                {row.changePercent > 0 ? '+' : ''}{row.changePercent.toFixed(2)}%
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold ${st.badge}`}>
+                            <TrendIcon dir={row.trendDir} />
+                            {row.trendText}
+                          </span>
+                        </td>
+                        <td className="hidden px-4 py-3 sm:table-cell">
+                          <span className="text-xs text-gray-500">{row.note}</span>
+                        </td>
+                        <td className="px-2 py-3 text-right">
+                          <ChevronDown
+                            className={`h-4 w-4 text-gray-400 transition-transform duration-200 ${isActive ? 'rotate-180' : ''}`}
+                          />
+                        </td>
+                      </tr>
+
+                      {/* 인라인 차트 행 */}
+                      {isActive && (
+                        <tr key={`${row.symbol}-chart`} className="border-b border-gray-100 bg-gray-900">
+                          <td colSpan={5} className="p-0">
+                            {/* 차트 헤더 */}
+                            <div className="flex items-center justify-between px-4 pt-3 pb-1">
+                              <div className="flex items-center gap-3">
+                                <span className="text-sm font-bold text-gray-200">{row.name}</span>
+                                <span className="text-sm font-black tabular-nums text-white">{row.value}</span>
+                                {row.changePercent !== 0 && (
+                                  <span className={`text-xs font-bold tabular-nums ${row.changePercent > 0 ? 'text-red-400' : 'text-blue-400'}`}>
+                                    {row.changePercent > 0 ? '+' : ''}{row.changePercent.toFixed(2)}%
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] text-gray-500">최근 1년 일봉</span>
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); setSelected(null); }}
+                                  className="rounded p-0.5 text-gray-500 hover:text-gray-300"
+                                >
+                                  <X className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                            {/* 차트 */}
+                            <div className="px-0 pb-0">
+                              <IndicatorChart indicator={row} />
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </>
                   );
                 })
             }
@@ -188,30 +341,13 @@ export function MarketIndicatorsPanel() {
         </table>
       </div>
 
-      {/* 모바일: 해석 카드 */}
-      {data && (
-        <div className="space-y-2 sm:hidden">
-          {data.indicators.map((row) => (
-            <div key={row.symbol} className="rounded-xl border border-gray-100 bg-white px-4 py-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-gray-700">{row.name}</span>
-                <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${ALERT_STYLES[row.alertLevel].badge}`}>
-                  {row.trendText}
-                </span>
-              </div>
-              <p className="mt-1 text-[11px] text-gray-400">{row.note}</p>
-            </div>
-          ))}
-        </div>
-      )}
-
       {/* 범례 */}
       <div className="flex flex-wrap gap-3 text-[11px] text-gray-500">
-        <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-red-400" />위험 — 즉각 대응 필요</span>
-        <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-amber-400" />경고 — 모니터링 강화</span>
+        <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-red-400" />위험</span>
+        <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-amber-400" />경고</span>
         <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-gray-300" />중립</span>
         <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-emerald-400" />긍정</span>
-        <span className="ml-auto text-gray-400">15분마다 자동 갱신 · Yahoo Finance</span>
+        <span className="ml-auto text-gray-400">행 클릭 시 차트 · 15분 자동 갱신 · Yahoo Finance</span>
       </div>
     </div>
   );
