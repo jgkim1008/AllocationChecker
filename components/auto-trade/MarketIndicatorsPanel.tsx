@@ -32,6 +32,19 @@ interface MarketResponse {
   updatedAt:     string;
 }
 
+// ── 지표 그룹 ──────────────────────────────────────────────────────────
+const INDICATOR_GROUPS: { label: string; symbols: string[] }[] = [
+  { label: '공포 · 변동성',  symbols: ['^VIX'] },
+  { label: '금리',          symbols: ['^TNX', '^IRX'] },
+  { label: '달러 · 환율',   symbols: ['DX-Y.NYB', 'USDKRW=X', 'USDJPY=X'] },
+  { label: '원자재',        symbols: ['CL=F', 'GC=F', 'HG=F'] },
+  { label: '주요 지수',     symbols: ['^SOX', '^RUT'] },
+];
+
+function getGroup(symbol: string): string {
+  return INDICATOR_GROUPS.find(g => g.symbols.includes(symbol))?.label ?? '';
+}
+
 // ── 스타일 맵 ───────────────────────────────────────────────────────────
 const ALERT_STYLES: Record<AlertLevel, { badge: string; row: string; rowActive: string }> = {
   danger:   { badge: 'bg-red-100 text-red-700',         row: 'hover:bg-red-50/60',         rowActive: 'bg-red-50' },
@@ -261,12 +274,24 @@ export function MarketIndicatorsPanel() {
           </thead>
           <tbody>
             {loading
-              ? Array.from({ length: 4 }).map((_, i) => <SkeletonRow key={i} />)
-              : data?.indicators.map((row) => {
+              ? Array.from({ length: 11 }).map((_, i) => <SkeletonRow key={i} />)
+              : (() => {
+                  let lastGroup = '';
+                  return data?.indicators.map((row) => {
                   const st       = ALERT_STYLES[row.alertLevel];
                   const isActive = selected === row.symbol;
+                  const group    = getGroup(row.symbol);
+                  const showGroupHeader = group !== lastGroup;
+                  if (showGroupHeader) lastGroup = group;
                   return (
                     <React.Fragment key={row.symbol}>
+                      {showGroupHeader && group && (
+                        <tr className="border-b border-gray-100 bg-gray-50/80">
+                          <td colSpan={5} className="px-4 py-1.5 text-[10px] font-black uppercase tracking-widest text-gray-400">
+                            {group}
+                          </td>
+                        </tr>
+                      )}
                       <tr
                         onClick={() => toggle(row.symbol)}
                         className={`cursor-pointer border-b border-gray-50 last:border-0 transition-colors ${isActive ? st.rowActive : st.row}`}
@@ -334,7 +359,8 @@ export function MarketIndicatorsPanel() {
                       )}
                     </React.Fragment>
                   );
-                })
+                  });
+                })()
             }
           </tbody>
         </table>
