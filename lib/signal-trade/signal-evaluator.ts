@@ -8,6 +8,7 @@ import { detectAllPatterns } from '@/lib/utils/chart-pattern-calculator';
 import { calculateMonthlyMA, fetchMonthlyCandles } from '@/lib/utils/monthly-ma-calculator';
 import { calculateForking, fetchMonthlyCandles as fetchForkingCandles } from '@/lib/utils/forking-calculator';
 import { fetchWeeklyCandles as fetchInbumWeekly, analyzeInbumBijag } from '@/lib/utils/inbum-bijag-calculator';
+import { analyzeElliottWave } from '@/lib/utils/elliott-wave-calculator';
 // KIS Strategy Builder calculators
 import { calculateGoldenCross } from '@/lib/utils/kis-golden-cross-calculator';
 import { calculateMomentum } from '@/lib/utils/kis-momentum-calculator';
@@ -243,6 +244,35 @@ export async function evaluateSignal(
       };
       break;
     }
+    case 'elliott-wave': {
+      // getDailyHistory는 최신순 반환 → 오래된순으로 뒤집어서 EWCandle로 변환
+      const ewCandles = [...history].reverse().map(h => ({
+        date:   h.date,
+        open:   h.open,
+        high:   h.high,
+        low:    h.low,
+        close:  h.price,
+        volume: h.volume,
+      }));
+      const ewResult = analyzeElliottWave(ewCandles);
+      if (!ewResult || ewResult.signal === 'UNCLEAR') {
+        return { isActive: false, syncRate: 0, criteria: { patternUnclear: true } };
+      }
+      const isImpulseSignal = ewResult.signal === 'WAVE2_END' || ewResult.signal === 'WAVE4_END';
+      result = {
+        syncRate: ewResult.syncRate,
+        criteria: {
+          isImpulseSignal,
+          wave2Retracement: ewResult.criteria.wave2Retracement,
+          wave3Extension:   ewResult.criteria.wave3Extension,
+          wave4NoOverlap:   ewResult.criteria.wave4NoOverlap,
+          wave4Retracement: ewResult.criteria.wave4Retracement,
+          volumePattern:    ewResult.criteria.volumePattern,
+          trendDirection:   ewResult.criteria.trendDirection,
+        },
+      };
+      break;
+    }
     case 'infinite-buy': {
       // 무한매수법은 별도 모듈에서 처리 - 여기서는 비활성
       return {
@@ -406,6 +436,10 @@ function checkEntryConditions(
               criteria.isChannelBottom === true ||
               criteria.isBijagTouch === true) &&
              criteria.isAboveCloud !== false;
+
+    case 'elliott-wave':
+      // 파동2 또는 파동4 완료 신호 + 추세 방향 확인
+      return criteria.isImpulseSignal === true && criteria.trendDirection !== false;
 
     case 'infinite-buy':
       // 무한매수법은 별도 모듈 사용

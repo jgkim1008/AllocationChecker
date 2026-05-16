@@ -7,6 +7,16 @@ import { PremiumGate } from '@/components/PremiumGate';
 
 const STRATEGIES = [
   {
+    id: 'elliott-wave',
+    title: '엘리어트 파동',
+    description: 'ZigZag 3% 피벗 기반 5파 임펄스 패턴 자동 탐지. 파동2 완료 후 파동3 진입(최강), 파동4 완료 후 파동5 진입 신호를 제공합니다. 피보나치 되돌림으로 목표가와 손절선을 계산합니다. S&P 500 + KOSPI 200 전종목 스캔.',
+    icon: Activity,
+    href: '/strategies/elliott-wave',
+    color: 'bg-cyan-50 text-cyan-600',
+    tag: '신규',
+    tagColor: 'bg-cyan-100 text-cyan-700',
+  },
+  {
     id: 'turtle-trading',
     title: '터틀 투자법',
     description: '1983년 리처드 데니스의 전설적인 추세추종 시스템. 20일(S1) / 55일(S2) 돈키안 채널 돌파 진입, ATR×2 손절로 리스크를 관리합니다. "추세를 따르는 자는 이긴다"는 철학으로 대형 추세를 포착합니다. S&P 500 + KOSPI 200 전종목 스캔.',

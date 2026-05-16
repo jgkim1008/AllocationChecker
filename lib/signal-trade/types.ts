@@ -13,6 +13,7 @@ export type SignalStrategyType =
   | 'decline-box'            // 하락 박스 전략
   | 'inbum-bijag'            // 인범 빗각채널 + 구름대 전략
   | 'turtle-trading'         // 터틀 투자법 (돈키안 채널 돌파)
+  | 'elliott-wave'           // 엘리어트 파동 (ZigZag 5파 임펄스)
   | 'infinite-buy'           // 무한매수법 (자동매매 비활성)
   // KIS Strategy Builder 전략
   | 'kis-golden-cross'       // 골든크로스 (MA5 > MA20 상향돌파)
@@ -245,6 +246,14 @@ export const SIGNAL_STRATEGIES: SignalStrategyInfo[] = [
     category: 'daily',
     autoTradeEnabled: false,
   },
+  {
+    id: 'elliott-wave',
+    name: '엘리어트 파동',
+    description: 'ZigZag 3% 피벗 기반 5파 임펄스 패턴 탐지. 파동2/4 완료 후 파동3/5 진입 신호',
+    requiredHistory: 60,
+    category: 'daily',
+    autoTradeEnabled: true,
+  },
 
   // ── 시스템 전략 (자동매매 비활성) ──
   {
@@ -353,6 +362,7 @@ export const STRATEGY_ENTRY_CONDITIONS: Record<SignalStrategyType, string[]> = {
   'decline-box': ['isAtBoxBottom', 'isReboundSignal'],  // 박스 하단 + 반등 신호
   'inbum-bijag': ['isConfluence', 'isAboveCloud'],      // 채널+구름 동시 또는 N자 리테스트
   'turtle-trading': ['s1Breakout', 'uptrend'],          // S1/S2 돌파 + 추세
+  'elliott-wave':   ['isImpulseSignal', 'trendDirection'], // 파동2/4 완료 + 추세 방향
   'infinite-buy': [],  // 별도 로직 (무한매수법 모듈 사용)
   // KIS Strategy Builder 전략
   'kis-golden-cross': ['isGoldenCross', 'isFreshCross'],   // MA5 > MA20 상향돌파
