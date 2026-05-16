@@ -6,3 +6,4 @@ export { BalancePanel } from './BalancePanel';
 export { PositionSync } from './PositionSync';
 export { TOTPSetupDialog } from './TOTPSetupDialog';
 export { TOTPVerifyDialog } from './TOTPVerifyDialog';
+export { MarketIndicatorsPanel } from './MarketIndicatorsPanel';

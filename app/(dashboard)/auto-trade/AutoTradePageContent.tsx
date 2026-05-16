@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { BrokerConnect, AutoTradePanel, InfiniteBuyDashboard, OrderHistory, BalancePanel, PositionSync } from '@/components/auto-trade';
+import { BrokerConnect, AutoTradePanel, InfiniteBuyDashboard, OrderHistory, BalancePanel, PositionSync, MarketIndicatorsPanel } from '@/components/auto-trade';
 import { SignalTradePanel } from '@/components/signal-trade';
 
 
@@ -11,7 +11,7 @@ const DCAPanel = dynamic(() => import('@/components/auto-trade/DCAPanel'), { ssr
 import { PremiumGate } from '@/components/PremiumGate';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Bot, Link, History, TrendingUp, Wallet, GitCompare, Zap, TrendingDown, Loader2, LayoutDashboard, Settings } from 'lucide-react';
+import { Bot, Link, History, TrendingUp, Wallet, GitCompare, Zap, TrendingDown, Loader2, LayoutDashboard, Settings, BarChart2 } from 'lucide-react';
 
 interface ConnectedCredential {
   credentialId: string;
@@ -104,7 +104,7 @@ export default function AutoTradePageContent() {
       <Tabs defaultValue="trade" className="space-y-4" onValueChange={(tab) => {
           if (tab === 'balance' || tab === 'sync' || tab === 'history') fetchConnectedAccounts();
         }}>
-        <TabsList className="grid w-full grid-cols-7 lg:w-[910px]">
+        <TabsList className="grid w-full grid-cols-8 lg:w-[1040px]">
           <TabsTrigger value="trade" className="flex items-center gap-2">
             <TrendingUp className="h-4 w-4" />
             무한매수법
@@ -132,6 +132,10 @@ export default function AutoTradePageContent() {
           <TabsTrigger value="connect" className="flex items-center gap-2">
             <Link className="h-4 w-4" />
             연결
+          </TabsTrigger>
+          <TabsTrigger value="market" className="flex items-center gap-2">
+            <BarChart2 className="h-4 w-4" />
+            시장지표
           </TabsTrigger>
         </TabsList>
 
@@ -212,6 +216,10 @@ export default function AutoTradePageContent() {
 
         <TabsContent value="connect">
           <BrokerConnect />
+        </TabsContent>
+
+        <TabsContent value="market">
+          <MarketIndicatorsPanel />
         </TabsContent>
       </Tabs>
 
