@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   createChart, ColorType, CrosshairMode, AreaSeries, LineSeries, LineStyle,
   type IChartApi,
@@ -266,9 +266,8 @@ export function MarketIndicatorsPanel() {
                   const st       = ALERT_STYLES[row.alertLevel];
                   const isActive = selected === row.symbol;
                   return (
-                    <>
+                    <React.Fragment key={row.symbol}>
                       <tr
-                        key={row.symbol}
                         onClick={() => toggle(row.symbol)}
                         className={`cursor-pointer border-b border-gray-50 last:border-0 transition-colors ${isActive ? st.rowActive : st.row}`}
                       >
@@ -303,7 +302,7 @@ export function MarketIndicatorsPanel() {
 
                       {/* 인라인 차트 행 */}
                       {isActive && (
-                        <tr key={`${row.symbol}-chart`} className="border-b border-gray-100 bg-gray-900">
+                        <tr className="border-b border-gray-100 bg-gray-900">
                           <td colSpan={5} className="p-0">
                             {/* 차트 헤더 */}
                             <div className="flex items-center justify-between px-4 pt-3 pb-1">
@@ -333,7 +332,7 @@ export function MarketIndicatorsPanel() {
                           </td>
                         </tr>
                       )}
-                    </>
+                    </React.Fragment>
                   );
                 })
             }

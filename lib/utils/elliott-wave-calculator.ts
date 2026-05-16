@@ -118,7 +118,23 @@ export function calcZigZag(candles: EWCandle[], swingPct = 3): Pivot[] {
     pivots.push({ idx: provL.idx, date: candles[provL.idx].date, price: provL.price, type: 'low' });
   }
 
-  return pivots;
+  // 초기 provH/provL가 루프 시작 시점보다 앞선 인덱스를 가리킬 수 있으므로 idx 기준으로 정렬
+  pivots.sort((a, b) => a.idx - b.idx);
+
+  // 연속으로 같은 타입 피벗이 나오면 더 극단적인 값만 유지
+  const deduped: Pivot[] = [];
+  for (const p of pivots) {
+    const last = deduped[deduped.length - 1];
+    if (last && last.type === p.type) {
+      if (p.type === 'high' ? p.price > last.price : p.price < last.price) {
+        deduped[deduped.length - 1] = p;
+      }
+    } else {
+      deduped.push(p);
+    }
+  }
+
+  return deduped;
 }
 
 // ── 피보나치 레벨 계산 ─────────────────────────────────────────────────
