@@ -3,7 +3,7 @@
 import { useState, useEffect, use, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, CheckCircle2, XCircle, Activity, Target, Loader2, RefreshCw } from 'lucide-react';
-import { DualRSIChart } from '@/components/strategies/DualRSIChart';
+import { DualRSIChart } from '@/components/dual-rsi/DualRSIChart';
 import { calculateDualRSI } from '@/lib/utils/dual-rsi-calculator';
 import { PremiumGate } from '@/components/PremiumGate';
 

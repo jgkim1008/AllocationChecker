@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { KOSPI200_STOCKS } from '@/lib/utils/kospi200-stocks';
 import { createServiceClient } from '@/lib/supabase/server';
 
-const CACHE_DAYS = 15; // 캐시 유효 기간 (일)
+const CACHE_HOURS = 24;
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
@@ -303,16 +303,14 @@ export async function GET(_req: NextRequest) {
 
       if (cached) {
         const cacheAge = Date.now() - new Date(cached.created_at).getTime();
-        const cacheDaysMs = CACHE_DAYS * 24 * 60 * 60 * 1000;
-
-        if (cacheAge < cacheDaysMs) {
-          console.log(`[Forking] Using cached data (${Math.round(cacheAge / (1000 * 60 * 60))}h old)`);
+        if (cacheAge < CACHE_HOURS * 3600 * 1000) {
+          console.log(`[Forking] Using cached data (${Math.round(cacheAge / 3600000)}h old)`);
           return NextResponse.json({
             stocks: cached.data,
             count: cached.data.length,
             timestamp: cached.created_at,
             cached: true,
-            cacheAge: Math.round(cacheAge / (1000 * 60 * 60)),
+            cacheAge: Math.round(cacheAge / 3600000),
           });
         }
       }

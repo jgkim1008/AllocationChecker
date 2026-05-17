@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, RefreshCw, Info, Target, Zap, TrendingUp, TrendingDown, BarChart2 } from 'lucide-react';
-import { ChartPatternTable } from '@/components/strategies/ChartPatternTable';
+import { ChartPatternTable } from '@/components/chart-pattern/ChartPatternTable';
+import { IndexTable } from '@/components/strategies/IndexTable';
 import { PremiumGate } from '@/components/PremiumGate';
 import { PATTERN_INFO, type ChartPatternType } from '@/lib/utils/chart-pattern-calculator';
 import type { ChartPatternStock } from '@/lib/utils/chart-pattern-scanner';
@@ -186,6 +187,9 @@ export default function ChartPatternPage() {
             <p className="text-sm font-bold text-red-700">{error}</p>
           </div>
         )}
+
+        {/* 지수 비교 테이블 */}
+        <IndexTable strategyPath="/strategies/chart-pattern" accent="rose" />
 
         {/* 결과 헤더 */}
         <div className="flex items-center justify-between px-2 mb-6">

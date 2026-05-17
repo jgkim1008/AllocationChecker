@@ -1,23 +1,56 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { scanInverseAlignmentFromDB } from '@/lib/utils/inverse-alignment-scanner';
+import { createServiceClient } from '@/lib/supabase/server';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 300; // 전수 조사 시 60초 이상 소요될 수 있음
+export const maxDuration = 300;
+
+const CACHE_HOURS = 24;
+const CACHE_KEY = 'inverse_alignment_scan';
 
 export async function GET(request: NextRequest) {
   try {
-    // 1. 공통 데이터(stocks) 기반으로 전수 조사 수행
+    const forceRefresh = ['1', 'true'].includes(request.nextUrl.searchParams.get('refresh') ?? '');
+    const supabase = await createServiceClient();
+
+    if (!forceRefresh) {
+      const { data: cached } = await supabase
+        .from('strategy_cache')
+        .select('*')
+        .eq('cache_key', CACHE_KEY)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (cached) {
+        const age = Date.now() - new Date(cached.created_at).getTime();
+        if (age < CACHE_HOURS * 3600 * 1000) {
+          const data = (cached.data ?? []) as unknown[];
+          return NextResponse.json({
+            stocks: data,
+            count: data.length,
+            timestamp: cached.created_at,
+            cached: true,
+          });
+        }
+      }
+    }
+
     const validResults = await scanInverseAlignmentFromDB();
 
-    // 2. 결과 반환 (싱크로율이 높은 순으로 정렬됨)
-    return NextResponse.json({ 
+    await supabase.from('strategy_cache').upsert(
+      { cache_key: CACHE_KEY, data: validResults, created_at: new Date().toISOString() },
+      { onConflict: 'cache_key' }
+    );
+
+    return NextResponse.json({
       stocks: validResults,
       count: validResults.length,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      cached: false,
     });
   } catch (error) {
     console.error('[InverseAlignment Scan API Error]', error);
     return NextResponse.json({ error: 'Failed to scan strategy' }, { status: 500 });
   }
 }
-

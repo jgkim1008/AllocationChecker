@@ -3,7 +3,7 @@
 import { useState, useEffect, use, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, CheckCircle2, XCircle, Activity, Target, Loader2, RefreshCw } from 'lucide-react';
-import { RSIDivergenceChart } from '@/components/strategies/RSIDivergenceChart';
+import { RSIDivergenceChart } from '@/components/rsi-divergence/RSIDivergenceChart';
 import { calculateRSIDivergence } from '@/lib/utils/rsi-divergence-calculator';
 import { PremiumGate } from '@/components/PremiumGate';
 

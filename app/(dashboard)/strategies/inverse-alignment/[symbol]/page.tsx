@@ -3,7 +3,7 @@
 import { useState, useEffect, use, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, CheckCircle2, XCircle, Activity, Target, Loader2, RefreshCw } from 'lucide-react';
-import { InverseAlignmentChart } from '@/components/strategies/InverseAlignmentChart';
+import { InverseAlignmentChart } from '@/components/inverse-alignment/InverseAlignmentChart';
 import { calculateInverseAlignment } from '@/lib/utils/inverse-alignment-calculator';
 import { PremiumGate } from '@/components/PremiumGate';
 

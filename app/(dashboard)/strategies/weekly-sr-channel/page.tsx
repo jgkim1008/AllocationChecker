@@ -9,6 +9,7 @@ import {
   Layers, GitMerge,
 } from 'lucide-react';
 import { PremiumGate } from '@/components/PremiumGate';
+import { IndexTable } from '@/components/strategies/IndexTable';
 import { getClientCache, setClientCache, clearClientCache } from '@/lib/client-cache';
 import type { WeeklySRStock, Signal } from '@/app/api/strategies/weekly-sr-channel/scan/route';
 
@@ -274,6 +275,9 @@ export default function WeeklySRChannelPage() {
             {loading ? '분석 중...' : '새로고침'}
           </button>
         </div>
+
+        {/* 지수 비교 테이블 */}
+        <IndexTable strategyPath="/strategies/weekly-sr-channel" accent="rose" />
 
         <PremiumGate featureName="주봉 SR플립 채널 전략">
 

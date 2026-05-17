@@ -3,7 +3,7 @@
 import React, { useState, useEffect, use, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, CheckCircle2, XCircle, Activity, Target, Loader2, TrendingUp, TrendingDown, BookOpen, Eye, AlertTriangle, Lightbulb, ChevronDown, ChevronUp } from 'lucide-react';
-import { ChartPatternChart } from '@/components/strategies/ChartPatternChart';
+import { ChartPatternChart } from '@/components/chart-pattern/ChartPatternChart';
 import { detectAllPatterns, PATTERN_INFO, type PatternGuide, type PriceBar } from '@/lib/utils/chart-pattern-calculator';
 import type { PatternResult, PatternStatus } from '@/lib/utils/chart-pattern-calculator';
 import { PremiumGate } from '@/components/PremiumGate';

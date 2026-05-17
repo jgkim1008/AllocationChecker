@@ -3,7 +3,7 @@
 import { useState, useEffect, use, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, CheckCircle2, XCircle, Activity, Target, Loader2, RefreshCw } from 'lucide-react';
-import { MAAlignmentChart } from '@/components/strategies/MAAlignmentChart';
+import { MAAlignmentChart } from '@/components/ma-alignment/MAAlignmentChart';
 import { calculateMAAlignment } from '@/lib/utils/ma-alignment-calculator';
 import { PremiumGate } from '@/components/PremiumGate';
 

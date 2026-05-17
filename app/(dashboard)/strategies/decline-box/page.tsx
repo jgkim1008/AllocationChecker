@@ -8,6 +8,7 @@ import {
   ChevronUp, ChevronDown, AlertCircle, Eye,
 } from 'lucide-react';
 import { PremiumGate } from '@/components/PremiumGate';
+import { IndexTable } from '@/components/strategies/IndexTable';
 import type { DeclineBoxStock } from '@/app/api/strategies/decline-box/scan/route';
 import { getClientCache, setClientCache, clearClientCache } from '@/lib/client-cache';
 
@@ -266,6 +267,9 @@ export default function DeclineBoxPage() {
             {loading ? '분석 중...' : '새로고침'}
           </button>
         </div>
+
+        {/* 지수 비교 테이블 */}
+        <IndexTable strategyPath="/strategies/decline-box" accent="amber" />
 
         <PremiumGate featureName="하락 박스 돌파 전략">
 

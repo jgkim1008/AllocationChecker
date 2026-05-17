@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, RefreshCw, Info, Target, TrendingUp } from 'lucide-react';
-import { RSIDivergenceTable } from '@/components/strategies/RSIDivergenceTable';
+import { RSIDivergenceTable } from '@/components/rsi-divergence/RSIDivergenceTable';
+import { IndexTable } from '@/components/strategies/IndexTable';
 import { PremiumGate } from '@/components/PremiumGate';
 import type { RSIDivergenceStock } from '@/types/strategies';
 import { getClientCache, setClientCache, clearClientCache } from '@/lib/client-cache';
@@ -118,6 +119,9 @@ export default function RSIDivergencePage() {
             <p className="text-sm font-bold text-red-700">{error}</p>
           </div>
         )}
+
+        {/* 지수 비교 테이블 */}
+        <IndexTable strategyPath="/strategies/rsi-divergence" accent="orange" />
 
         {/* 결과 헤더 */}
         <div className="flex items-center justify-between px-2 mb-6">
