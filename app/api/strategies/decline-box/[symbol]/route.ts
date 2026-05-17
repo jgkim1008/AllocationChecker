@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { fetchWeeklyCandles, analyzeDeclineBox } from '../scan/route';
+import { fetchDeclineBoxWeekly, analyzeDeclineBox } from '@/lib/utils/decline-box-calculator';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -13,10 +13,8 @@ export async function GET(
   const market = (searchParams.get('market') || 'US') as 'US' | 'KR';
   const name = searchParams.get('name') || symbol;
 
-  const yahooSymbol = market === 'KR' ? `${symbol}.KS` : symbol;
-
   try {
-    const candles = await fetchWeeklyCandles(yahooSymbol);
+    const candles = await fetchDeclineBoxWeekly(symbol, market);
     if (!candles || candles.length < 20) {
       return NextResponse.json({ error: '데이터 부족' }, { status: 404 });
     }

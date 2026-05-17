@@ -9,6 +9,9 @@ import { calculateMonthlyMA, fetchMonthlyCandles } from '@/lib/utils/monthly-ma-
 import { calculateForking, fetchMonthlyCandles as fetchForkingCandles } from '@/lib/utils/forking-calculator';
 import { fetchWeeklyCandles as fetchInbumWeekly, analyzeInbumBijag } from '@/lib/utils/inbum-bijag-calculator';
 import { analyzeElliottWave } from '@/lib/utils/elliott-wave-calculator';
+import { calculateWeeklySR } from '@/lib/utils/weekly-sr-calculator';
+import { analyzeDeclineBox, fetchDeclineBoxWeekly } from '@/lib/utils/decline-box-calculator';
+import { analyzeTurtleTrading } from '@/lib/utils/turtle-trading-calculator';
 // KIS Strategy Builder calculators
 import { calculateGoldenCross } from '@/lib/utils/kis-golden-cross-calculator';
 import { calculateMomentum } from '@/lib/utils/kis-momentum-calculator';
@@ -244,6 +247,75 @@ export async function evaluateSignal(
       };
       break;
     }
+    case 'weekly-sr': {
+      // 주봉 SR 채널 + 10MA 전략 (일봉 5거래일 간격으로 주봉 근사)
+      const sr = calculateWeeklySR(history, currentPrice);
+      if (!sr) {
+        return { isActive: false, syncRate: 0, criteria: { dataInsufficient: true } };
+      }
+      result = {
+        syncRate: sr.syncRate,
+        criteria: {
+          isAboveMA: sr.criteria.isAboveMA,
+          isMaUptrend: sr.criteria.isMaUptrend,
+          isPullback: sr.criteria.isPullback,
+          isNotTooFar: sr.criteria.isNotTooFar,
+        },
+      };
+      break;
+    }
+    case 'decline-box': {
+      // 하락 박스 (주봉 데이터 필요)
+      const weeklyCandles = await fetchDeclineBoxWeekly(symbol, market);
+      if (!weeklyCandles || weeklyCandles.length < 20) {
+        return { isActive: false, syncRate: 0, criteria: { dataInsufficient: true } };
+      }
+      const box = analyzeDeclineBox({ symbol, name: '', market }, weeklyCandles);
+      if (!box) {
+        return { isActive: false, syncRate: 0, criteria: { noBoxPattern: true } };
+      }
+      const syncMap: Record<string, number> = {
+        BREAKOUT_PULLBACK: 100,
+        TRIANGLE_BREAKOUT: 85,
+        NEAR_BREAKOUT: 50,
+        IN_BOX: 20,
+      };
+      result = {
+        syncRate: syncMap[box.signal] ?? 0,
+        criteria: {
+          isBreakoutPullback: box.signal === 'BREAKOUT_PULLBACK',
+          isTriangleBreakout: box.signal === 'TRIANGLE_BREAKOUT',
+          isBuySignal: box.signal === 'BREAKOUT_PULLBACK' || box.signal === 'TRIANGLE_BREAKOUT',
+        },
+      };
+      break;
+    }
+    case 'turtle-trading': {
+      // 터틀 투자법: getDailyHistory 최신순 → 오래된순으로 뒤집기
+      const turtleCandles = [...history].reverse().map(h => ({
+        date:   h.date,
+        open:   h.open,
+        high:   h.high,
+        low:    h.low,
+        close:  h.price,
+        volume: h.volume,
+      }));
+      const turtle = analyzeTurtleTrading(turtleCandles);
+      if (!turtle) {
+        return { isActive: false, syncRate: 0, criteria: { dataInsufficient: true } };
+      }
+      result = {
+        syncRate: turtle.syncRate,
+        criteria: {
+          s1Breakout:     turtle.criteria.s1Breakout,
+          s2Breakout:     turtle.criteria.s2Breakout,
+          nearDC20:       turtle.criteria.nearDC20,
+          uptrend:        turtle.criteria.uptrend,
+          volumeAboveAvg: turtle.criteria.volumeAboveAvg,
+        },
+      };
+      break;
+    }
     case 'elliott-wave': {
       // getDailyHistory는 최신순 반환 → 오래된순으로 뒤집어서 EWCandle로 변환
       const ewCandles = [...history].reverse().map(h => ({
@@ -436,6 +508,19 @@ function checkEntryConditions(
               criteria.isChannelBottom === true ||
               criteria.isBijagTouch === true) &&
              criteria.isAboveCloud !== false;
+
+    case 'weekly-sr':
+      // 주봉 10MA 위 + MA 우상향 (눌림목/이격 가드는 syncRate에 가중치로 반영됨)
+      return criteria.isAboveMA === true && criteria.isMaUptrend === true;
+
+    case 'decline-box':
+      // 박스 상단 돌파 후 눌림목 또는 박스 내 삼각수렴 돌파
+      return criteria.isBuySignal === true;
+
+    case 'turtle-trading':
+      // S1 또는 S2 돌파 + 55일선 상향 추세
+      return (criteria.s1Breakout === true || criteria.s2Breakout === true) &&
+             criteria.uptrend === true;
 
     case 'elliott-wave':
       // 파동2 또는 파동4 완료 신호 + 추세 방향 확인

@@ -16,6 +16,7 @@ import {
 } from './fibonacci-calculator';
 import { analyzeInbumBijag } from './inbum-bijag-calculator';
 import { analyzeTurtleTrading } from './turtle-trading-calculator';
+import { calculateWeeklySR as calculateWeeklySRCore } from './weekly-sr-calculator';
 import type { FibonacciLevel } from '@/types/fibonacci';
 
 export interface PriceHistoryItem {
@@ -249,44 +250,22 @@ function calculateMonthlyMA10(
 }
 
 /**
- * 주봉 SR플립 + 채널 + 10MA 전략 계산
+ * 주봉 SR플립 + 채널 + 10MA 전략 계산 (라벨 포함 어댑터)
  */
 function calculateWeeklySR(
   historyForCalc: { date: string; price: number; high: number; low: number; volume: number }[],
   currentPrice: number
 ): WeeklySRSync | null {
-  if (historyForCalc.length < 70) return null;
+  const r = calculateWeeklySRCore(historyForCalc, currentPrice);
+  if (!r) return null;
 
-  // 5거래일 단위로 주봉 종가 추출 (최신순, 최대 14주)
-  const weeklyCloses: number[] = [];
-  for (let i = 0; i < historyForCalc.length && weeklyCloses.length < 14; i += 5) {
-    weeklyCloses.push(historyForCalc[i].price);
-  }
-  if (weeklyCloses.length < 11) return null;
-
-  // 최근 10주 MA
-  const ma10 = weeklyCloses.slice(0, 10).reduce((a, b) => a + b, 0) / 10;
-  // 1주 전 기준 10주 MA (기울기 판단)
-  const prevMA10 = weeklyCloses.slice(1, 11).reduce((a, b) => a + b, 0) / 10;
-
-  const deviation = ((currentPrice - ma10) / ma10) * 100;
-  const isAboveMA = currentPrice >= ma10;
-  const isPullback = isAboveMA && deviation >= 0 && deviation <= 3;
-  const isMaUptrend = ma10 > prevMA10;
-  const isNotTooFar = isAboveMA && deviation <= 10;
-
-  let syncRate = 0;
-  if (isAboveMA) syncRate += 40;
-  if (isMaUptrend) syncRate += 25;
-  if (isPullback) syncRate += 25;
-  if (isNotTooFar) syncRate += 10;
-
+  const { isAboveMA, isMaUptrend, isPullback, isNotTooFar } = r.criteria;
   return {
-    syncRate,
-    ma10,
-    deviation,
+    syncRate: r.syncRate,
+    ma10: r.ma10,
+    deviation: r.deviation,
     criteria: [
-      { label: `종가 ≥ 주봉 10MA (${deviation >= 0 ? '+' : ''}${deviation.toFixed(1)}%)`, pass: isAboveMA },
+      { label: `종가 ≥ 주봉 10MA (${r.deviation >= 0 ? '+' : ''}${r.deviation.toFixed(1)}%)`, pass: isAboveMA },
       { label: '주봉 10MA 우상향', pass: isMaUptrend },
       { label: 'MA 눌림목 (이격 0~3%)', pass: isPullback },
       { label: '과도한 이격 없음 (≤10%)', pass: isNotTooFar },

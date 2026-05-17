@@ -199,7 +199,7 @@ export const SIGNAL_STRATEGIES: SignalStrategyInfo[] = [
     id: 'monthly-ma',
     name: '월봉 10이평',
     description: '월봉 기준 10개월 이동평균선 돌파/이탈 시 매매',
-    requiredHistory: 12,
+    requiredHistory: 252,  // 일봉 기준 ~12개월
     category: 'monthly',
     autoTradeEnabled: true,
   },
@@ -207,7 +207,7 @@ export const SIGNAL_STRATEGIES: SignalStrategyInfo[] = [
     id: 'forking',
     name: '월봉 포킹',
     description: '월봉 기준 이평선 수렴 후 방향성 돌파 시 매매',
-    requiredHistory: 24,
+    requiredHistory: 520,  // 일봉 기준 ~24개월
     category: 'monthly',
     autoTradeEnabled: true,
   },
@@ -244,7 +244,7 @@ export const SIGNAL_STRATEGIES: SignalStrategyInfo[] = [
     description: '20일(S1) / 55일(S2) 돈키안 채널 돌파 진입, ATR×2 손절 추세추종 시스템',
     requiredHistory: 60,
     category: 'daily',
-    autoTradeEnabled: false,
+    autoTradeEnabled: true,
   },
   {
     id: 'elliott-wave',
@@ -358,10 +358,10 @@ export const STRATEGY_ENTRY_CONDITIONS: Record<SignalStrategyType, string[]> = {
   'chart-pattern': ['hasPattern', 'isBuySignal'],  // 패턴 감지 + 매수 신호
   'monthly-ma': ['isAboveMA10', 'isCrossUp'],  // 월봉 10이평 위 + 상향 돌파
   'forking': ['isConverging', 'isBreakout'],  // 수렴 + 돌파
-  'weekly-sr': ['isAboveMA', 'isMaUptrend'],  // 주봉 10MA 위 + 상승 추세
-  'decline-box': ['isAtBoxBottom', 'isReboundSignal'],  // 박스 하단 + 반등 신호
+  'weekly-sr': ['isAboveMA', 'isMaUptrend'],            // 주봉 10MA 위 + 상승 추세
+  'decline-box': ['isBuySignal'],                       // 박스 상단 돌파 후 눌림 또는 삼각수렴 돌파
   'inbum-bijag': ['isConfluence', 'isAboveCloud'],      // 채널+구름 동시 또는 N자 리테스트
-  'turtle-trading': ['s1Breakout', 'uptrend'],          // S1/S2 돌파 + 추세
+  'turtle-trading': ['s1Breakout', 's2Breakout', 'uptrend'],  // S1/S2 돌파 + 추세
   'elliott-wave':   ['isImpulseSignal', 'trendDirection'], // 파동2/4 완료 + 추세 방향
   'infinite-buy': [],  // 별도 로직 (무한매수법 모듈 사용)
   // KIS Strategy Builder 전략
