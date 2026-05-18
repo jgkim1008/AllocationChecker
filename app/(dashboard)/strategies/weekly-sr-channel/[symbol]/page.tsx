@@ -15,6 +15,7 @@ import {
   ResponsiveContainer, ReferenceLine,
 } from 'recharts';
 import type { WeeklySRStock, Signal, SRZone, ChannelData, BijagChannelData } from '@/app/api/strategies/weekly-sr-channel/scan/route';
+import { StrategyChartShell } from '@/components/strategies/StrategyChartShell';
 
 type Candle = { date: string; open: number; high: number; low: number; close: number };
 
@@ -645,15 +646,7 @@ export default function WeeklySRDetailPage() {
                 </div>
               </div>
               <div className="p-4">
-                <WeeklySRChart
-                  candles={candles}
-                  srZones={srZones}
-                  channel={channel}
-                  showChannel={showChannel}
-                  bijagChannel={bijagChannel}
-                  showBijag={showBijag}
-                  analysis={analysis}
-                />
+                <StrategyChartShell symbol={symbol} market={market as 'US' | 'KR'} strategyId="weekly-sr" height={550} />
               </div>
             </div>
 

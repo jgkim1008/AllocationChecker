@@ -15,6 +15,7 @@ import {
   ResponsiveContainer, ReferenceLine,
 } from 'recharts';
 import type { DeclineBoxStock } from '@/app/api/strategies/decline-box/scan/route';
+import { StrategyChartShell } from '@/components/strategies/StrategyChartShell';
 
 type WeeklyCandle = { date: string; open: number; high: number; low: number; close: number };
 
@@ -518,7 +519,7 @@ export default function DeclineBoxDetailPage() {
                 </div>
               </div>
               <div className="p-4">
-                <DeclineBoxChart candles={candles} analysis={analysis} />
+                <StrategyChartShell symbol={symbol} market={market as 'US' | 'KR'} strategyId="decline-box" height={550} />
               </div>
             </div>
 

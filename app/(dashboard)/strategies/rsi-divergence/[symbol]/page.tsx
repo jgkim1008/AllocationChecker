@@ -3,7 +3,7 @@
 import { useState, useEffect, use, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, CheckCircle2, XCircle, Activity, Target, Loader2, RefreshCw } from 'lucide-react';
-import { RSIDivergenceChart } from '@/components/rsi-divergence/RSIDivergenceChart';
+import { StrategyChartShell } from '@/components/strategies/StrategyChartShell';
 import { calculateRSIDivergence } from '@/lib/utils/rsi-divergence-calculator';
 import { PremiumGate } from '@/components/PremiumGate';
 
@@ -147,15 +147,8 @@ function RSIDivergenceDetailContent({
                     </div>
                   </div>
                 </div>
-                <div className="h-[550px] -mx-4">
-                  <RSIDivergenceChart
-                    history={data.chartData}
-                    market={market}
-                    prevLowDate={a.prevLowDate}
-                    recentLowDate={a.recentLowDate}
-                    prevLowRsi={a.prevLowRsi}
-                    recentLowRsi={a.recentLowRsi}
-                  />
+                <div className="-mx-4">
+                  <StrategyChartShell symbol={symbol} market={market} strategyId="rsi-divergence" height={550} />
                 </div>
               </div>
             </div>

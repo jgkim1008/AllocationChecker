@@ -7,7 +7,7 @@ import {
   ArrowLeft, RefreshCw, Activity, Target, Shield,
   HelpCircle, ChevronDown, ChevronUp, TrendingUp, AlertTriangle,
 } from 'lucide-react';
-import { ElliottWaveChart } from '@/components/elliott-wave/ElliottWaveChart';
+import { StrategyChartShell } from '@/components/strategies/StrategyChartShell';
 import type { EWResult, EWCandle } from '@/lib/utils/elliott-wave-calculator';
 
 function formatPrice(price: number, market: string): string {
@@ -486,12 +486,8 @@ export default function ElliottWaveDetailPage() {
           </div>
           {loading ? (
             <div className="h-[534px] bg-gray-50 rounded-xl animate-pulse" />
-          ) : result && candles.length >= 60 ? (
-            <ElliottWaveChart candles={candles} result={result} market={market} />
           ) : (
-            <div className="h-[534px] flex items-center justify-center text-gray-400 text-sm">
-              {candles.length < 60 ? '데이터 부족 (최소 60일)' : '파동 패턴을 탐지하지 못했습니다'}
-            </div>
+            <StrategyChartShell symbol={symbol} market={market} strategyId="elliott-wave" height={550} />
           )}
         </div>
 

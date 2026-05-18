@@ -21,11 +21,42 @@ app/(dashboard)/strategies/{strategy-name}/
     page.tsx                  # 스캔 목록 페이지 (종목 필터링 결과)
     [symbol]/page.tsx         # 종목별 전략 상세 페이지
 
-components/strategies/        # 전략 공통 컴포넌트 (스캔 테이블 등)
-components/{strategy-name}/   # 전략별 차트 컴포넌트
-    {StrategyName}Chart.tsx   # lightweight-charts 기반 메인 차트
+components/strategies/        # 전략 공통 컴포넌트
+    StrategyChartShell.tsx    # 전략별 통합 차트 UI (자동매매 신호전략과 동일)
+    IndexTable.tsx            # 5대 지수 + SOXL 누적 수익률 테이블
+    {Strategy}Table.tsx       # 전략별 스캔 결과 테이블 (필요 시)
+
+components/advanced-chart/    # 통합 차트 엔진 (AdvancedChart + Toolbar + 도구 모음)
+components/{strategy-name}/   # 전략별 추가 컴포넌트 (테이블, 가이드 패널 등)
 
 python/                       # 백테스트·분석 Python 스크립트 (전략별 분리 불필요, 여기에 모음)
+```
+
+## 차트 UI 통합 규칙 (필수)
+
+**모든 전략의 차트는 `StrategyChartShell` 컴포넌트를 사용한다.** 자동매매 > 신호전략과 전략 상세 페이지가 **동일한 차트 UI**를 공유한다 — 일관된 UX와 코드 단일성을 위함.
+
+- 위치: `components/strategies/StrategyChartShell.tsx`
+- 내부 구성: `LeftIconBar` + `TopToolbar` + `ChartInfoBar` + `AdvancedChart` (도구·지표·드로잉·시간프레임 일체)
+- 전략별 차이는 `strategyId` prop 하나로 표현 (지표 프리셋·기본 시간프레임·전용 마커가 자동 적용)
+- `AdvancedChart.computeStrategyMarkers()` switch에 전략 케이스를 추가하면 진입/청산 마커가 자동 표시됨
+- 전략 고유 오버레이(채널·ZigZag 등)는 `AdvancedChart` 내부 useEffect에 추가 (`fibSeriesRef`, `elliottSeriesRef` 패턴 참고)
+
+**금지 사항:**
+- 페이지 안에 `createChart(...)` 인라인 차트를 새로 만들지 말 것
+- 별도 `{Strategy}Chart.tsx` 컴포넌트를 새로 만들지 말 것 (벤치마크 비교용 recharts는 예외)
+
+**상세 페이지 사용 예:**
+
+```tsx
+import { StrategyChartShell } from '@/components/strategies/StrategyChartShell';
+
+<StrategyChartShell
+  symbol={symbol}
+  market={market as 'US' | 'KR'}
+  strategyId="ma-alignment"
+  height={550}
+/>
 ```
 
 ## Chart Strategy Rules
@@ -151,15 +182,14 @@ case '{strategy-id}':
 ```
 app/(dashboard)/strategies/{strategy-name}/
     page.tsx              # 스캔 목록 페이지
-    [symbol]/page.tsx     # 종목별 상세 페이지
+    [symbol]/page.tsx     # 종목별 상세 페이지 (StrategyChartShell 사용)
 
 components/{strategy-name}/
-    {StrategyName}Chart.tsx   # lightweight-charts 메인 차트 컴포넌트
-
-components/strategies/
-    {StrategyName}Table.tsx   # (필요 시) 스캔 결과 테이블 컴포넌트
+    {StrategyName}Table.tsx   # (필요 시) 전략별 추가 컴포넌트 (가이드, 사이드패널 등)
 ```
 
+> 새 전략은 **차트 컴포넌트를 별도로 만들지 않는다**. 차트는 `StrategyChartShell`로 통일됨.
+> 새 전략의 마커는 `components/advanced-chart/AdvancedChart.tsx`의 `computeStrategyMarkers()` switch에 케이스를 추가하고, 전용 오버레이가 필요하면 `StrategyChartShell.tsx`의 `STRATEGY_PRESETS`에 지표 프리셋을 추가한다.
 > Python 스크립트가 필요한 경우 `python/` 루트 디렉토리에 추가한다.
 
 ### 캐싱 규칙 (반드시 적용)
@@ -390,36 +420,18 @@ useEffect(() => {
 ### 상세 페이지 (`[symbol]/page.tsx`) 필수 구성
 
 1. **전략 개요** — 전략명, 한줄 설명, 적용 자산군, 권장 투자 기간
-2. **차트 섹션** — `{StrategyName}Chart` 컴포넌트 (캔들 + 지표 오버레이)
+2. **차트 섹션** — `<StrategyChartShell symbol={symbol} market={market} strategyId="..." />`
 3. **전략 상세 설명** — 전략 원리, 진입 조건(구체적 수치), 청산 조건, 파라미터 표
 4. **백테스트 결과** — 총 수익률, CAGR, MDD, 샤프 비율, 승률, 손익비
 5. **주의사항** — 전략 한계, 불리한 시장 환경, 실전 유의사항
 
-### 차트 컴포넌트 (`{StrategyName}Chart.tsx`) 패턴
+### 새 전략 마커·오버레이 추가 패턴
 
-`lightweight-charts` v5 기준:
+1. `components/advanced-chart/AdvancedChart.tsx` 의 `computeStrategyMarkers()` switch에 케이스 추가
+2. 전략별 지표 프리셋·기본 시간프레임이 필요하면 `components/strategies/StrategyChartShell.tsx` 의 `STRATEGY_PRESETS` / `STRATEGY_TIMEFRAME` 에 항목 추가
+3. ZigZag·채널 등 고유 오버레이가 필요하면 `AdvancedChart` 내부에 `useRef<ISeriesApi<'Line'>[]>([])` + useEffect 패턴으로 추가 (기존 `fibSeriesRef`, `elliottSeriesRef`, `bijagSeriesRef` 참고)
 
-```ts
-import { createChart, ColorType, CandlestickSeries, LineSeries } from 'lightweight-charts';
-
-// 캔들 차트 + 지표 오버레이
-const chart = createChart(ref.current, { layout: { background: { type: ColorType.Solid, color: 'transparent' } } });
-const candleSeries = chart.addSeries(CandlestickSeries, { ... });
-
-// 진입/청산 마커
-candleSeries.setMarkers([
-  { time, position: 'belowBar', color: '#26a69a', shape: 'arrowUp',  text: '진입' },
-  { time, position: 'aboveBar', color: '#ef5350', shape: 'arrowDown', text: '청산' },
-]);
-
-// 보조 지표(RSI/MACD 등)는 별도 chart 인스턴스로 하단 패널에 표시
-// timeScale 동기화 필수
-chart1.timeScale().subscribeVisibleLogicalRangeChange(range => {
-  if (range) chart2.timeScale().setVisibleLogicalRange(range);
-});
-```
-
-백테스트 수익률 비교 차트는 `recharts`의 `LineChart`를 사용한다 (기존 `BacktestChart.tsx` 참고).
+백테스트 수익률 비교 차트는 `recharts`의 `LineChart`를 사용한다 (전략 상세 페이지의 BenchmarkChart 인라인 패턴 참고).
 
 ---
 

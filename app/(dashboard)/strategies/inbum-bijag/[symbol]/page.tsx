@@ -17,6 +17,7 @@ import {
 import {
   CHANNEL_LEVELS, priceAtLevel, calcCustomBijagChannel,
 } from '@/lib/utils/inbum-bijag-calculator';
+import { StrategyChartShell } from '@/components/strategies/StrategyChartShell';
 import type {
   BijagChannelResult, BijagPivot, BijagType,
   IchimokuPoint, InbumAnalysis, InbumSignal,
@@ -605,15 +606,7 @@ export default function InbumBijagDetailPage() {
               )}
 
               <div className="p-2">
-                <BijagChart
-                  candles={candles}
-                  channel={activeChannel}
-                  ichimoku={ichimoku}
-                  analysis={activeAnalysis}
-                  showCloud={showCloud}
-                  pickStep={pickStep}
-                  onPickPoint={handlePickPoint}
-                />
+                <StrategyChartShell symbol={symbol} market={market as 'US' | 'KR'} strategyId="inbum-bijag" height={650} />
               </div>
             </div>
 

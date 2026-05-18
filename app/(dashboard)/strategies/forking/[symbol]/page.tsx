@@ -7,6 +7,7 @@ import {
   ArrowLeft, RefreshCw, TrendingUp, TrendingDown,
 } from 'lucide-react';
 import { createChart, ColorType, CrosshairMode, CandlestickSeries, LineSeries, createSeriesMarkers } from 'lightweight-charts';
+import { StrategyChartShell } from '@/components/strategies/StrategyChartShell';
 
 interface MonthlyCandle {
   date: string;
@@ -333,7 +334,7 @@ export default function ForkingDetailPage() {
               </div>
             </div>
             <div className="p-4">
-              <ForkingChart candles={candles} />
+              <StrategyChartShell symbol={symbol} market={market as 'US' | 'KR'} strategyId="forking" height={550} />
             </div>
           </div>
         )}

@@ -7,6 +7,8 @@ import {
   createSeriesMarkers, SeriesMarker, Time, PriceScaleMode,
 } from 'lightweight-charts';
 import { analyzeInbumBijag, detectBijagChannel, priceAtLevel } from '@/lib/utils/inbum-bijag-calculator';
+import { analyzeElliottWave, type EWResult } from '@/lib/utils/elliott-wave-calculator';
+import { detectAllPatterns, type PatternResult } from '@/lib/utils/chart-pattern-calculator';
 import { Loader2, AlertCircle } from 'lucide-react';
 import { TimeRange, Indicators, CustomMA, DrawingMode } from '@/app/(dashboard)/advanced-chart/page';
 import { MACD, RSI, BollingerBands, SMA } from 'technicalindicators';
@@ -468,6 +470,104 @@ function computeStrategyMarkers(data: ChartData[], strategyId: string | undefine
       }
       break;
     }
+    case 'elliott-wave': {
+      const ew = analyzeElliottWave(data.map(d => ({
+        date: d.date, open: d.open, high: d.high, low: d.low, close: d.close, volume: d.volume,
+      })));
+      if (!ew) break;
+
+      const WAVE_COLORS: Record<string, string> = {
+        '0': '#9ca3af', '1': '#22d3ee', '2': '#f59e0b', '3': '#10b981',
+        '4': '#f97316', '5': '#a78bfa', 'A': '#ef4444', 'B': '#22d3ee', 'C': '#f59e0b',
+      };
+
+      // 파동 라벨 마커 (피벗 위치에 원 + 라벨)
+      for (const w of ew.waves) {
+        const pivot = ew.pivots.find(p => p.date === w.date);
+        markers.push({
+          time: w.date as Time,
+          position: pivot?.type === 'high' ? 'aboveBar' : 'belowBar',
+          color: WAVE_COLORS[w.label] ?? '#ffffff',
+          shape: 'circle',
+          text: w.label,
+          size: 1,
+        });
+      }
+
+      const lastWave = ew.waves[ew.waves.length - 1];
+      // 파동2 또는 4 완료 → 매수 진입 시그널
+      if (lastWave && (ew.signal === 'WAVE2_END' || ew.signal === 'WAVE4_END')) {
+        markers.push({
+          time: lastWave.date as Time,
+          position: 'belowBar',
+          color: '#22c55e',
+          shape: 'arrowUp',
+          text: ew.signal === 'WAVE2_END' ? '매수 (파동3 시작)' : '매수 (파동5 시작)',
+          size: 2,
+        });
+      }
+      // 파동3 진행중 → 파동2 위치에 진입구간 표시
+      if (ew.signal === 'WAVE3_ACTIVE' && ew.waves.length >= 3) {
+        const w2 = ew.waves.find(w => w.label === '2');
+        if (w2) {
+          markers.push({
+            time: w2.date as Time,
+            position: 'belowBar',
+            color: '#22c55e',
+            shape: 'arrowUp',
+            text: '진입구간',
+            size: 2,
+          });
+        }
+      }
+      // 파동5 완료 → 매도 검토
+      if (ew.signal === 'WAVE5_END' && lastWave) {
+        markers.push({
+          time: lastWave.date as Time,
+          position: 'aboveBar',
+          color: '#ef4444',
+          shape: 'arrowDown',
+          text: '조정 예상 (매도)',
+          size: 2,
+        });
+      }
+      break;
+    }
+    case 'chart-pattern': {
+      // 모든 패턴 감지 → 매수 신호 최상위 + 매도 신호 최상위 마커
+      const priceBars = data.map(d => ({
+        date: d.date, open: d.open, high: d.high, low: d.low, price: d.close, volume: d.volume,
+      }));
+      const patterns: PatternResult[] = detectAllPatterns(priceBars);
+      const buyPatterns = patterns.filter(p => p.signal === 'buy');
+      const sellPatterns = patterns.filter(p => p.signal === 'sell');
+
+      if (buyPatterns.length > 0) {
+        const best = buyPatterns.reduce((a, b) => b.syncRate > a.syncRate ? b : a);
+        const lastIdx = data.length - 1;
+        markers.push({
+          time: data[lastIdx].date as Time,
+          position: 'belowBar',
+          color: '#22c55e',
+          shape: 'arrowUp',
+          text: `${best.name} (${best.syncRate}%)`,
+          size: 2,
+        });
+      }
+      if (sellPatterns.length > 0) {
+        const best = sellPatterns.reduce((a, b) => b.syncRate > a.syncRate ? b : a);
+        const lastIdx = data.length - 1;
+        markers.push({
+          time: data[lastIdx].date as Time,
+          position: 'aboveBar',
+          color: '#ef4444',
+          shape: 'arrowDown',
+          text: `${best.name} (${best.syncRate}%)`,
+          size: 2,
+        });
+      }
+      break;
+    }
   }
 
   return markers;
@@ -517,6 +617,8 @@ export function AdvancedChart({ symbol, market, timeRange, indicators, drawingMo
   const bijagSeriesRef = useRef<ISeriesApi<'Line'>[]>([]);
   // 월봉 패러럴 채널 라인 시리즈
   const monthlyChSeriesRef = useRef<ISeriesApi<'Line'>[]>([]);
+  // 엘리어트 파동 ZigZag + 목표/손절/피보 라인 시리즈
+  const elliottSeriesRef = useRef<ISeriesApi<'Line'>[]>([]);
 
   // DrawingCanvas에 전달할 차트 인스턴스 state (ref는 re-render를 트리거하지 않으므로 state 사용)
   const [drawingRefs, setDrawingRefs] = useState<{
@@ -1057,6 +1159,7 @@ export function AdvancedChart({ symbol, market, timeRange, indicators, drawingMo
       fibSeriesRef.current = [];
       bijagSeriesRef.current = [];
       monthlyChSeriesRef.current = [];
+      elliottSeriesRef.current = [];
       markersPluginRef.current = null;
       window.removeEventListener('resize', handleResize);
       setDrawingRefs({ mainChart: null, candlestickSeries: null });
@@ -1124,6 +1227,90 @@ export function AdvancedChart({ symbol, market, timeRange, indicators, drawingMo
       addFibLines(data, mainChart);
     }
   }, [strategyId, data, addFibLines]);
+
+  // 엘리어트 파동 — ZigZag 선 + 목표/손절/피보 수평선
+  useEffect(() => {
+    const mainChart = chartsRef.current.main;
+    elliottSeriesRef.current.forEach(s => { try { mainChart?.removeSeries(s); } catch {} });
+    elliottSeriesRef.current = [];
+
+    if (strategyId !== 'elliott-wave' || !mainChart || data.length < 60) return;
+
+    const ew: EWResult | null = analyzeElliottWave(data.map(d => ({
+      date: d.date, open: d.open, high: d.high, low: d.low, close: d.close, volume: d.volume,
+    })));
+    if (!ew) return;
+
+    // ZigZag 선 (피벗 연결)
+    if (ew.pivots.length >= 2) {
+      const zz = mainChart.addSeries(LineSeries, {
+        color: '#4b5563',
+        lineWidth: 1,
+        lineStyle: LineStyle.Dotted,
+        lastValueVisible: false,
+        priceLineVisible: false,
+        crosshairMarkerVisible: false,
+      });
+      zz.setData(ew.pivots.map(p => ({ time: p.date as Time, value: p.price })));
+      elliottSeriesRef.current.push(zz);
+    }
+
+    // 목표가/손절선 - 최근 120일 구간에만 표시
+    const lineStart = data[Math.max(0, data.length - 120)].date as Time;
+    const lineEnd = data[data.length - 1].date as Time;
+
+    if (ew.targetPrice) {
+      const tp = mainChart.addSeries(LineSeries, {
+        color: '#22c55e',
+        lineWidth: 2,
+        lineStyle: LineStyle.Dashed,
+        lastValueVisible: true,
+        priceLineVisible: false,
+        crosshairMarkerVisible: false,
+        title: '익절 목표',
+      });
+      tp.setData([
+        { time: lineStart, value: ew.targetPrice },
+        { time: lineEnd, value: ew.targetPrice },
+      ]);
+      elliottSeriesRef.current.push(tp);
+    }
+
+    if (ew.stopLoss) {
+      const sl = mainChart.addSeries(LineSeries, {
+        color: '#ef4444',
+        lineWidth: 2,
+        lineStyle: LineStyle.Dashed,
+        lastValueVisible: true,
+        priceLineVisible: false,
+        crosshairMarkerVisible: false,
+        title: '손절',
+      });
+      sl.setData([
+        { time: lineStart, value: ew.stopLoss },
+        { time: lineEnd, value: ew.stopLoss },
+      ]);
+      elliottSeriesRef.current.push(sl);
+    }
+
+    // 피보나치 레벨
+    for (const fib of ew.fibLevels) {
+      const f = mainChart.addSeries(LineSeries, {
+        color: 'rgba(245,158,11,0.45)',
+        lineWidth: 1,
+        lineStyle: LineStyle.SparseDotted,
+        lastValueVisible: true,
+        priceLineVisible: false,
+        crosshairMarkerVisible: false,
+        title: fib.label,
+      });
+      f.setData([
+        { time: lineStart, value: fib.price },
+        { time: lineEnd, value: fib.price },
+      ]);
+      elliottSeriesRef.current.push(f);
+    }
+  }, [strategyId, data]);
 
   // 인범 빗각 채널 라인 — bijagChannel 토글 또는 전략 선택 시 동기화
   useEffect(() => {

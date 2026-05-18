@@ -3,7 +3,7 @@
 import { useState, useEffect, use, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, CheckCircle2, XCircle, Activity, Target, Loader2, RefreshCw } from 'lucide-react';
-import { InverseAlignmentChart } from '@/components/inverse-alignment/InverseAlignmentChart';
+import { StrategyChartShell } from '@/components/strategies/StrategyChartShell';
 import { calculateInverseAlignment } from '@/lib/utils/inverse-alignment-calculator';
 import { PremiumGate } from '@/components/PremiumGate';
 
@@ -130,8 +130,8 @@ function InverseAlignmentDetailContent({
                   </div>
                 </div>
               </div>
-              <div className="h-[550px] -mx-4">
-                <InverseAlignmentChart history={data.chartData} market={market} />
+              <div className="-mx-4">
+                <StrategyChartShell symbol={symbol} market={market} strategyId="inverse-alignment" height={550} />
               </div>
             </div>
           </div>
