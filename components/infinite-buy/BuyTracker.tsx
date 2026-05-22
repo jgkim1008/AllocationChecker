@@ -66,6 +66,21 @@ export function BuyTracker({ symbol, capital, n, targetRate, market = 'US', acti
   const [editingDivisions, setEditingDivisions] = useState(false);
   const [divisionsEditValue, setDivisionsEditValue] = useState('');
 
+  // 자금 모드 (실제 / 가상) — 종목별 localStorage 저장
+  const [fundMode, setFundMode] = useState<'real' | 'virtual'>('virtual');
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !symbol) return;
+    const saved = localStorage.getItem(`inf-buy-mode-${symbol.toUpperCase()}`);
+    setFundMode(saved === 'real' ? 'real' : 'virtual');
+  }, [symbol]);
+
+  function handleFundModeChange(mode: 'real' | 'virtual') {
+    if (typeof window === 'undefined' || !symbol) return;
+    setFundMode(mode);
+    localStorage.setItem(`inf-buy-mode-${symbol.toUpperCase()}`, mode);
+  }
+
   // symbol 또는 cycle 변경 시 override 다시 로드
   useEffect(() => {
     if (typeof window === 'undefined' || !symbol) {
@@ -506,9 +521,40 @@ export function BuyTracker({ symbol, capital, n, targetRate, market = 'US', acti
         </div>
 
         {/* 총 투자금 */}
-        <div className="bg-white border border-gray-200 rounded-xl p-4">
+        <div className={`bg-white border rounded-xl p-4 ${
+          fundMode === 'virtual' ? 'border-purple-200' : 'border-gray-200'
+        }`}>
           <div className="flex items-center justify-between mb-1">
-            <p className="text-xs text-gray-500">총 투자금</p>
+            <div className="flex items-center gap-1.5">
+              <p className="text-xs text-gray-500">총 투자금</p>
+              {/* 실제/가상 토글 */}
+              <span className="inline-flex rounded border border-gray-200 overflow-hidden text-[9px] font-bold">
+                <button
+                  type="button"
+                  onClick={() => handleFundModeChange('real')}
+                  className={`px-1.5 py-0.5 transition-colors ${
+                    fundMode === 'real'
+                      ? 'bg-green-600 text-white'
+                      : 'bg-white text-gray-400 hover:bg-gray-50'
+                  }`}
+                  title="실제 자금"
+                >
+                  실제
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleFundModeChange('virtual')}
+                  className={`px-1.5 py-0.5 transition-colors border-l border-gray-200 ${
+                    fundMode === 'virtual'
+                      ? 'bg-purple-600 text-white'
+                      : 'bg-white text-gray-400 hover:bg-gray-50'
+                  }`}
+                  title="가상자금"
+                >
+                  가상
+                </button>
+              </span>
+            </div>
             {!editingCapital ? (
               <button
                 onClick={() => {

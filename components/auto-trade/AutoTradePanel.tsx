@@ -108,6 +108,8 @@ export function AutoTradePanel({
   const [symbol, setSymbol] = useState(defaultSymbol);
   const [strategyVersion, setStrategyVersion] = useState<StrategyVersion>('v3.0');
   const [totalCapital, setTotalCapital] = useState(5000);
+  // 자금 모드 (실제/가상) — 종목별 localStorage 저장. UI 라벨링 전용 (계산엔 영향 없음)
+  const [fundMode, setFundMode] = useState<'real' | 'virtual'>('virtual');
   const [currentT, setCurrentT] = useState(0);
   const [currentShares, setCurrentShares] = useState(0);
   const [currentInvested, setCurrentInvested] = useState(0);
@@ -505,6 +507,19 @@ export function AutoTradePanel({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [symbol]);
 
+  // 자금 모드 동기화 — symbol 변경 시 localStorage에서 로드
+  useEffect(() => {
+    if (typeof window === 'undefined' || !symbol) return;
+    const saved = localStorage.getItem(`inf-buy-mode-${symbol.toUpperCase()}`);
+    setFundMode(saved === 'real' ? 'real' : 'virtual');
+  }, [symbol]);
+
+  const handleFundModeChange = (mode: 'real' | 'virtual') => {
+    if (typeof window === 'undefined' || !symbol) return;
+    setFundMode(mode);
+    localStorage.setItem(`inf-buy-mode-${symbol.toUpperCase()}`, mode);
+  };
+
   useEffect(() => {
     fetch('/api/broker/credentials')
       .then(r => r.json())
@@ -681,7 +696,36 @@ export function AutoTradePanel({
 
           <div className="space-y-2">
             <Label className="flex items-center justify-between text-gray-900">
-              <span>총 투자금 ({isOverseas ? 'USD' : 'KRW'})</span>
+              <span className="flex items-center gap-2">
+                총 투자금 ({isOverseas ? 'USD' : 'KRW'})
+                {/* 자금 모드 토글 — 실제/가상 */}
+                <span className="inline-flex rounded-md border border-gray-200 overflow-hidden text-[10px] font-bold ml-1">
+                  <button
+                    type="button"
+                    onClick={() => handleFundModeChange('real')}
+                    className={`px-2 py-0.5 transition-colors ${
+                      fundMode === 'real'
+                        ? 'bg-green-600 text-white'
+                        : 'bg-white text-gray-500 hover:bg-gray-50'
+                    }`}
+                    title="실제 자금 — 증권사 실계좌에 운용 중"
+                  >
+                    실제
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleFundModeChange('virtual')}
+                    className={`px-2 py-0.5 transition-colors border-l border-gray-200 ${
+                      fundMode === 'virtual'
+                        ? 'bg-purple-600 text-white'
+                        : 'bg-white text-gray-500 hover:bg-gray-50'
+                    }`}
+                    title="가상자금 — 페이퍼 트레이딩 / 시뮬레이션"
+                  >
+                    가상
+                  </button>
+                </span>
+              </span>
               <span className="text-xs text-emerald-600 font-medium">
                 1회매수금: {isOverseas ? '$' : '₩'}{(totalCapital / (strategyVersion === 'v3.0' ? 20 : 40)).toFixed(2)}
               </span>
@@ -691,7 +735,9 @@ export function AutoTradePanel({
                 type="number"
                 value={totalCapital}
                 onChange={(e) => setTotalCapital(parseFloat(e.target.value) || 0)}
-                className="flex-1 text-gray-900 bg-white border-gray-300"
+                className={`flex-1 text-gray-900 bg-white ${
+                  fundMode === 'real' ? 'border-green-300' : 'border-purple-300'
+                }`}
               />
               <Button
                 type="button"
@@ -735,6 +781,11 @@ export function AutoTradePanel({
                 최소 투자금
               </Button>
             </div>
+            {fundMode === 'virtual' && (
+              <p className="text-[10px] text-purple-600 font-medium">
+                💡 가상자금 모드 — 실제 거래와 연동되지 않습니다
+              </p>
+            )}
           </div>
 
           <div className="space-y-2">
