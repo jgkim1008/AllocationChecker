@@ -116,6 +116,50 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
   const [capitalEditValue, setCapitalEditValue] = useState('');
   const [savingCapital, setSavingCapital] = useState(false);
 
+  // 실제 모드: 브로커 잔액 (싱크한 계좌의 totalAsset)
+  const [brokerBalance, setBrokerBalance] = useState<number | null>(null);
+  const [loadingBalance, setLoadingBalance] = useState(false);
+  const [balanceError, setBalanceError] = useState<string | null>(null);
+
+  // 실제 모드일 때 브로커 잔액 fetch
+  const loadBrokerBalance = useCallback(async (portfolio: Portfolio | null | undefined, silent = false) => {
+    if (!portfolio || !portfolio.broker_credential_id) {
+      setBrokerBalance(null);
+      setBalanceError(portfolio?.broker_credential_id ? null : '연결된 계좌 정보 없음');
+      return;
+    }
+    if (!silent) setLoadingBalance(true);
+    setBalanceError(null);
+    try {
+      const res = await fetch(`/api/broker/balance?credentialId=${portfolio.broker_credential_id}`);
+      const data = await res.json();
+      if (data.success && data.data?.balance) {
+        setBrokerBalance(data.data.balance.totalAsset ?? 0);
+      } else {
+        setBalanceError(data.error || '잔액 조회 실패');
+        setBrokerBalance(null);
+      }
+    } catch {
+      setBalanceError('잔액 조회 중 오류');
+      setBrokerBalance(null);
+    } finally {
+      if (!silent) setLoadingBalance(false);
+    }
+  }, []);
+
+  // 상세 뷰 진입 + 실제 모드일 때 잔액 자동 로드 (+ 30초 silent 폴링)
+  const selectedPortfolioForBalance = selectedSymbol ? portfolios.find(p => p.symbol === selectedSymbol) : null;
+  useEffect(() => {
+    if (detailFundMode !== 'real') {
+      setBrokerBalance(null);
+      setBalanceError(null);
+      return;
+    }
+    loadBrokerBalance(selectedPortfolioForBalance, false);
+    const interval = setInterval(() => loadBrokerBalance(selectedPortfolioForBalance, true), 30000);
+    return () => clearInterval(interval);
+  }, [detailFundMode, selectedPortfolioForBalance, loadBrokerBalance]);
+
   // 원금 저장 — DB(auto_trade_settings)에 반영
   async function handleSaveCapital(portfolio: Portfolio) {
     const newCapital = parseFloat(capitalEditValue);
@@ -660,15 +704,30 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
           <div className="grid grid-cols-2 gap-x-8 gap-y-5">
             <div>
               <div className="flex items-center justify-between mb-1">
-                <div className="text-xs text-slate-600 font-medium">원금</div>
-                {!editingCapital ? (
+                <div className="text-xs text-slate-600 font-medium flex items-center gap-1.5">
+                  원금
+                  {detailFundMode === 'real' && (
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-green-100 text-green-700">계좌 잔액</span>
+                  )}
+                </div>
+                {/* 실제 모드: 새로고침 버튼 / 가상 모드: 편집 컨트롤 */}
+                {detailFundMode === 'real' ? (
+                  <button
+                    onClick={() => loadBrokerBalance(p, false)}
+                    disabled={loadingBalance}
+                    className="text-slate-400 hover:text-slate-700 transition-colors disabled:opacity-40"
+                    title="브로커 잔액 새로고침"
+                  >
+                    <RefreshCw className={`h-3 w-3 ${loadingBalance ? 'animate-spin' : ''}`} />
+                  </button>
+                ) : !editingCapital ? (
                   <button
                     onClick={() => {
                       setCapitalEditValue(String(p.total_capital));
                       setEditingCapital(true);
                     }}
                     className="text-slate-400 hover:text-slate-700 transition-colors"
-                    title="원금 변경"
+                    title="가상 원금 변경"
                   >
                     <Pencil className="h-3 w-3" />
                   </button>
@@ -692,7 +751,17 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
                   </div>
                 )}
               </div>
-              {editingCapital ? (
+              {detailFundMode === 'real' ? (
+                <>
+                  {balanceError ? (
+                    <div className="font-bold text-red-500 text-xs">{balanceError}</div>
+                  ) : brokerBalance != null ? (
+                    <div className="font-bold text-black">{formatMoney(brokerBalance, p.symbol)}</div>
+                  ) : (
+                    <div className="font-bold text-slate-400 text-sm">{loadingBalance ? '조회 중...' : '—'}</div>
+                  )}
+                </>
+              ) : editingCapital ? (
                 <input
                   type="number"
                   value={capitalEditValue}
@@ -704,11 +773,7 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
                   autoFocus
                   min={0}
                   step="any"
-                  className={`w-full font-bold text-black bg-white border rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 ${
-                    detailFundMode === 'real'
-                      ? 'border-green-300 focus:ring-green-500'
-                      : 'border-purple-300 focus:ring-purple-500'
-                  }`}
+                  className="w-full font-bold text-black bg-white border rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 border-purple-300 focus:ring-purple-500"
                 />
               ) : (
                 <div className="font-bold text-black">{formatMoney(p.total_capital, p.symbol)}</div>
