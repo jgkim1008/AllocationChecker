@@ -14,6 +14,7 @@ import {
   Menu,
   AlertTriangle,
   Check,
+  Pencil,
 } from 'lucide-react';
 import { getV22StarPct, getV3StarPct } from '@/components/infinite-buy/StrategyCalc';
 import { TradingGuide } from '@/components/infinite-buy/TradingGuide';
@@ -109,6 +110,47 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
     setDetailFundMode(mode);
     localStorage.setItem(`inf-buy-mode-${selectedSymbol.toUpperCase()}`, mode);
   };
+
+  // 원금(total_capital) 인라인 편집 state
+  const [editingCapital, setEditingCapital] = useState(false);
+  const [capitalEditValue, setCapitalEditValue] = useState('');
+  const [savingCapital, setSavingCapital] = useState(false);
+
+  // 원금 저장 — DB(auto_trade_settings)에 반영
+  async function handleSaveCapital(portfolio: Portfolio) {
+    const newCapital = parseFloat(capitalEditValue);
+    if (isNaN(newCapital) || newCapital <= 0) {
+      alert('유효한 금액을 입력하세요.');
+      return;
+    }
+    setSavingCapital(true);
+    try {
+      const res = await fetch('/api/auto-trade/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          symbol: portfolio.symbol,
+          broker_type: portfolio.broker_type,
+          broker_credential_id: portfolio.broker_credential_id,
+          strategy_version: portfolio.strategy_version,
+          total_capital: newCapital,
+          is_enabled: portfolio.is_enabled,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setEditingCapital(false);
+        await loadPortfolios(true);
+      } else {
+        alert(data.error || '저장 실패');
+      }
+    } catch (err) {
+      console.error('원금 저장 오류:', err);
+      alert('저장 중 오류가 발생했습니다.');
+    } finally {
+      setSavingCapital(false);
+    }
+  }
   const [summary, setSummary] = useState<DashboardSummary>({
     totalEval: 0,
     totalInvested: 0,
@@ -617,8 +659,60 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
 
           <div className="grid grid-cols-2 gap-x-8 gap-y-5">
             <div>
-              <div className="text-xs text-slate-600 font-medium mb-1">원금</div>
-              <div className="font-bold text-black">{formatMoney(p.total_capital, p.symbol)}</div>
+              <div className="flex items-center justify-between mb-1">
+                <div className="text-xs text-slate-600 font-medium">원금</div>
+                {!editingCapital ? (
+                  <button
+                    onClick={() => {
+                      setCapitalEditValue(String(p.total_capital));
+                      setEditingCapital(true);
+                    }}
+                    className="text-slate-400 hover:text-slate-700 transition-colors"
+                    title="원금 변경"
+                  >
+                    <Pencil className="h-3 w-3" />
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => handleSaveCapital(p)}
+                      disabled={savingCapital}
+                      className="text-green-600 hover:text-green-700 disabled:opacity-40"
+                      title="저장 (DB 반영)"
+                    >
+                      <Check className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      onClick={() => setEditingCapital(false)}
+                      className="text-slate-400 hover:text-slate-600"
+                      title="취소"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                )}
+              </div>
+              {editingCapital ? (
+                <input
+                  type="number"
+                  value={capitalEditValue}
+                  onChange={(e) => setCapitalEditValue(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleSaveCapital(p);
+                    else if (e.key === 'Escape') setEditingCapital(false);
+                  }}
+                  autoFocus
+                  min={0}
+                  step="any"
+                  className={`w-full font-bold text-black bg-white border rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 ${
+                    detailFundMode === 'real'
+                      ? 'border-green-300 focus:ring-green-500'
+                      : 'border-purple-300 focus:ring-purple-500'
+                  }`}
+                />
+              ) : (
+                <div className="font-bold text-black">{formatMoney(p.total_capital, p.symbol)}</div>
+              )}
             </div>
             <div>
               <div className="text-xs text-slate-600 font-medium mb-1">투입액</div>
