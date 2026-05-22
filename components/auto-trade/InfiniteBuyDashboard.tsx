@@ -15,6 +15,14 @@ import {
   AlertTriangle,
   Check,
 } from 'lucide-react';
+import { getV22StarPct, getV3StarPct } from '@/components/infinite-buy/StrategyCalc';
+
+// 전략 버전별 별%(목표 익절률) 계산 — 정식 공식 (StrategyCalc.tsx)
+function computeStarPct(strategyVersion: string, symbol: string, t: number, divisions: number): number {
+  const v = strategyVersion.toLowerCase();
+  if (v === 'v3.0' || v === 'v4.0') return getV3StarPct(symbol, t);
+  return getV22StarPct(symbol, t, divisions);
+}
 
 type StrategyVersion = 'v2.2' | 'v3.0' | 'v4.0';
 type BrokerType = 'kis' | 'kiwoom';
@@ -134,14 +142,19 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
           let invested = 0;
 
           try {
-            const recordsRes = await fetch(`/api/infinite-buy/records?symbol=${s.symbol}`);
-            const recordsData = await recordsRes.json();
-            const buyRecords = (recordsData.buyRecords ?? []).filter((r: any) => r.cycle === cycle);
-            const sellRecords = (recordsData.sellRecords ?? []).filter((r: any) => r.cycle === cycle);
+            // 매수·매도 기록을 cycle_number로 서버 필터링하여 병렬 조회
+            const [buyRes, sellRes] = await Promise.all([
+              fetch(`/api/infinite-buy/records?symbol=${s.symbol}&cycle_number=${cycle}`),
+              fetch(`/api/infinite-buy/sell-records?symbol=${s.symbol}&cycle_number=${cycle}`),
+            ]);
+            const buyJson = await buyRes.json();
+            const sellJson = await sellRes.json();
+            const buyRecords: Array<{ shares?: number; amount?: number }> = Array.isArray(buyJson) ? buyJson : [];
+            const sellRecords: Array<{ shares?: number }> = Array.isArray(sellJson) ? sellJson : [];
 
-            const totalBuyShares = buyRecords.reduce((sum: number, r: any) => sum + (r.shares || 0), 0);
-            const totalBuyInvested = buyRecords.reduce((sum: number, r: any) => sum + (r.amount || 0), 0);
-            const totalSoldShares = sellRecords.reduce((sum: number, r: any) => sum + (r.shares || 0), 0);
+            const totalBuyShares = buyRecords.reduce((sum, r) => sum + (r.shares || 0), 0);
+            const totalBuyInvested = buyRecords.reduce((sum, r) => sum + (r.amount || 0), 0);
+            const totalSoldShares = sellRecords.reduce((sum, r) => sum + (r.shares || 0), 0);
 
             shares = Math.max(0, totalBuyShares - totalSoldShares);
             invested = totalBuyInvested;
@@ -152,12 +165,14 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
           const pnl = evalAmount - invested;
           const pnlRate = invested > 0 ? (pnl / invested) * 100 : 0;
 
-          const divisions = s.strategy_version.toLowerCase() === 'v3.0' ? 20 : 40;
+          // V3.0/V4.0: 20분할 · V2.2: 40분할
+          const versionLower = s.strategy_version.toLowerCase();
+          const divisions = (versionLower === 'v3.0' || versionLower === 'v4.0') ? 20 : 40;
           const unitBuy = s.total_capital / divisions;
           const currentT = invested > 0 ? Math.ceil((invested / unitBuy) * 100) / 100 : 0;
 
-          const baseStarPct = s.symbol.toUpperCase() === 'SOXL' ? 20 : 15;
-          const starPct = currentT > 0 ? baseStarPct + currentT : baseStarPct;
+          // 별%(목표 익절률) — 전략 버전별 정식 공식
+          const starPct = computeStarPct(s.strategy_version, s.symbol, currentT, divisions);
           const targetPrice = avgCost > 0 ? avgCost * (1 + starPct / 100) : 0;
 
           return {
@@ -390,7 +405,9 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
   if (selectedPortfolio) {
     const p = selectedPortfolio;
     const isOverseas = !/^\d{6}$/.test(p.symbol);
-    const divisions = p.strategy_version.toLowerCase() === 'v3.0' ? 20 : 40;
+    // V3.0/V4.0: 20분할 · V2.2: 40분할
+    const detailVersionLower = p.strategy_version.toLowerCase();
+    const divisions = (detailVersionLower === 'v3.0' || detailVersionLower === 'v4.0') ? 20 : 40;
     const unitBuy = p.total_capital / divisions;
     const remainingCapital = p.total_capital - (p.invested ?? 0);
     const investedPct = p.total_capital > 0 ? ((p.invested ?? 0) / p.total_capital * 100) : 0;

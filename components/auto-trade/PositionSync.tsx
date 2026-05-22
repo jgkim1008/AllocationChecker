@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { RefreshCw, CheckCircle, AlertTriangle, AlertCircle, ChevronDown, ChevronUp, Plus, ArrowDownToLine } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -70,6 +70,14 @@ export function PositionSync({ credentialId: propCredentialId }: PositionSyncPro
 
   // 증권사 기준 싱크
   const [syncing, setSyncing] = useState(false);
+
+  // 종목 변경 시 해당 종목의 회차를 localStorage에서 자동 로드
+  // (커스텀 입력 / 프리셋 클릭 / 마운트 시 모두 적용 — 트래커와 회차 일치 보장)
+  useEffect(() => {
+    if (typeof window === 'undefined' || !symbol) return;
+    const saved = localStorage.getItem(`inf-buy-cycle-${symbol.toUpperCase()}`);
+    setCycleNumber(saved ? parseInt(saved, 10) : 1);
+  }, [symbol]);
 
   const checkSync = async () => {
     if (!symbol || !selectedCredentialId) return;
@@ -203,9 +211,7 @@ export function PositionSync({ credentialId: propCredentialId }: PositionSyncPro
                     key={sym}
                     onClick={() => {
                       setSymbol(sym);
-                      // 종목 변경 시 해당 종목의 현재 회차 자동 로드
-                      const saved = localStorage.getItem(`inf-buy-cycle-${sym}`);
-                      setCycleNumber(saved ? parseInt(saved, 10) : 1);
+                      // cycleNumber는 symbol 변경 useEffect에서 자동 동기화됨
                       setResult(null);
                     }}
                     className={`text-xs px-2.5 py-1.5 rounded-lg border transition-colors ${
