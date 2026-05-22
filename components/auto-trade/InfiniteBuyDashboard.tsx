@@ -154,16 +154,28 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
   const [balanceError, setBalanceError] = useState<string | null>(null);
 
   // 실제 모드일 때 브로커 잔액 fetch
+  // - broker_credential_id가 있으면 우선 사용
+  // - 없으면 broker_type로 fallback (이전에 등록된 포트폴리오 호환)
   const loadBrokerBalance = useCallback(async (portfolio: Portfolio | null | undefined, silent = false) => {
-    if (!portfolio || !portfolio.broker_credential_id) {
+    if (!portfolio) {
       setBrokerBalance(null);
-      setBalanceError(portfolio?.broker_credential_id ? null : '연결된 계좌 정보 없음');
+      setBalanceError('포트폴리오 정보 없음');
       return;
     }
     if (!silent) setLoadingBalance(true);
     setBalanceError(null);
     try {
-      const res = await fetch(`/api/broker/balance?credentialId=${portfolio.broker_credential_id}`);
+      const params = new URLSearchParams();
+      if (portfolio.broker_credential_id) {
+        params.set('credentialId', portfolio.broker_credential_id);
+      } else if (portfolio.broker_type) {
+        params.set('brokerType', portfolio.broker_type);
+      } else {
+        setBalanceError('계좌 연결 정보 없음 — 자동매매 > 계좌 연결에서 등록해주세요');
+        setBrokerBalance(null);
+        return;
+      }
+      const res = await fetch(`/api/broker/balance?${params.toString()}`);
       const data = await res.json();
       if (data.success && data.data?.balance) {
         setBrokerBalance(data.data.balance.totalAsset ?? 0);
