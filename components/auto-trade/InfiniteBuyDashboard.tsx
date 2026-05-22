@@ -16,6 +16,7 @@ import {
   Check,
 } from 'lucide-react';
 import { getV22StarPct, getV3StarPct } from '@/components/infinite-buy/StrategyCalc';
+import { TradingGuide } from '@/components/infinite-buy/TradingGuide';
 
 // 전략 버전별 별%(목표 익절률) 계산 — 정식 공식 (StrategyCalc.tsx)
 function computeStarPct(strategyVersion: string, symbol: string, t: number, divisions: number): number {
@@ -94,6 +95,20 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
   const [filterTab, setFilterTab] = useState<'all' | 'profit' | 'loss'>('all');
   const [activePreset, setActivePreset] = useState<'laor' | 'v4' | 'real'>('laor');
+  // 선택된 포트폴리오의 자금 모드 (실제/가상) — 종목별 localStorage 공유
+  const [detailFundMode, setDetailFundMode] = useState<'real' | 'virtual'>('virtual');
+
+  useEffect(() => {
+    if (!selectedSymbol || typeof window === 'undefined') return;
+    const saved = localStorage.getItem(`inf-buy-mode-${selectedSymbol.toUpperCase()}`);
+    setDetailFundMode(saved === 'real' ? 'real' : 'virtual');
+  }, [selectedSymbol]);
+
+  const handleDetailFundModeChange = (mode: 'real' | 'virtual') => {
+    if (!selectedSymbol || typeof window === 'undefined') return;
+    setDetailFundMode(mode);
+    localStorage.setItem(`inf-buy-mode-${selectedSymbol.toUpperCase()}`, mode);
+  };
   const [summary, setSummary] = useState<DashboardSummary>({
     totalEval: 0,
     totalInvested: 0,
@@ -435,7 +450,7 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
     return (
       <div className="space-y-3">
         {/* 헤더 */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <button
             onClick={() => setSelectedSymbol(null)}
             className="flex items-center gap-1.5 text-slate-600 hover:text-black transition-colors"
@@ -443,7 +458,7 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
             <ChevronLeft className="h-5 w-5" />
             <span className="text-sm">목록</span>
           </button>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="font-bold text-xl">{p.symbol}</span>
             <span className="text-sm text-slate-500">{p.symbol} · {isOverseas ? 'AMEX' : 'KRX'} · {p.strategy_version}</span>
             {!p.is_enabled && (
@@ -451,8 +466,40 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
                 일시정지 중
               </span>
             )}
+            {/* 실제/가상 자금 모드 토글 */}
+            <span className="inline-flex rounded-md border border-gray-200 overflow-hidden text-[10px] font-bold ml-1">
+              <button
+                type="button"
+                onClick={() => handleDetailFundModeChange('real')}
+                className={`px-2 py-0.5 transition-colors ${
+                  detailFundMode === 'real'
+                    ? 'bg-green-600 text-white'
+                    : 'bg-white text-gray-500 hover:bg-gray-50'
+                }`}
+                title="실제 자금"
+              >
+                실제
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDetailFundModeChange('virtual')}
+                className={`px-2 py-0.5 transition-colors border-l border-gray-200 ${
+                  detailFundMode === 'virtual'
+                    ? 'bg-purple-600 text-white'
+                    : 'bg-white text-gray-500 hover:bg-gray-50'
+                }`}
+                title="가상자금"
+              >
+                가상
+              </button>
+            </span>
           </div>
         </div>
+        {detailFundMode === 'virtual' && (
+          <p className="text-[11px] text-purple-600 font-medium px-1">
+            💡 가상자금 모드 — 다른 화면(트래커·전략계산기)과 동기화됩니다
+          </p>
+        )}
 
         {/* 액션 버튼 */}
         <div className="flex gap-2">
@@ -598,6 +645,16 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
             </div>
           </div>
         </div>
+
+        {/* 오늘의 매매 가이드 */}
+        <TradingGuide
+          symbol={p.symbol}
+          version={(detailVersionLower === 'v2.2' || detailVersionLower === 'v3.0' || detailVersionLower === 'v4.0') ? detailVersionLower : 'v3.0'}
+          capital={p.total_capital}
+          n={divisions}
+          market={isOverseas ? 'US' : 'KR'}
+          currentCycle={p.cycle ?? 1}
+        />
       </div>
     );
   }

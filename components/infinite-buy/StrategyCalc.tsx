@@ -17,7 +17,7 @@ interface StrategyCalcProps {
   currentCycle?: number;
 }
 
-function fmtP(price: number, market: 'US' | 'KR' = 'US'): string {
+export function fmtP(price: number, market: 'US' | 'KR' = 'US'): string {
   if (market === 'KR') return `₩${Math.round(price).toLocaleString('ko-KR')}`;
   return `$${price.toFixed(2)}`;
 }
@@ -27,7 +27,7 @@ const ADDITIONAL_DROP_RATES = [0, -0.05, -0.1, -0.15, -0.2, -0.25, -0.3, -0.4, -
 
 // ── 공통 유틸 ────────────────────────────────────────────────────────
 // T값: 매수누적액 / 1회매수금 (소수점 둘째자리 올림)
-function calcT(invested: number, unitBuy: number): number {
+export function calcT(invested: number, unitBuy: number): number {
   if (unitBuy <= 0) return 0;
   return Math.ceil((invested / unitBuy) * 100) / 100;
 }
@@ -46,12 +46,12 @@ export function getV22StarPct(symbol: string, t: number, divisions = 40): number
 }
 
 // 기본 익절 목표율: TQQQ 10%, SOXL 12%
-function getV22BaseRate(symbol: string): number {
+export function getV22BaseRate(symbol: string): number {
   return symbol.toUpperCase() === 'SOXL' ? 0.12 : 0.10;
 }
 
 // V2.2 매수 주문: 전반전 절반(별지점-$0.01) + 절반(평단), 후반전 전체(별지점-$0.01)
-function getV22BuyPrices(symbol: string, avgCost: number, t: number, divisions = 40): {
+export function getV22BuyPrices(symbol: string, avgCost: number, t: number, divisions = 40): {
   price1: number; label1: string;
   price2: number | null; label2: string | null;
   ratio1: number; ratio2: number;
@@ -82,7 +82,7 @@ function getV22BuyPrices(symbol: string, avgCost: number, t: number, divisions =
 }
 
 // V2.2 매도 주문: 1/4 별지점 LOC + 3/4 기본목표 지정가
-function getV22SellPrices(symbol: string, avgCost: number, t: number, divisions = 40): {
+export function getV22SellPrices(symbol: string, avgCost: number, t: number, divisions = 40): {
   price1: number; label1: string;
   price2: number; label2: string;
   ratio1: number; ratio2: number;
@@ -108,12 +108,12 @@ export function getV3StarPct(symbol: string, t: number): number {
 }
 
 // 기본 익절 목표율: TQQQ 15%, SOXL 20%
-function getV3BaseRate(symbol: string): number {
+export function getV3BaseRate(symbol: string): number {
   return symbol.toUpperCase() === 'SOXL' ? 0.20 : 0.15;
 }
 
 // V3.0 매수: 전반전 절반(별지점-$0.01)+절반(평단), 후반전 전체(별지점-$0.01)
-function getV3BuyPrices(symbol: string, avgCost: number, t: number, divisions = 20): {
+export function getV3BuyPrices(symbol: string, avgCost: number, t: number, divisions = 20): {
   price1: number; label1: string;
   price2: number | null; label2: string | null;
   ratio1: number; ratio2: number;
@@ -144,7 +144,7 @@ function getV3BuyPrices(symbol: string, avgCost: number, t: number, divisions = 
 }
 
 // V3.0 매도: 1/4 별지점 LOC + 3/4 기본목표 지정가
-function getV3SellPrices(symbol: string, avgCost: number, t: number): {
+export function getV3SellPrices(symbol: string, avgCost: number, t: number): {
   price1: number; label1: string;
   price2: number; label2: string;
   ratio1: number; ratio2: number;
