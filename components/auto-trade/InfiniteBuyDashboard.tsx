@@ -50,6 +50,7 @@ interface Portfolio {
   starPct?: number;
   targetPrice?: number;
   cycle?: number;
+  divisionsUsed?: number;  // 자동 계산: 현재 회차의 매수 기록 수 (BuyTracker와 동일 소스)
 }
 
 interface PendingOrder {
@@ -115,6 +116,37 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
   const [editingCapital, setEditingCapital] = useState(false);
   const [capitalEditValue, setCapitalEditValue] = useState('');
   const [savingCapital, setSavingCapital] = useState(false);
+
+  // 진행 상태(divisionsUsed) 수동 오버라이드 — BuyTracker와 동일 localStorage 키 공유
+  const [divisionsOverride, setDivisionsOverride] = useState<number | null>(null);
+  const [editingDivisions, setEditingDivisions] = useState(false);
+  const [divisionsEditValue, setDivisionsEditValue] = useState('');
+
+  // 선택된 포트폴리오의 cycle 기준으로 오버라이드 로드
+  useEffect(() => {
+    if (!selectedSymbol || typeof window === 'undefined') {
+      setDivisionsOverride(null);
+      return;
+    }
+    const p = portfolios.find(x => x.symbol === selectedSymbol);
+    if (!p) {
+      setDivisionsOverride(null);
+      return;
+    }
+    const key = `inf-buy-divisions-${selectedSymbol.toUpperCase()}-${p.cycle ?? 1}`;
+    const saved = localStorage.getItem(key);
+    setDivisionsOverride(saved !== null ? parseInt(saved, 10) : null);
+  }, [selectedSymbol, portfolios]);
+
+  function saveDivisionsOverride(value: number | null) {
+    if (!selectedSymbol || typeof window === 'undefined') return;
+    const p = portfolios.find(x => x.symbol === selectedSymbol);
+    if (!p) return;
+    const key = `inf-buy-divisions-${selectedSymbol.toUpperCase()}-${p.cycle ?? 1}`;
+    if (value === null) localStorage.removeItem(key);
+    else localStorage.setItem(key, String(value));
+    setDivisionsOverride(value);
+  }
 
   // 실제 모드: 브로커 잔액 (싱크한 계좌의 totalAsset)
   const [brokerBalance, setBrokerBalance] = useState<number | null>(null);
@@ -241,6 +273,7 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
 
           let shares = 0;
           let invested = 0;
+          let divisionsUsed = 0;
 
           try {
             // 매수·매도 기록을 cycle_number로 서버 필터링하여 병렬 조회
@@ -259,6 +292,7 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
 
             shares = Math.max(0, totalBuyShares - totalSoldShares);
             invested = totalBuyInvested;
+            divisionsUsed = buyRecords.length;  // BuyTracker와 동일 소스 (현재 회차 매수 기록 수)
           } catch {}
 
           const avgCost = shares > 0 ? invested / shares : 0;
@@ -291,6 +325,7 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
             starPct,
             targetPrice,
             cycle,
+            divisionsUsed,
           };
         })
       );
@@ -660,6 +695,105 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
             </div>
           </div>
         </div>
+
+        {/* 진행 상태 */}
+        {(() => {
+          const autoDivisions = p.divisionsUsed ?? 0;
+          const effectiveDivisions = divisionsOverride !== null ? divisionsOverride : autoDivisions;
+          const progressPct = Math.min((effectiveDivisions / divisions) * 100, 100);
+          return (
+            <div className="bg-white rounded-xl border border-gray-200 p-5">
+              <div className="flex items-center justify-between mb-3">
+                <span className="font-medium text-black">진행 상태</span>
+                {!editingDivisions ? (
+                  <div className="flex items-center gap-1">
+                    {divisionsOverride !== null && (
+                      <button
+                        onClick={() => saveDivisionsOverride(null)}
+                        className="text-[10px] text-slate-400 hover:text-slate-700 px-1.5 py-0.5 rounded hover:bg-slate-100"
+                        title="자동(매수 기록 수)으로 복귀"
+                      >
+                        자동
+                      </button>
+                    )}
+                    <button
+                      onClick={() => {
+                        setDivisionsEditValue(String(effectiveDivisions));
+                        setEditingDivisions(true);
+                      }}
+                      className="text-slate-400 hover:text-slate-700"
+                      title="진행 회차 수동 조정"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => {
+                        const v = parseInt(divisionsEditValue, 10);
+                        if (!isNaN(v) && v >= 0 && v <= 999) {
+                          saveDivisionsOverride(v);
+                          setEditingDivisions(false);
+                        }
+                      }}
+                      className="text-green-600 hover:text-green-700"
+                      title="저장"
+                    >
+                      <Check className="h-4 w-4" />
+                    </button>
+                    <button
+                      onClick={() => setEditingDivisions(false)}
+                      className="text-slate-400 hover:text-slate-600"
+                      title="취소"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                )}
+              </div>
+              {editingDivisions ? (
+                <div className="flex items-baseline gap-1 mb-2">
+                  <input
+                    type="number"
+                    min={0}
+                    max={999}
+                    value={divisionsEditValue}
+                    onChange={(e) => setDivisionsEditValue(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        const v = parseInt(divisionsEditValue, 10);
+                        if (!isNaN(v) && v >= 0 && v <= 999) {
+                          saveDivisionsOverride(v);
+                          setEditingDivisions(false);
+                        }
+                      } else if (e.key === 'Escape') {
+                        setEditingDivisions(false);
+                      }
+                    }}
+                    autoFocus
+                    className="w-20 text-2xl font-bold text-black border border-gray-300 rounded px-2 py-0.5 focus:outline-none focus:ring-2 focus:ring-green-500"
+                  />
+                  <span className="text-base font-normal text-slate-400">/ {divisions}회</span>
+                </div>
+              ) : (
+                <p className="text-2xl font-bold text-black mb-2">
+                  {effectiveDivisions} <span className="text-base font-normal text-slate-400">/ {divisions}회</span>
+                  {divisionsOverride !== null && (
+                    <span className="ml-2 text-[10px] font-medium text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded align-middle">수동</span>
+                  )}
+                </p>
+              )}
+              <div className="w-full bg-gray-100 rounded-full h-2">
+                <div
+                  className="bg-green-500 h-2 rounded-full transition-all"
+                  style={{ width: `${progressPct}%` }}
+                />
+              </div>
+              <p className="text-xs text-slate-500 mt-1">{progressPct.toFixed(0)}% 소진</p>
+            </div>
+          );
+        })()}
 
         {/* V4.0 사이클 상태 */}
         <div className="bg-white rounded-xl border border-gray-200 p-5">
