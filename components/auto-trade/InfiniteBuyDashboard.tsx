@@ -150,6 +150,7 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
 
   // 실제 모드: 브로커 잔액 (싱크한 계좌의 totalAsset)
   const [brokerBalance, setBrokerBalance] = useState<number | null>(null);
+  const [balanceSource, setBalanceSource] = useState<'positions' | 'records' | 'none'>('none');
   const [loadingBalance, setLoadingBalance] = useState(false);
   const [balanceError, setBalanceError] = useState<string | null>(null);
 
@@ -183,21 +184,30 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
       if (!data.success) {
         setBalanceError(data.error || '잔액 조회 실패');
         setBrokerBalance(null);
+        setBalanceSource('none');
         return;
       }
       const isOverseasPortfolio = !/^\d{6}$/.test(portfolio.symbol);
       // includeOverseas 응답 → { domestic: {...}, overseas: {...} }
       const overseas = data.data?.overseas?.balance;
       const domestic = data.data?.domestic?.balance;
-      const single = data.data?.balance;  // 비-KIS 또는 단일 응답
+      const single = data.data?.balance;
       const targetBalance = isOverseasPortfolio
         ? (overseas ?? single)
         : (domestic ?? single);
-      if (targetBalance) {
-        setBrokerBalance(targetBalance.totalAsset ?? 0);
+      const positionAsset = targetBalance?.totalAsset ?? 0;
+
+      // KIS 해외 잔고 API는 USD 예수금을 별도 endpoint로만 조회 가능 →
+      // 평가금이 0이면 누적 매수금(records 기반)을 fallback으로 표시
+      if (positionAsset > 0) {
+        setBrokerBalance(positionAsset);
+        setBalanceSource('positions');
+      } else if (portfolio.invested && portfolio.invested > 0) {
+        setBrokerBalance(portfolio.invested);
+        setBalanceSource('records');
       } else {
-        setBalanceError(isOverseasPortfolio ? '해외 계좌 잔액 없음' : '국내 계좌 잔액 없음');
-        setBrokerBalance(null);
+        setBrokerBalance(0);
+        setBalanceSource('none');
       }
     } catch {
       setBalanceError('잔액 조회 중 오류');
@@ -869,7 +879,15 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
                 <div className="text-xs text-slate-600 font-medium flex items-center gap-1.5">
                   원금
                   {detailFundMode === 'real' && (
-                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-green-100 text-green-700">계좌 잔액</span>
+                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
+                      balanceSource === 'positions' ? 'bg-green-100 text-green-700'
+                        : balanceSource === 'records'   ? 'bg-amber-100 text-amber-700'
+                        : 'bg-gray-100 text-gray-600'
+                    }`}>
+                      {balanceSource === 'positions' ? '계좌 평가금'
+                        : balanceSource === 'records'   ? '누적 매수금'
+                        : '데이터 없음'}
+                    </span>
                   )}
                 </div>
                 {/* 실제 모드: 새로고침 버튼 / 가상 모드: 편집 컨트롤 */}
@@ -918,7 +936,19 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
                   {balanceError ? (
                     <div className="font-bold text-red-500 text-xs">{balanceError}</div>
                   ) : brokerBalance != null ? (
-                    <div className="font-bold text-black">{formatMoney(brokerBalance, p.symbol)}</div>
+                    <>
+                      <div className="font-bold text-black">{formatMoney(brokerBalance, p.symbol)}</div>
+                      {balanceSource === 'records' && (
+                        <div className="text-[10px] text-amber-600 mt-0.5">
+                          KIS 해외 평가금이 0 → 누적 매수금으로 표시
+                        </div>
+                      )}
+                      {balanceSource === 'none' && (
+                        <div className="text-[10px] text-gray-500 mt-0.5">
+                          포지션·매수 기록 없음 (USD 예수금은 KIS API 별도 조회 필요)
+                        </div>
+                      )}
+                    </>
                   ) : (
                     <div className="font-bold text-slate-400 text-sm">{loadingBalance ? '조회 중...' : '—'}</div>
                   )}
