@@ -51,7 +51,11 @@ export async function GET(request: NextRequest) {
     // KIS의 경우 통합 잔고 조회 가능
     const effectiveBrokerType = credentialId ? 'kis' : brokerType; // credentialId 기반은 KIS로 가정
     if ((effectiveBrokerType === 'kis' || brokerType === 'kis') && includeOverseas && client instanceof KISClient) {
-      const fullBalanceResult = await client.getFullBalance();
+      // 통합 잔고 + 해외 외화예수금 병렬 조회
+      const [fullBalanceResult, presentResult] = await Promise.all([
+        client.getFullBalance(),
+        client.getOverseasPresentBalance(),
+      ]);
 
       if (!fullBalanceResult.success) {
         return NextResponse.json(
@@ -61,11 +65,23 @@ export async function GET(request: NextRequest) {
       }
 
       const fullData = fullBalanceResult.data!;
+
+      // 해외 잔고에 USD 예수금 합산 (정상 조회 시)
+      if (presentResult.success && presentResult.data) {
+        const foreignCash = presentResult.data.foreignCash || 0;
+        console.log('[balance] overseas foreign cash (USD):', foreignCash, '— raw:', presentResult.data.raw);
+        fullData.overseas.balance.totalDeposit = foreignCash;
+        fullData.overseas.balance.totalAsset = (fullData.overseas.balance.totalEvalAmount || 0) + foreignCash;
+      } else {
+        console.warn('[balance] overseas present-balance 조회 실패:', presentResult.error?.message);
+      }
+
       console.log('[balance] domestic positions:', fullData.domestic.positions.length, fullData.domestic.positions.map(p => p.symbol));
       console.log('[balance] overseas positions:', fullData.overseas.positions.length, fullData.overseas.positions.map(p => p.symbol));
       return NextResponse.json({
         success: true,
         data: fullData,
+        overseasCashRaw: presentResult.success ? presentResult.data : null,
       });
     }
 

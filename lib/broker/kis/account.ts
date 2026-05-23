@@ -321,4 +321,87 @@ export class KISAccount {
       },
     };
   }
+
+  /**
+   * 해외 외화예수금 + 통합잔고 조회 (inquire-present-balance)
+   * - 일반 inquire-balance가 누락하는 USD 예수금까지 포함
+   * - 응답 구조 검증을 위해 raw 응답도 함께 반환
+   */
+  async getOverseasPresentBalance(): Promise<
+    BrokerResponse<{
+      foreignCash: number;    // 외화예수금 (USD)
+      foreignCashKRW: number; // 외화예수금 원화환산
+      currency: string;
+      raw: unknown;           // 원본 응답 — 필드명 검증용
+    }>
+  > {
+    const [accountNo, accountProduct] = this.auth.getAccountParts();
+    const trId = 'CTRP6504R'; // KIS Open API 해외주식 체결기준현재잔고 (실전)
+
+    try {
+      const url = new URL(`${this.auth.getBaseUrl()}${KIS_ENDPOINTS.OVERSEAS.PRESENT_BALANCE}`);
+      url.searchParams.set('CANO', accountNo);
+      url.searchParams.set('ACNT_PRDT_CD', accountProduct);
+      url.searchParams.set('WCRC_FRCR_DVSN_CD', '02');  // 02: 외화 기준 조회
+      url.searchParams.set('NATN_CD', '840');           // 840: 미국
+      url.searchParams.set('TR_MKET_CD', '00');         // 00: 전체 시장
+      url.searchParams.set('INQR_DVSN_CD', '00');       // 00: 전체
+
+      const response = await fetch(url.toString(), {
+        method: 'GET',
+        headers: {
+          ...this.auth.getAuthHeaders(),
+          tr_id: trId,
+        },
+      });
+
+      const data = await response.json();
+
+      if (data.rt_cd !== '0') {
+        return {
+          success: false,
+          error: { code: data.msg_cd, message: data.msg1 },
+        };
+      }
+
+      // output2: 외화별 잔고 배열, output3: 종합
+      // KIS 공식 필드: frcr_dncl_amt_2 (외화예수금) — output2 또는 output3에 위치
+      // 응답을 raw로 함께 반환해서 실제 필드 검증
+      const output2: Array<Record<string, string>> = Array.isArray(data.output2) ? data.output2 : [];
+      const output3: Record<string, string> = data.output3 ?? {};
+
+      // USD 행만 추출 (crcy_cd = 'USD')
+      const usdRow = output2.find(r => (r.crcy_cd ?? '').toUpperCase() === 'USD');
+
+      // 외화예수금 후보 필드들 — 가능한 후보 모두 시도 후 0이 아닌 첫 값
+      const candidates = [
+        usdRow?.frcr_dncl_amt_2,
+        usdRow?.frcr_dncl_amt,
+        usdRow?.dncl_amt,
+        output3?.frcr_dncl_amt_2,
+        output3?.frcr_dncl_amt,
+      ].map(v => (v != null ? parseFloat(v) : NaN)).filter(v => !isNaN(v));
+
+      const foreignCash = candidates.find(v => v > 0) ?? candidates[0] ?? 0;
+      const foreignCashKRW = parseFloat(output3?.frcr_evlu_tot_amt ?? '0') || 0;
+
+      return {
+        success: true,
+        data: {
+          foreignCash,
+          foreignCashKRW,
+          currency: 'USD',
+          raw: { output2, output3 },
+        },
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: {
+          code: 'PRESENT_BALANCE_ERROR',
+          message: error instanceof Error ? error.message : '알 수 없는 오류',
+        },
+      };
+    }
+  }
 }
