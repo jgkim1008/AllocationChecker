@@ -154,8 +154,9 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
   const [balanceError, setBalanceError] = useState<string | null>(null);
 
   // 실제 모드일 때 브로커 잔액 fetch
-  // - broker_credential_id가 있으면 우선 사용
-  // - 없으면 broker_type로 fallback (이전에 등록된 포트폴리오 호환)
+  // - includeOverseas=true로 국내·해외 통합 조회
+  // - 종목 시장(KR/US)에 맞는 쪽의 totalAsset만 사용
+  // - broker_credential_id 없으면 broker_type로 fallback
   const loadBrokerBalance = useCallback(async (portfolio: Portfolio | null | undefined, silent = false) => {
     if (!portfolio) {
       setBrokerBalance(null);
@@ -175,12 +176,27 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
         setBrokerBalance(null);
         return;
       }
+      // 국내·해외 통합 조회 (KIS만 해당, 키움은 단일 응답)
+      params.set('includeOverseas', 'true');
       const res = await fetch(`/api/broker/balance?${params.toString()}`);
       const data = await res.json();
-      if (data.success && data.data?.balance) {
-        setBrokerBalance(data.data.balance.totalAsset ?? 0);
-      } else {
+      if (!data.success) {
         setBalanceError(data.error || '잔액 조회 실패');
+        setBrokerBalance(null);
+        return;
+      }
+      const isOverseasPortfolio = !/^\d{6}$/.test(portfolio.symbol);
+      // includeOverseas 응답 → { domestic: {...}, overseas: {...} }
+      const overseas = data.data?.overseas?.balance;
+      const domestic = data.data?.domestic?.balance;
+      const single = data.data?.balance;  // 비-KIS 또는 단일 응답
+      const targetBalance = isOverseasPortfolio
+        ? (overseas ?? single)
+        : (domestic ?? single);
+      if (targetBalance) {
+        setBrokerBalance(targetBalance.totalAsset ?? 0);
+      } else {
+        setBalanceError(isOverseasPortfolio ? '해외 계좌 잔액 없음' : '국내 계좌 잔액 없음');
         setBrokerBalance(null);
       }
     } catch {
