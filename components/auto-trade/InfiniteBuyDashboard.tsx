@@ -155,6 +155,8 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
   const [balanceError, setBalanceError] = useState<string | null>(null);
   // USD → KRW 환율 (KIS 응답의 frst_bltn_exrt). 0이면 미표시
   const [exchangeRate, setExchangeRate] = useState<number>(0);
+  // 예산 현황 표시 통화 (해외 포트폴리오용 토글)
+  const [displayCurrency, setDisplayCurrency] = useState<'USD' | 'KRW'>('USD');
 
   // 실제 모드일 때 브로커 잔액 fetch
   // - includeOverseas=true로 국내·해외 통합 조회
@@ -584,6 +586,23 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
   if (selectedPortfolio) {
     const p = selectedPortfolio;
     const isOverseas = !/^\d{6}$/.test(p.symbol);
+
+    // 통화 토글에 따른 포맷터 (해외+환율 보유 시에만 KRW 모드 활성)
+    const canConvert = isOverseas && exchangeRate > 0;
+    const fmtCurrency = (usdAmount: number): string => {
+      if (!isOverseas) return formatMoney(usdAmount, p.symbol);
+      if (displayCurrency === 'KRW' && canConvert) {
+        return `₩${Math.round(usdAmount * exchangeRate).toLocaleString('ko-KR')}`;
+      }
+      return `$${usdAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    };
+    const fmtSub = (usdAmount: number): string => {
+      if (!canConvert) return '';
+      if (displayCurrency === 'KRW') {
+        return `≈ $${usdAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      }
+      return `≈ ₩${Math.round(usdAmount * exchangeRate).toLocaleString('ko-KR')}`;
+    };
     // V3.0/V4.0: 20분할 · V2.2: 40분할
     const detailVersionLower = p.strategy_version.toLowerCase();
     const divisions = (detailVersionLower === 'v3.0' || detailVersionLower === 'v4.0') ? 20 : 40;
@@ -874,7 +893,34 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
         {/* 예산 현황 */}
         <div className="bg-white rounded-xl border border-gray-200 p-5">
           <div className="flex items-center justify-between mb-5">
-            <span className="font-medium text-black">예산 현황</span>
+            <div className="flex items-center gap-2">
+              <span className="font-medium text-black">예산 현황</span>
+              {/* 해외 포트폴리오 + 환율 정보 있을 때만 통화 토글 */}
+              {isOverseas && exchangeRate > 0 && (
+                <span className="inline-flex rounded-md border border-gray-200 overflow-hidden text-[10px] font-bold">
+                  <button
+                    type="button"
+                    onClick={() => setDisplayCurrency('USD')}
+                    className={`px-2 py-0.5 transition-colors ${
+                      displayCurrency === 'USD' ? 'bg-slate-900 text-white' : 'bg-white text-slate-500 hover:bg-gray-50'
+                    }`}
+                    title="USD 기준 표시"
+                  >
+                    USD
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDisplayCurrency('KRW')}
+                    className={`px-2 py-0.5 transition-colors border-l border-gray-200 ${
+                      displayCurrency === 'KRW' ? 'bg-slate-900 text-white' : 'bg-white text-slate-500 hover:bg-gray-50'
+                    }`}
+                    title="원화 환산 기준 표시"
+                  >
+                    KRW
+                  </button>
+                </span>
+              )}
+            </div>
             <span className="text-xs text-slate-700 font-medium">투입률 {investedPct.toFixed(1)}%</span>
           </div>
 
@@ -942,9 +988,9 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
                     <div className="font-bold text-red-500 text-xs">{balanceError}</div>
                   ) : brokerBalance != null ? (
                     <>
-                      <div className="font-bold text-black">{formatMoney(brokerBalance, p.symbol)}</div>
-                      {isOverseas && exchangeRate > 0 && (
-                        <div className="text-[10px] text-slate-400 mt-0.5">≈ ₩{Math.round(brokerBalance * exchangeRate).toLocaleString('ko-KR')}</div>
+                      <div className="font-bold text-black">{fmtCurrency(brokerBalance)}</div>
+                      {fmtSub(brokerBalance) && (
+                        <div className="text-[10px] text-slate-400 mt-0.5">{fmtSub(brokerBalance)}</div>
                       )}
                       {balanceSource === 'records' && (
                         <div className="text-[10px] text-amber-600 mt-0.5">
@@ -977,26 +1023,26 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
                 />
               ) : (
                 <>
-                  <div className="font-bold text-black">{formatMoney(p.total_capital, p.symbol)}</div>
-                  {isOverseas && exchangeRate > 0 && (
-                    <div className="text-[10px] text-slate-400 mt-0.5">≈ ₩{Math.round(p.total_capital * exchangeRate).toLocaleString('ko-KR')}</div>
+                  <div className="font-bold text-black">{fmtCurrency(p.total_capital)}</div>
+                  {fmtSub(p.total_capital) && (
+                    <div className="text-[10px] text-slate-400 mt-0.5">{fmtSub(p.total_capital)}</div>
                   )}
                 </>
               )}
             </div>
             <div>
               <div className="text-xs text-slate-600 font-medium mb-1">투입액</div>
-              <div className="font-bold text-black">{formatMoney(p.invested ?? 0, p.symbol)}</div>
-              {isOverseas && exchangeRate > 0 && (
-                <div className="text-[10px] text-slate-400">≈ ₩{Math.round((p.invested ?? 0) * exchangeRate).toLocaleString('ko-KR')}</div>
+              <div className="font-bold text-black">{fmtCurrency(p.invested ?? 0)}</div>
+              {fmtSub(p.invested ?? 0) && (
+                <div className="text-[10px] text-slate-400">{fmtSub(p.invested ?? 0)}</div>
               )}
               <div className="text-xs text-slate-700">{investedPct.toFixed(1)}%</div>
             </div>
             <div>
               <div className="text-xs text-slate-600 font-medium mb-1">잔여 예산</div>
-              <div className="font-bold text-black">{formatMoney(remainingCapital, p.symbol)}</div>
-              {isOverseas && exchangeRate > 0 && (
-                <div className="text-[10px] text-slate-400">≈ ₩{Math.round(remainingCapital * exchangeRate).toLocaleString('ko-KR')}</div>
+              <div className="font-bold text-black">{fmtCurrency(remainingCapital)}</div>
+              {fmtSub(remainingCapital) && (
+                <div className="text-[10px] text-slate-400">{fmtSub(remainingCapital)}</div>
               )}
               <div className="text-xs text-slate-700">{remainingPct.toFixed(1)}%</div>
               <div className="mt-2 h-1.5 bg-gray-100 rounded-full overflow-hidden">
@@ -1005,12 +1051,12 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
             </div>
             <div>
               <div className="text-xs text-slate-600 font-medium mb-1">평가액</div>
-              <div className="font-bold text-black">{formatMoney(p.evalAmount ?? 0, p.symbol)}</div>
-              {isOverseas && exchangeRate > 0 && (
-                <div className="text-[10px] text-slate-400">≈ ₩{Math.round((p.evalAmount ?? 0) * exchangeRate).toLocaleString('ko-KR')}</div>
+              <div className="font-bold text-black">{fmtCurrency(p.evalAmount ?? 0)}</div>
+              {fmtSub(p.evalAmount ?? 0) && (
+                <div className="text-[10px] text-slate-400">{fmtSub(p.evalAmount ?? 0)}</div>
               )}
               <div className={`text-xs font-medium ${(p.pnl ?? 0) >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-                {(p.pnl ?? 0) >= 0 ? '+' : ''}{formatMoney(p.pnl ?? 0, p.symbol)} ({(p.pnl ?? 0) >= 0 ? '+' : ''}{(p.pnlRate ?? 0).toFixed(2)}%)
+                {(p.pnl ?? 0) >= 0 ? '+' : ''}{fmtCurrency(p.pnl ?? 0)} ({(p.pnl ?? 0) >= 0 ? '+' : ''}{(p.pnlRate ?? 0).toFixed(2)}%)
               </div>
               <div className="mt-2 h-1.5 bg-gray-100 rounded-full overflow-hidden">
                 <div className="h-full bg-green-400 rounded-full" style={{ width: `${Math.min(100, evalPct)}%` }} />
