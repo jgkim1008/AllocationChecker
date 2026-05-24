@@ -198,8 +198,11 @@ export class KISAccount {
         frcr_buy_amt_smtl1: '0',
       };
 
-      const totalBuyAmount = parseFloat(output2.frcr_buy_amt_smtl1 || output2.frcr_pchs_amt1);
-      const totalProfitLoss = parseFloat(output2.ovrs_tot_pfls);
+      // KIS는 "0.000000" 같은 truthy 문자열을 반환하므로 || 대신 수치 비교 사용
+      const buyAmt = parseFloat(output2.frcr_buy_amt_smtl1 ?? '0') || 0;
+      const pchsAmt = parseFloat(output2.frcr_pchs_amt1 ?? '0') || 0;
+      const totalBuyAmount = buyAmt > 0 ? buyAmt : pchsAmt;
+      const totalProfitLoss = parseFloat(output2.ovrs_tot_pfls ?? '0') || 0;
 
       const balance: Balance = {
         totalAsset: totalBuyAmount + totalProfitLoss,
