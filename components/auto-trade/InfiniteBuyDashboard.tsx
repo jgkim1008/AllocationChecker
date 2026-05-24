@@ -185,6 +185,13 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
       params.set('includeOverseas', 'true');
       const res = await fetch(`/api/broker/balance?${params.toString()}`);
       const data = await res.json();
+      console.log('[dashboard] balance API 응답:', {
+        success: data.success,
+        exchangeRate: data.exchangeRate,
+        hasOverseas: !!data.data?.overseas,
+        overseasTotalAsset: data.data?.overseas?.balance?.totalAsset,
+        error: data.error,
+      });
       if (data.exchangeRate && data.exchangeRate > 0) {
         setExchangeRate(data.exchangeRate);
       }
@@ -904,8 +911,8 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
           <div className="flex items-center justify-between mb-5">
             <div className="flex items-center gap-2">
               <span className="font-medium text-black">예산 현황</span>
-              {/* 해외 포트폴리오 + 환율 정보 있을 때만 통화 토글 */}
-              {isOverseas && exchangeRate > 0 && (
+              {/* 해외 포트폴리오면 항상 토글 노출 (환율 없으면 KRW 비활성화) */}
+              {isOverseas && (
                 <span className="inline-flex rounded-md border-2 border-black overflow-hidden text-xs font-black shadow-sm">
                   <button
                     type="button"
@@ -921,15 +928,18 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
                   </button>
                   <button
                     type="button"
-                    onClick={() => setDisplayCurrency('KRW')}
+                    onClick={() => exchangeRate > 0 && setDisplayCurrency('KRW')}
+                    disabled={exchangeRate <= 0}
                     className={`px-3 py-1 transition-colors border-l-2 border-black ${
                       displayCurrency === 'KRW'
                         ? 'bg-black text-white'
-                        : 'bg-white text-black hover:bg-gray-100'
+                        : exchangeRate > 0
+                          ? 'bg-white text-black hover:bg-gray-100'
+                          : 'bg-gray-100 text-gray-400 cursor-not-allowed'
                     }`}
-                    title="원화 환산 기준 표시"
+                    title={exchangeRate > 0 ? '원화 환산 기준 표시' : '환율 로딩 중 — 실제 모드 토글 시 갱신'}
                   >
-                    KRW
+                    KRW{exchangeRate <= 0 ? '⏳' : ''}
                   </button>
                 </span>
               )}
