@@ -224,17 +224,26 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
     }
   }, []);
 
-  // 상세 뷰 진입 + 실제 모드일 때 잔액 자동 로드 (+ 30초 silent 폴링)
+  // 상세 뷰 진입 시 잔액 로드 — 환율(exchangeRate) 정보를 받기 위해 가상 모드에서도 silent 호출
+  // 실제 모드일 때만 brokerBalance를 화면에 반영, 가상 모드는 환율만 활용
   const selectedPortfolioForBalance = selectedSymbol ? portfolios.find(p => p.symbol === selectedSymbol) : null;
   useEffect(() => {
-    if (detailFundMode !== 'real') {
+    if (!selectedPortfolioForBalance) {
       setBrokerBalance(null);
       setBalanceError(null);
       return;
     }
-    loadBrokerBalance(selectedPortfolioForBalance, false);
-    const interval = setInterval(() => loadBrokerBalance(selectedPortfolioForBalance, true), 30000);
-    return () => clearInterval(interval);
+    if (detailFundMode === 'real') {
+      // 실제 모드: 표시용 + 30초 폴링
+      loadBrokerBalance(selectedPortfolioForBalance, false);
+      const interval = setInterval(() => loadBrokerBalance(selectedPortfolioForBalance, true), 30000);
+      return () => clearInterval(interval);
+    } else {
+      // 가상 모드: 환율 표시용으로만 1회 silent fetch
+      setBrokerBalance(null);
+      setBalanceError(null);
+      loadBrokerBalance(selectedPortfolioForBalance, true);
+    }
   }, [detailFundMode, selectedPortfolioForBalance, loadBrokerBalance]);
 
   // 원금 저장 — DB(auto_trade_settings)에 반영
