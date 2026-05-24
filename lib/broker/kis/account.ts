@@ -338,6 +338,7 @@ export class KISAccount {
     BrokerResponse<{
       foreignCash: number;    // 외화예수금 (USD)
       foreignCashKRW: number; // 외화예수금 원화환산
+      exchangeRate: number;   // USD→KRW 환율 (현재가 기준)
       currency: string;
       raw: unknown;           // 원본 응답 — 필드명 검증용
     }>
@@ -391,12 +392,14 @@ export class KISAccount {
 
       const foreignCash = candidates.find(v => v > 0) ?? candidates[0] ?? 0;
       const foreignCashKRW = parseFloat(output3?.frcr_evlu_tot_amt ?? '0') || 0;
+      const exchangeRate = parseFloat(usdRow?.frst_bltn_exrt ?? '0') || 0;
 
       return {
         success: true,
         data: {
           foreignCash,
           foreignCashKRW,
+          exchangeRate,
           currency: 'USD',
           raw: { output2, output3 },
         },

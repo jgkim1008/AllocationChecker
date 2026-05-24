@@ -92,6 +92,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({
         success: true,
         data: fullData,
+        exchangeRate: presentResult.success ? presentResult.data?.exchangeRate ?? 0 : 0,
         overseasCashRaw: presentResult.success ? presentResult.data : null,
       });
     }

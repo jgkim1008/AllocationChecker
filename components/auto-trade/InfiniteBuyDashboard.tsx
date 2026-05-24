@@ -153,6 +153,8 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
   const [balanceSource, setBalanceSource] = useState<'positions' | 'records' | 'none'>('none');
   const [loadingBalance, setLoadingBalance] = useState(false);
   const [balanceError, setBalanceError] = useState<string | null>(null);
+  // USD → KRW 환율 (KIS 응답의 frst_bltn_exrt). 0이면 미표시
+  const [exchangeRate, setExchangeRate] = useState<number>(0);
 
   // 실제 모드일 때 브로커 잔액 fetch
   // - includeOverseas=true로 국내·해외 통합 조회
@@ -181,6 +183,9 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
       params.set('includeOverseas', 'true');
       const res = await fetch(`/api/broker/balance?${params.toString()}`);
       const data = await res.json();
+      if (data.exchangeRate && data.exchangeRate > 0) {
+        setExchangeRate(data.exchangeRate);
+      }
       if (!data.success) {
         setBalanceError(data.error || '잔액 조회 실패');
         setBrokerBalance(null);
@@ -938,6 +943,9 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
                   ) : brokerBalance != null ? (
                     <>
                       <div className="font-bold text-black">{formatMoney(brokerBalance, p.symbol)}</div>
+                      {isOverseas && exchangeRate > 0 && (
+                        <div className="text-[10px] text-slate-400 mt-0.5">≈ ₩{Math.round(brokerBalance * exchangeRate).toLocaleString('ko-KR')}</div>
+                      )}
                       {balanceSource === 'records' && (
                         <div className="text-[10px] text-amber-600 mt-0.5">
                           KIS 해외 평가금이 0 → 누적 매수금으로 표시
@@ -968,17 +976,28 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
                   className="w-full font-bold text-black bg-white border rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 border-purple-300 focus:ring-purple-500"
                 />
               ) : (
-                <div className="font-bold text-black">{formatMoney(p.total_capital, p.symbol)}</div>
+                <>
+                  <div className="font-bold text-black">{formatMoney(p.total_capital, p.symbol)}</div>
+                  {isOverseas && exchangeRate > 0 && (
+                    <div className="text-[10px] text-slate-400 mt-0.5">≈ ₩{Math.round(p.total_capital * exchangeRate).toLocaleString('ko-KR')}</div>
+                  )}
+                </>
               )}
             </div>
             <div>
               <div className="text-xs text-slate-600 font-medium mb-1">투입액</div>
               <div className="font-bold text-black">{formatMoney(p.invested ?? 0, p.symbol)}</div>
+              {isOverseas && exchangeRate > 0 && (
+                <div className="text-[10px] text-slate-400">≈ ₩{Math.round((p.invested ?? 0) * exchangeRate).toLocaleString('ko-KR')}</div>
+              )}
               <div className="text-xs text-slate-700">{investedPct.toFixed(1)}%</div>
             </div>
             <div>
               <div className="text-xs text-slate-600 font-medium mb-1">잔여 예산</div>
               <div className="font-bold text-black">{formatMoney(remainingCapital, p.symbol)}</div>
+              {isOverseas && exchangeRate > 0 && (
+                <div className="text-[10px] text-slate-400">≈ ₩{Math.round(remainingCapital * exchangeRate).toLocaleString('ko-KR')}</div>
+              )}
               <div className="text-xs text-slate-700">{remainingPct.toFixed(1)}%</div>
               <div className="mt-2 h-1.5 bg-gray-100 rounded-full overflow-hidden">
                 <div className="h-full bg-red-400 rounded-full" style={{ width: `${remainingPct}%` }} />
@@ -987,6 +1006,9 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
             <div>
               <div className="text-xs text-slate-600 font-medium mb-1">평가액</div>
               <div className="font-bold text-black">{formatMoney(p.evalAmount ?? 0, p.symbol)}</div>
+              {isOverseas && exchangeRate > 0 && (
+                <div className="text-[10px] text-slate-400">≈ ₩{Math.round((p.evalAmount ?? 0) * exchangeRate).toLocaleString('ko-KR')}</div>
+              )}
               <div className={`text-xs font-medium ${(p.pnl ?? 0) >= 0 ? 'text-green-600' : 'text-red-500'}`}>
                 {(p.pnl ?? 0) >= 0 ? '+' : ''}{formatMoney(p.pnl ?? 0, p.symbol)} ({(p.pnl ?? 0) >= 0 ? '+' : ''}{(p.pnlRate ?? 0).toFixed(2)}%)
               </div>
@@ -995,6 +1017,11 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
               </div>
             </div>
           </div>
+          {isOverseas && exchangeRate > 0 && (
+            <div className="mt-3 pt-3 border-t border-gray-100 text-[10px] text-slate-400">
+              💱 환율: ₩{exchangeRate.toLocaleString('ko-KR', { maximumFractionDigits: 2 })}/USD (KIS 응답 기준)
+            </div>
+          )}
         </div>
 
         {/* 오늘의 매매 가이드 */}
