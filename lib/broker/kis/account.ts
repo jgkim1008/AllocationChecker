@@ -256,11 +256,8 @@ export class KISAccount {
 
     const results = await Promise.all(exchanges.map(ex => this.getOverseasBalanceByExchange(ex)));
 
-    // 심볼 기준 중복 제거하며 positions 합산
+    // 심볼 기준 중복 제거 (KIS는 NASD/AMEX 양쪽에 같은 포지션을 반환할 수 있음)
     const positionMap = new Map<string, Position>();
-    let totalBuyAmount = 0;
-    let totalProfitLoss = 0;
-
     for (const r of results) {
       if (r.success && r.data) {
         for (const p of r.data.positions) {
@@ -268,18 +265,25 @@ export class KISAccount {
             positionMap.set(p.symbol, p);
           }
         }
-        totalBuyAmount += r.data.balance.totalBuyAmount;
-        totalProfitLoss += r.data.balance.totalProfitLoss;
       }
     }
-
     const allPositions = Array.from(positionMap.values());
 
+    // 거래소별 balance는 중복 합산 위험이 있어, 중복 제거된 positions로부터
+    // 매수금/평가금/손익을 직접 계산 (정확성 보장)
+    const totalBuyAmount = allPositions.reduce(
+      (sum, p) => sum + p.quantity * p.avgPrice, 0
+    );
+    const totalEvalAmount = allPositions.reduce(
+      (sum, p) => sum + p.evalAmount, 0
+    );
+    const totalProfitLoss = totalEvalAmount - totalBuyAmount;
+
     const balance: Balance = {
-      totalAsset: totalBuyAmount + totalProfitLoss,
+      totalAsset: totalEvalAmount,  // 통합잔고: 평가금 (예수금은 별도 endpoint에서 합산)
       totalDeposit: 0,
       totalBuyAmount,
-      totalEvalAmount: totalBuyAmount + totalProfitLoss,
+      totalEvalAmount,
       totalProfitLoss,
       totalProfitLossRate: totalBuyAmount > 0 ? (totalProfitLoss / totalBuyAmount) * 100 : 0,
       currency: 'USD',
