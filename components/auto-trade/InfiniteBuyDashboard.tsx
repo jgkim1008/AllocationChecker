@@ -897,12 +897,14 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
               <span className="font-medium text-black">예산 현황</span>
               {/* 해외 포트폴리오 + 환율 정보 있을 때만 통화 토글 */}
               {isOverseas && exchangeRate > 0 && (
-                <span className="inline-flex rounded-md border border-gray-200 overflow-hidden text-[10px] font-bold">
+                <span className="inline-flex rounded-md border-2 border-black overflow-hidden text-xs font-black shadow-sm">
                   <button
                     type="button"
                     onClick={() => setDisplayCurrency('USD')}
-                    className={`px-2 py-0.5 transition-colors ${
-                      displayCurrency === 'USD' ? 'bg-slate-900 text-white' : 'bg-white text-slate-500 hover:bg-gray-50'
+                    className={`px-3 py-1 transition-colors ${
+                      displayCurrency === 'USD'
+                        ? 'bg-black text-white'
+                        : 'bg-white text-black hover:bg-gray-100'
                     }`}
                     title="USD 기준 표시"
                   >
@@ -911,8 +913,10 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
                   <button
                     type="button"
                     onClick={() => setDisplayCurrency('KRW')}
-                    className={`px-2 py-0.5 transition-colors border-l border-gray-200 ${
-                      displayCurrency === 'KRW' ? 'bg-slate-900 text-white' : 'bg-white text-slate-500 hover:bg-gray-50'
+                    className={`px-3 py-1 transition-colors border-l-2 border-black ${
+                      displayCurrency === 'KRW'
+                        ? 'bg-black text-white'
+                        : 'bg-white text-black hover:bg-gray-100'
                     }`}
                     title="원화 환산 기준 표시"
                   >
