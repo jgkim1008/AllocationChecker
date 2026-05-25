@@ -51,6 +51,7 @@ interface Portfolio {
   targetPrice?: number;
   cycle?: number;
   divisionsUsed?: number;  // 자동 계산: 현재 회차의 매수 기록 수 (BuyTracker와 동일 소스)
+  smart_skip_loc?: boolean;  // 스마트 스킵: 일일 체결 수 달성 시 LOC 주문 생략
 }
 
 interface PendingOrder {
@@ -479,6 +480,36 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
     loadPortfolios();
   }, [loadPortfolios]);
 
+  // 스마트 스킵 토글
+  const handleToggleSmartSkip = async (portfolio: Portfolio) => {
+    setActionLoading(`smart-${portfolio.symbol}`);
+    try {
+      const res = await fetch('/api/auto-trade/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          symbol: portfolio.symbol,
+          broker_type: portfolio.broker_type,
+          broker_credential_id: portfolio.broker_credential_id,
+          strategy_version: portfolio.strategy_version,
+          total_capital: portfolio.total_capital,
+          is_enabled: portfolio.is_enabled,
+          smart_skip_loc: !portfolio.smart_skip_loc,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        await loadPortfolios(true);
+      } else {
+        alert(data.error || '설정 변경 실패');
+      }
+    } catch {
+      alert('Smart Skip 토글 중 오류가 발생했습니다.');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   // Toggle pause/resume
   const handleTogglePause = async (portfolio: Portfolio) => {
     setActionLoading(`pause-${portfolio.symbol}`);
@@ -701,7 +732,7 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
         )}
 
         {/* 액션 버튼 */}
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           <button
             onClick={() => handleTogglePause(p)}
             disabled={actionLoading === `pause-${p.symbol}`}
@@ -719,6 +750,25 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
               <Play className="h-4 w-4" />
             )}
             {p.is_enabled ? '일시정지' : '재개'}
+          </button>
+          {/* Smart Skip 토글: 오늘 체결 수 >= 일일 예상 주문 수면 LOC 생략 */}
+          <button
+            onClick={() => handleToggleSmartSkip(p)}
+            disabled={actionLoading === `smart-${p.symbol}`}
+            className={`flex items-center gap-1.5 px-3 py-2 text-sm border-2 rounded-lg transition-colors disabled:opacity-50 font-bold ${
+              p.smart_skip_loc
+                ? 'bg-black text-white border-black hover:bg-gray-800'
+                : 'bg-white text-black border-black hover:bg-gray-50'
+            }`}
+            title={p.smart_skip_loc
+              ? '활성: 오늘 체결 수 >= 일일 예상이면 LOC 주문 생략'
+              : '비활성: 항상 LOC 주문 제출 (전반전 2건 · 후반전 1건)'}
+          >
+            {actionLoading === `smart-${p.symbol}` ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <span className="text-xs">{p.smart_skip_loc ? '✓ ' : ''}Smart Skip</span>
+            )}
           </button>
           <button
             onClick={() => handleDelete(p.symbol)}

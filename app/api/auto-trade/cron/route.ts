@@ -193,7 +193,7 @@ export async function GET(request: NextRequest) {
 
         const { data: todayOrders } = await serviceClient
           .from('pending_orders')
-          .select('side')
+          .select('side, status')
           .eq('user_id', user_id)
           .eq('symbol', symbol.toUpperCase())
           .in('status', ['submitted', 'partial', 'filled'])
@@ -201,6 +201,23 @@ export async function GET(request: NextRequest) {
 
         const todayBuyExists = (todayOrders ?? []).some(o => o.side === 'buy');
         const todaySellExists = (todayOrders ?? []).some(o => o.side === 'sell');
+
+        // 스마트 스킵: 오늘 filled 수 >= 일일 예상 주문 수면 LOC 주문 안 함
+        if ((setting as { smart_skip_loc?: boolean }).smart_skip_loc) {
+          const filledTodayBuys = (todayOrders ?? []).filter(o => o.side === 'buy' && o.status === 'filled').length;
+          // 전반전: 2주문/일 (별지점+평단 절반씩), 후반전: 1주문/일
+          const expectedDailyBuys = currentT < divisions / 2 ? 2 : 1;
+          if (filledTodayBuys >= expectedDailyBuys) {
+            results.push({
+              userId: user_id,
+              symbol,
+              success: true,
+              message: `Smart Skip: 오늘 ${filledTodayBuys}/${expectedDailyBuys}건 체결 — LOC 주문 생략`,
+              orders: { buy: 0, sell: 0 },
+            });
+            continue;
+          }
+        }
 
         // 중복 주문 필터링
         const ordersToExecute = [
