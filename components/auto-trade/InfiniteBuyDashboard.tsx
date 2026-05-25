@@ -1056,28 +1056,26 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
               </div>
               {detailFundMode === 'real' ? (
                 <>
+                  {/* 메인: 항상 설정 원금 (total_capital) — 잔여·투입률과 일관 유지 */}
+                  <div className="font-bold text-black">{fmtCurrency(p.total_capital)}</div>
+                  {fmtSub(p.total_capital) && (
+                    <div className="text-[10px] text-slate-400 mt-0.5">{fmtSub(p.total_capital)}</div>
+                  )}
+                  {/* 서브: 실제 계좌 평가금 (참고용) */}
                   {balanceError ? (
-                    <div className="font-bold text-red-500 text-xs">{balanceError}</div>
-                  ) : brokerBalance != null ? (
-                    <>
-                      <div className="font-bold text-black">{fmtCurrency(brokerBalance)}</div>
-                      {fmtSub(brokerBalance) && (
-                        <div className="text-[10px] text-slate-400 mt-0.5">{fmtSub(brokerBalance)}</div>
+                    <div className="text-[10px] text-red-500 mt-1">{balanceError}</div>
+                  ) : brokerBalance != null && brokerBalance > 0 ? (
+                    <div className="text-[10px] text-slate-500 mt-1">
+                      {balanceSource === 'positions' && (
+                        <>📊 실제 계좌 평가금: <span className="font-bold text-green-600">{fmtCurrency(brokerBalance)}</span></>
                       )}
                       {balanceSource === 'records' && (
-                        <div className="text-[10px] text-amber-600 mt-0.5">
-                          KIS 해외 평가금이 0 → 누적 매수금으로 표시
-                        </div>
+                        <>📊 누적 매수금: <span className="font-bold text-amber-600">{fmtCurrency(brokerBalance)}</span> <span className="text-amber-500">(KIS 평가금 0)</span></>
                       )}
-                      {balanceSource === 'none' && (
-                        <div className="text-[10px] text-gray-500 mt-0.5">
-                          포지션·매수 기록 없음 (USD 예수금은 KIS API 별도 조회 필요)
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <div className="font-bold text-slate-400 text-sm">{loadingBalance ? '조회 중...' : '—'}</div>
-                  )}
+                    </div>
+                  ) : loadingBalance ? (
+                    <div className="text-[10px] text-slate-400 mt-1">실제 잔액 조회 중...</div>
+                  ) : null}
                 </>
               ) : editingCapital ? (
                 <input
