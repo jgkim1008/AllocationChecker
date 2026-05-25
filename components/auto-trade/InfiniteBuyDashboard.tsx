@@ -634,21 +634,23 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
     const p = selectedPortfolio;
     const isOverseas = !/^\d{6}$/.test(p.symbol);
 
-    // 통화 토글에 따른 포맷터 (해외+환율 보유 시에만 KRW 모드 활성)
-    const canConvert = isOverseas && exchangeRate > 0;
+    // 통화 토글에 따른 포맷터 (해외는 KRW 변환 항상 가능, 환율 정보 없으면 1500 fallback)
+    const FALLBACK_RATE = 1500;
+    const effectiveRate = exchangeRate > 0 ? exchangeRate : FALLBACK_RATE;
+    const isFallbackRate = exchangeRate <= 0;
     const fmtCurrency = (usdAmount: number): string => {
       if (!isOverseas) return formatMoney(usdAmount, p.symbol);
-      if (displayCurrency === 'KRW' && canConvert) {
-        return `₩${Math.round(usdAmount * exchangeRate).toLocaleString('ko-KR')}`;
+      if (displayCurrency === 'KRW') {
+        return `₩${Math.round(usdAmount * effectiveRate).toLocaleString('ko-KR')}`;
       }
       return `$${usdAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     };
     const fmtSub = (usdAmount: number): string => {
-      if (!canConvert) return '';
+      if (!isOverseas) return '';
       if (displayCurrency === 'KRW') {
         return `≈ $${usdAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
       }
-      return `≈ ₩${Math.round(usdAmount * exchangeRate).toLocaleString('ko-KR')}`;
+      return `≈ ₩${Math.round(usdAmount * effectiveRate).toLocaleString('ko-KR')}`;
     };
     // V3.0/V4.0: 20분할 · V2.2: 40분할
     const detailVersionLower = p.strategy_version.toLowerCase();
@@ -978,18 +980,15 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
                   </button>
                   <button
                     type="button"
-                    onClick={() => exchangeRate > 0 && setDisplayCurrency('KRW')}
-                    disabled={exchangeRate <= 0}
+                    onClick={() => setDisplayCurrency('KRW')}
                     className={`px-3 py-1 transition-colors border-l-2 border-black ${
                       displayCurrency === 'KRW'
                         ? 'bg-black text-white'
-                        : exchangeRate > 0
-                          ? 'bg-white text-black hover:bg-gray-100'
-                          : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                        : 'bg-white text-black hover:bg-gray-100'
                     }`}
-                    title={exchangeRate > 0 ? '원화 환산 기준 표시' : '환율 로딩 중 — 실제 모드 토글 시 갱신'}
+                    title={exchangeRate > 0 ? '원화 환산 기준 표시' : '환율 정보 없음 — 1,500원 가정으로 환산'}
                   >
-                    KRW{exchangeRate <= 0 ? '⏳' : ''}
+                    KRW{exchangeRate <= 0 ? '*' : ''}
                   </button>
                 </span>
               )}
@@ -1136,9 +1135,11 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
               </div>
             </div>
           </div>
-          {isOverseas && exchangeRate > 0 && (
+          {isOverseas && (
             <div className="mt-3 pt-3 border-t border-gray-100 text-[10px] text-slate-400">
-              💱 환율: ₩{exchangeRate.toLocaleString('ko-KR', { maximumFractionDigits: 2 })}/USD (KIS 응답 기준)
+              💱 환율: ₩{effectiveRate.toLocaleString('ko-KR', { maximumFractionDigits: 2 })}/USD
+              {isFallbackRate && <span className="ml-1 text-amber-600 font-medium">(* 환율 정보 없음 — 기본값 1,500원 사용)</span>}
+              {!isFallbackRate && <span className="ml-1">(KIS 응답 기준)</span>}
             </div>
           )}
         </div>
