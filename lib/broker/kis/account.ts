@@ -256,6 +256,15 @@ export class KISAccount {
 
     const results = await Promise.all(exchanges.map(ex => this.getOverseasBalanceByExchange(ex)));
 
+    // 실패한 거래소 로그 (토큰 만료 등 진단용)
+    results.forEach((r, i) => {
+      if (!r.success) {
+        console.warn(`[KIS overseas balance] ${exchanges[i]} 실패:`, r.error?.code, r.error?.message);
+      } else if (r.data) {
+        console.log(`[KIS overseas balance] ${exchanges[i]} OK: positions=${r.data.positions.length}, buy=${r.data.balance.totalBuyAmount}, pnl=${r.data.balance.totalProfitLoss}`);
+      }
+    });
+
     // 심볼 기준 중복 제거 (KIS는 NASD/AMEX 양쪽에 같은 포지션을 반환할 수 있음)
     const positionMap = new Map<string, Position>();
     for (const r of results) {
