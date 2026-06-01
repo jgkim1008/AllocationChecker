@@ -202,17 +202,21 @@ export async function GET(request: NextRequest) {
         const todayBuyExists = (todayOrders ?? []).some(o => o.side === 'buy');
         const todaySellExists = (todayOrders ?? []).some(o => o.side === 'sell');
 
-        // 스마트 스킵: 오늘 filled 수 >= 일일 예상 주문 수면 LOC 주문 안 함
+        // 스마트 스킵: 오늘 매수 + 매도 모두 filled >= 예상 수면 LOC 주문 안 함
         if ((setting as { smart_skip_loc?: boolean }).smart_skip_loc) {
           const filledTodayBuys = (todayOrders ?? []).filter(o => o.side === 'buy' && o.status === 'filled').length;
+          const filledTodaySells = (todayOrders ?? []).filter(o => o.side === 'sell' && o.status === 'filled').length;
           // 전반전: 2주문/일 (별지점+평단 절반씩), 후반전: 1주문/일
           const expectedDailyBuys = currentT < divisions / 2 ? 2 : 1;
-          if (filledTodayBuys >= expectedDailyBuys) {
+          const expectedDailySells = executableSells.length; // 현재 포지션 기준 매도 주문 수
+          const buysFulfilled = filledTodayBuys >= expectedDailyBuys;
+          const sellsFulfilled = expectedDailySells === 0 || filledTodaySells >= expectedDailySells;
+          if (buysFulfilled && sellsFulfilled) {
             results.push({
               userId: user_id,
               symbol,
               success: true,
-              message: `Smart Skip: 오늘 ${filledTodayBuys}/${expectedDailyBuys}건 체결 — LOC 주문 생략`,
+              message: `Smart Skip: 매수 ${filledTodayBuys}/${expectedDailyBuys}건 · 매도 ${filledTodaySells}/${expectedDailySells}건 체결 — LOC 주문 생략`,
               orders: { buy: 0, sell: 0 },
             });
             continue;
