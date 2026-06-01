@@ -29,12 +29,33 @@ interface TradingGuideProps {
   currentCycle?: number;
 }
 
+interface TodayOrder {
+  id: string;
+  side: 'buy' | 'sell';
+  order_type: string;
+  order_quantity: number;
+  order_price: number;
+  status: string;
+  filled_quantity: number | null;
+  filled_price: number | null;
+  reason: string | null;
+}
+
 export function TradingGuide({
   symbol, version, capital, n, market = 'US', currentCycle = 1,
 }: TradingGuideProps) {
   const [position, setPosition] = useState<TrackerPosition | null>(null);
   const [currentPrice, setCurrentPrice] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
+  const [todayOrders, setTodayOrders] = useState<TodayOrder[]>([]);
+
+  const fetchTodayOrders = useCallback(async () => {
+    if (!symbol) return;
+    const res = await fetch(`/api/auto-trade/pending-orders?symbol=${symbol}`).catch(() => null);
+    if (!res?.ok) return;
+    const data = await res.json();
+    setTodayOrders(data.orders ?? []);
+  }, [symbol]);
 
   const reload = useCallback(async () => {
     if (!symbol) return;
@@ -46,8 +67,9 @@ export function TradingGuide({
     setPosition(pos);
     const p = priceRes?.prices?.[symbol]?.price;
     if (p && p > 0) setCurrentPrice(p);
+    await fetchTodayOrders();
     setLoading(false);
-  }, [symbol, currentCycle]);
+  }, [symbol, currentCycle, fetchTodayOrders]);
 
   useEffect(() => { reload(); }, [reload]);
 
@@ -61,9 +83,10 @@ export function TradingGuide({
       setPosition(pos);
       const p = priceRes?.prices?.[symbol]?.price;
       if (p && p > 0) setCurrentPrice(p);
+      await fetchTodayOrders();
     }, 15000);
     return () => clearInterval(interval);
-  }, [symbol, currentCycle]);
+  }, [symbol, currentCycle, fetchTodayOrders]);
 
   if (loading && !position) {
     return (
@@ -172,6 +195,7 @@ export function TradingGuide({
             )}
             <p className="pt-1 border-t border-gray-200 mt-2">• 매도: 1/4은 별지점 LOC, 3/4은 +{(getV22BaseRate(symbol) * 100).toFixed(0)}% 지정가</p>
           </div>
+          <TodayOrdersSection orders={todayOrders} market={market} />
         </div>
       </div>
     );
@@ -257,6 +281,7 @@ export function TradingGuide({
             <p>• V3.0: 별지점({starPct.toFixed(2)}%)-$0.01 LOC 매수</p>
             <p>• 매도: 1/4은 별지점 LOC, 3/4은 +{(baseRate * 100).toFixed(0)}% 지정가</p>
           </div>
+          <TodayOrdersSection orders={todayOrders} market={market} />
         </div>
       </div>
     );
@@ -334,6 +359,7 @@ export function TradingGuide({
           <p>• 1회매수금이 잔금/(N-T)로 매일 동적 계산됨 → 후반전에 매수금 증가</p>
           <p>• 매수가 진행될수록 분할금이 커져 평단 회복이 빠름</p>
         </div>
+        <TodayOrdersSection orders={todayOrders} market={market} />
       </div>
     </div>
   );
@@ -372,6 +398,58 @@ function SellRow({ label, qty, price, desc, market }: {
       <div className="text-right">
         <p className="text-sm font-bold text-red-600">{fmtP(price, market)}</p>
         <p className="text-[10px] text-gray-400">{desc}</p>
+      </div>
+    </div>
+  );
+}
+
+function TodayOrdersSection({ orders, market }: { orders: TodayOrder[]; market: 'US' | 'KR' }) {
+  if (orders.length === 0) return null;
+
+  const statusInfo = (status: string) => {
+    switch (status) {
+      case 'filled':   return { label: '체결', cls: 'bg-emerald-100 text-emerald-700' };
+      case 'partial':  return { label: '부분체결', cls: 'bg-blue-100 text-blue-700' };
+      case 'submitted': return { label: '대기중', cls: 'bg-amber-100 text-amber-700' };
+      case 'cancelled': return { label: '취소', cls: 'bg-gray-100 text-gray-500' };
+      case 'expired':  return { label: '만료', cls: 'bg-gray-100 text-gray-500' };
+      default:         return { label: status, cls: 'bg-gray-100 text-gray-500' };
+    }
+  };
+
+  const fmtPrice = (price: number) =>
+    market === 'US' ? `$${price.toFixed(2)}` : `₩${price.toLocaleString('ko-KR')}`;
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <div className="px-3 py-2 bg-gray-50 border-b border-gray-100">
+        <p className="text-xs font-bold text-gray-700">📋 오늘 제출된 주문</p>
+      </div>
+      <div className="divide-y divide-gray-50">
+        {orders.map(o => {
+          const { label, cls } = statusInfo(o.status);
+          const isBuy = o.side === 'buy';
+          const typeLabel = o.order_type === 'loc' ? 'LOC' : o.order_type === 'limit' ? '지정가' : o.order_type;
+          const filledInfo = (o.status === 'filled' || o.status === 'partial') && o.filled_quantity
+            ? ` · ${o.filled_quantity}주 @ ${fmtPrice(o.filled_price ?? 0)}`
+            : '';
+          return (
+            <div key={o.id} className="flex items-center justify-between px-3 py-2">
+              <div className="flex items-center gap-2">
+                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${isBuy ? 'bg-blue-50 text-blue-700' : 'bg-red-50 text-red-700'}`}>
+                  {isBuy ? '매수' : '매도'}
+                </span>
+                <span className="text-xs text-gray-600">
+                  {o.order_quantity}주 {typeLabel} {fmtPrice(o.order_price)}
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                {filledInfo && <span className="text-[10px] text-gray-400">{filledInfo}</span>}
+                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${cls}`}>{label}</span>
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
