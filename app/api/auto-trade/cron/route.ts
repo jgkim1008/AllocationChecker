@@ -115,6 +115,7 @@ export async function GET(request: NextRequest) {
     // 각 설정에 대해 주문 실행
     for (const setting of settings) {
       const { user_id, symbol, broker_type, broker_credential_id, strategy_version, total_capital } = setting;
+      const tradeMode = (setting as { trade_mode?: string }).trade_mode ?? 'real';
 
       try {
         // 1. 브로커 연결 확인 (credential_id 우선, fallback: broker_type)
@@ -131,10 +132,20 @@ export async function GET(request: NextRequest) {
           continue;
         }
 
-        // 2. 트래커 포지션 조회
-        const position = await getTrackerPosition(user_id, symbol);
+        // 2. 브로커 잔고·포지션 조회 (실제 모드 포지션 계산 + 주문 실행 시 재사용)
+        const [balanceResult, positionsResult] = await Promise.all([
+          clientResult.client.getBalance(),
+          clientResult.client.getPositions(),
+        ]);
+        const availableCash = balanceResult.success ? (balanceResult.data?.totalDeposit ?? 0) : 0;
+        const brokerPosition = (positionsResult.data ?? []).find(
+          p => p.symbol.toUpperCase() === symbol.toUpperCase()
+        );
 
-        // 3. 현재가 조회
+        // 3. 트래커 포지션 조회 (가상 모드 또는 실제 모드 fallback)
+        const trackerPosition = await getTrackerPosition(user_id, symbol);
+
+        // 4. 현재가 조회
         const quoteResult = await clientResult.client.getQuote(symbol);
         if (!quoteResult.success || !quoteResult.data) {
           results.push({
@@ -151,14 +162,24 @@ export async function GET(request: NextRequest) {
         const version = (strategy_version || 'v3.0').toLowerCase() as StrategyVersion;
         const divisions = version === 'v3.0' ? 20 : 40;
 
-        // 포지션이 없으면 신규 시작 (T=0)
-        const currentShares = position?.shares || 0;
-        const currentInvested = position?.invested || 0;
-        const capital = position?.capital || total_capital;
+        // capital은 항상 settings 기준 (트래커 레코드의 capital은 과거 값일 수 있음)
+        const capital = total_capital;
         const unitBuy = capital / divisions;
+
+        // 실제 모드: 브로커 포지션 기준 / 가상 모드: 트래커 기준
+        let currentShares: number;
+        let currentInvested: number;
+        if (tradeMode === 'real' && brokerPosition) {
+          currentShares = brokerPosition.quantity;
+          currentInvested = brokerPosition.quantity * brokerPosition.avgPrice;
+        } else {
+          currentShares = trackerPosition?.shares || 0;
+          currentInvested = trackerPosition?.invested || 0;
+        }
+
         const currentT = currentInvested > 0 ? Math.ceil((currentInvested / unitBuy) * 100) / 100 : 0;
 
-        // 4. 주문 계산
+        // 5. 주문 계산
         const config: LiveStrategyConfig = {
           version,
           ticker: symbol,
@@ -188,7 +209,7 @@ export async function GET(request: NextRequest) {
           continue;
         }
 
-        // 5. 오늘 이미 주문했는지 확인
+        // 6. 오늘 이미 주문했는지 확인
         const todayStart = new Date();
         todayStart.setHours(0, 0, 0, 0);
 
@@ -241,15 +262,10 @@ export async function GET(request: NextRequest) {
           continue;
         }
 
-        // 6. 주문 실행
+        // 7. 주문 실행
         let successCount = 0;
         let failCount = 0;
         const orderResults: { orderId?: string; side: string; error?: string }[] = [];
-
-        // 잔고 및 포지션 사전 조회
-        const balanceResult = await clientResult.client.getBalance();
-        const positionsResult = await clientResult.client.getPositions();
-        const availableCash = balanceResult.success ? (balanceResult.data?.totalDeposit ?? 0) : 0;
 
         // 매도 가능 수량 추적 (복수 매도 주문 합계가 보유 수량 초과 방지)
         const sellableQtyMap = new Map<string, number>();
