@@ -63,10 +63,11 @@ async function getTrackerPosition(userId: string, symbol: string) {
 
   if (remainingShares <= 0) return null;
 
+  const avgCost = buyShares > 0 ? buyInvested / buyShares : 0;
   return {
     shares: remainingShares,
-    invested: buyInvested,
-    avgCost: buyShares > 0 ? buyInvested / buyShares : 0,
+    invested: remainingShares * avgCost,
+    avgCost,
     capital,
   };
 }
