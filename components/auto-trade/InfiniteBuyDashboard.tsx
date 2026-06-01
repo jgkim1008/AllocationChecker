@@ -88,6 +88,12 @@ interface InfiniteBuyDashboardProps {
   onNavigateToManual?: () => void;
 }
 
+interface SavedAccount {
+  id: string;
+  brokerType: BrokerType;
+  accountAlias: string;
+}
+
 export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboardProps) {
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
   const [pendingOrders, setPendingOrders] = useState<PendingOrder[]>([]);
@@ -99,6 +105,49 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
   const [filterTab, setFilterTab] = useState<'all' | 'profit' | 'loss'>('all');
   const [activePreset, setActivePreset] = useState<'laor' | 'v4' | 'real'>('laor');
+  const [savedAccounts, setSavedAccounts] = useState<SavedAccount[]>([]);
+
+  // 저장된 계좌 목록 로드
+  useEffect(() => {
+    fetch('/api/broker/credentials')
+      .then(r => r.json())
+      .then(data => {
+        if (data.success && data.data) {
+          setSavedAccounts(data.data.map((c: { id: string; brokerType?: string; broker_type?: string; accountAlias?: string; account_alias?: string }) => ({
+            id: c.id,
+            brokerType: (c.brokerType ?? c.broker_type) as BrokerType,
+            accountAlias: c.accountAlias ?? c.account_alias ?? 'default',
+          })));
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  // 계좌 변경: DB 업데이트 후 portfolios 리로드
+  const handleCredentialChange = async (portfolioSymbol: string, credentialId: string) => {
+    const p = portfolios.find(x => x.symbol === portfolioSymbol);
+    if (!p) return;
+    const acc = savedAccounts.find(a => a.id === credentialId);
+    setActionLoading(`cred-${portfolioSymbol}`);
+    try {
+      const res = await fetch('/api/auto-trade/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          symbol: p.symbol,
+          broker_type: acc?.brokerType ?? p.broker_type,
+          broker_credential_id: credentialId,
+          strategy_version: p.strategy_version,
+          total_capital: p.total_capital,
+          is_enabled: p.is_enabled,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) await loadPortfolios(true);
+    } finally {
+      setActionLoading(null);
+    }
+  };
 
   // trade_mode는 DB에서 로드 (selectedPortfolio.trade_mode 직접 참조)
   // 모드 변경: DB 업데이트 후 portfolios 리로드
@@ -789,6 +838,27 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
                 가상
               </button>
             </span>
+            {/* 계좌 선택 */}
+            {savedAccounts.length > 0 && (
+              <select
+                value={p.broker_credential_id ?? ''}
+                onChange={e => handleCredentialChange(p.symbol, e.target.value)}
+                className="text-[10px] px-2 py-0.5 rounded-md border border-gray-200 bg-white text-slate-600 font-medium cursor-pointer hover:border-gray-400 transition-colors ml-1"
+                title="자동매매에 사용할 계좌"
+              >
+                {!p.broker_credential_id && (
+                  <option value="">계좌 미설정</option>
+                )}
+                {savedAccounts.map(acc => (
+                  <option key={acc.id} value={acc.id}>
+                    {acc.brokerType === 'kis' ? '한투' : '키움'} {acc.accountAlias === 'default' ? '기본' : acc.accountAlias}
+                  </option>
+                ))}
+              </select>
+            )}
+            {actionLoading === `cred-${p.symbol}` && (
+              <Loader2 className="h-3 w-3 animate-spin text-slate-400" />
+            )}
           </div>
         </div>
         {detailFundMode === 'virtual' && (
@@ -1399,7 +1469,7 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
                     className="w-full flex items-center justify-between px-4 py-4 hover:bg-gray-50 transition-colors text-left"
                   >
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-bold text-black">{p.symbol}</span>
                         <span className="text-xs text-slate-600">{p.strategy_version}</span>
                         <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
@@ -1413,6 +1483,30 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
                           <span className="text-xs px-1.5 py-0.5 bg-yellow-100 text-yellow-700 rounded font-medium">
                             일시정지
                           </span>
+                        )}
+                        {/* 계좌 선택 드롭다운 */}
+                        {savedAccounts.length > 0 && (
+                          <select
+                            value={p.broker_credential_id ?? ''}
+                            onClick={e => e.stopPropagation()}
+                            onChange={e => {
+                              e.stopPropagation();
+                              handleCredentialChange(p.symbol, e.target.value);
+                            }}
+                            className="text-[10px] px-1.5 py-0.5 rounded border border-gray-200 bg-white text-slate-600 font-medium cursor-pointer hover:border-gray-400 transition-colors"
+                          >
+                            {!p.broker_credential_id && (
+                              <option value="">계좌 미설정</option>
+                            )}
+                            {savedAccounts.map(acc => (
+                              <option key={acc.id} value={acc.id}>
+                                {acc.brokerType === 'kis' ? '한투' : '키움'} {acc.accountAlias === 'default' ? '기본' : acc.accountAlias}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                        {actionLoading === `cred-${p.symbol}` && (
+                          <Loader2 className="h-3 w-3 animate-spin text-slate-400" />
                         )}
                       </div>
                       <div className="flex items-center gap-1 mt-1 text-xs text-slate-700 flex-wrap">

@@ -156,7 +156,7 @@ export function TradingGuide({
             </div>
             <div className="p-3 space-y-2">
               <SellRow label="1차 익절" qty={`1/4 (${Math.round(position.shares / 4)}주)`} price={sellInfo.price1} desc={sellInfo.label1} market={market} />
-              <SellRow label="2차 익절" qty={`3/4 (${Math.round(position.shares * 3 / 4)}주)`} price={sellInfo.price2} desc={sellInfo.label2} market={market} />
+              <SellRow label="2차 익절" qty={`3/4 (${position.shares - Math.round(position.shares / 4)}주)`} price={sellInfo.price2} desc={sellInfo.label2} market={market} />
             </div>
           </div>
 
@@ -248,7 +248,7 @@ export function TradingGuide({
             </div>
             <div className="p-3 space-y-2">
               <SellRow label="1차 익절" qty={`1/4 (${Math.round(position.shares / 4)}주)`} price={sellInfo.price1} desc={sellInfo.label1} market={market} />
-              <SellRow label="2차 익절" qty={`3/4 (${Math.round(position.shares * 3 / 4)}주)`} price={sellInfo.price2} desc={sellInfo.label2} market={market} />
+              <SellRow label="2차 익절" qty={`3/4 (${position.shares - Math.round(position.shares / 4)}주)`} price={sellInfo.price2} desc={sellInfo.label2} market={market} />
             </div>
           </div>
 
@@ -325,7 +325,7 @@ export function TradingGuide({
           </div>
           <div className="p-3 space-y-2">
             <SellRow label="1차 익절" qty={`1/4 (${Math.round(position.shares / 4)}주)`} price={starSellPrice} desc={`별지점(${starPct.toFixed(2)}%) LOC`} market={market} />
-            <SellRow label="2차 익절" qty={`3/4 (${Math.round(position.shares * 3 / 4)}주)`} price={baseSellPrice} desc={`기본목표(+${(baseRate * 100).toFixed(0)}%) 지정가`} market={market} />
+            <SellRow label="2차 익절" qty={`3/4 (${position.shares - Math.round(position.shares / 4)}주)`} price={baseSellPrice} desc={`기본목표(+${(baseRate * 100).toFixed(0)}%) 지정가`} market={market} />
           </div>
         </div>
 

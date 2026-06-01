@@ -246,17 +246,24 @@ export async function GET(request: NextRequest) {
         const positionsResult = await clientResult.client.getPositions();
         const availableCash = balanceResult.success ? (balanceResult.data?.totalDeposit ?? 0) : 0;
 
+        // 매도 가능 수량 추적 (복수 매도 주문 합계가 보유 수량 초과 방지)
+        const sellableQtyMap = new Map<string, number>();
+        for (const pos of positionsResult.data ?? []) {
+          sellableQtyMap.set(pos.symbol.toUpperCase(), pos.quantity);
+        }
+
         for (const order of ordersToExecute) {
           let actualQty = order.quantity;
 
           if (order.side === 'sell') {
-            const pos = positionsResult.data?.find(p => p.symbol.toUpperCase() === order.symbol.toUpperCase());
-            if (!pos || pos.quantity <= 0) {
+            const remaining = sellableQtyMap.get(order.symbol.toUpperCase()) ?? 0;
+            if (remaining <= 0) {
               orderResults.push({ side: order.side, error: '보유 잔고 없음 - 매도 스킵' });
               continue;
             }
-            // 보유 수량보다 많으면 보유 수량으로 조정
-            actualQty = Math.min(order.quantity, pos.quantity);
+            // 남은 수량만큼만 매도
+            actualQty = Math.min(order.quantity, remaining);
+            sellableQtyMap.set(order.symbol.toUpperCase(), remaining - actualQty);
           }
 
           if (order.side === 'buy') {
