@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { symbol, broker_type, strategy_version, total_capital, is_enabled, broker_credential_id, smart_skip_loc } = body;
+    const { symbol, broker_type, strategy_version, total_capital, is_enabled, broker_credential_id, smart_skip_loc, trade_mode } = body;
 
     if (!symbol || !broker_type || !strategy_version || !total_capital) {
       return NextResponse.json({ success: false, error: '필수 필드가 누락되었습니다.' }, { status: 400 });
@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
     // 기존 설정 확인
     const { data: existing } = await serviceClient
       .from('auto_trade_settings')
-      .select('id, smart_skip_loc')
+      .select('id, smart_skip_loc, trade_mode')
       .eq('user_id', user.id)
       .eq('symbol', symbol.toUpperCase())
       .single();
@@ -77,6 +77,10 @@ export async function POST(request: NextRequest) {
     // smart_skip_loc는 명시적으로 전달된 경우만 갱신 (기존 값 보존)
     if (smart_skip_loc !== undefined) {
       settingData.smart_skip_loc = !!smart_skip_loc;
+    }
+    // trade_mode는 명시적으로 전달된 경우만 갱신 (기존 값 보존)
+    if (trade_mode !== undefined) {
+      settingData.trade_mode = trade_mode === 'real' ? 'real' : 'virtual';
     }
 
     let result;

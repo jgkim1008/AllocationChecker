@@ -182,6 +182,22 @@ function buildTelegramMessage(
 }
 
 /**
+ * 마감 알림 텍스트만 반환 (발송하지 않음) — DCA preclose 등 통합 메시지용
+ */
+export async function buildMarketCloseSection(market: 'US' | 'KR'): Promise<string> {
+  try {
+    const [statuses, maChanges] = await Promise.all([
+      fetchTargetStatuses(),
+      fetchMonthlyMAChanges(),
+    ]);
+    if (statuses.length === 0) return '';
+    return '\n\n' + buildTelegramMessage(statuses, market, maChanges);
+  } catch {
+    return '';
+  }
+}
+
+/**
  * 마감 알림 발송 (US 또는 KR 마감)
  * Telegram으로만 발송
  */

@@ -341,12 +341,15 @@ export class KISAccount {
   /**
    * 해외 외화예수금 + 통합잔고 조회 (inquire-present-balance)
    * - 일반 inquire-balance가 누락하는 USD 예수금까지 포함
-   * - 응답 구조 검증을 위해 raw 응답도 함께 반환
+   * - output1(종목별)에서 총 평가금 합산 → 거래소별 조회 0 문제 우회
    */
   async getOverseasPresentBalance(): Promise<
     BrokerResponse<{
       foreignCash: number;    // 외화예수금 (USD)
       foreignCashKRW: number; // 외화예수금 원화환산
+      totalEvalUSD: number;   // 해외주식 평가금 합계 (USD) — output1 종목별 합산
+      totalBuyUSD: number;    // 해외주식 매입금액 합계 (USD)
+      totalAssetKRW: number;  // 해외 총 자산 원화환산 (주식+예수금) — output3 기준
       exchangeRate: number;   // USD→KRW 환율 (현재가 기준)
       currency: string;
       raw: unknown;           // 원본 응답 — 필드명 검증용
@@ -381,36 +384,60 @@ export class KISAccount {
         };
       }
 
-      // output2: 외화별 잔고 배열, output3: 종합
-      // KIS 공식 필드: frcr_dncl_amt_2 (외화예수금) — output2 또는 output3에 위치
-      // 응답을 raw로 함께 반환해서 실제 필드 검증
+      // output1: 종목별 잔고, output2: 외화별 잔고, output3: 종합
+      const output1Raw = data.output1 ?? [];
+      const output1: Array<Record<string, string>> = Array.isArray(output1Raw)
+        ? output1Raw
+        : Object.keys(output1Raw).length > 0 ? [output1Raw as Record<string, string>] : [];
       const output2: Array<Record<string, string>> = Array.isArray(data.output2) ? data.output2 : [];
       const output3: Record<string, string> = data.output3 ?? {};
+
+      // 종목별 평가금·매입금 합산 (USD) — TTTS3012R 거래소별 조회가 0일 때 우회용
+      const totalEvalUSD = output1.reduce((sum, item) => {
+        const v = parseFloat(item.frcr_evlu_amt2 ?? item.frcr_evlu_amt ?? '0') || 0;
+        return sum + v;
+      }, 0);
+      const totalBuyUSD = output1.reduce((sum, item) => {
+        const v = parseFloat(item.frcr_pchs_amt ?? '0') || 0;
+        return sum + v;
+      }, 0);
+
+      // output3 총 자산 (KRW) — tot_asst_amt: 총자산금액, frcr_evlu_tota: 외화평가총액
+      const totalAssetKRW =
+        parseFloat(output3.tot_asst_amt ?? '0') ||
+        parseFloat(output3.frcr_evlu_tota ?? '0') ||
+        parseFloat(output3.frcr_evlu_tot_amt ?? '0') || 0;
+
+      console.log('[present-balance] output1 positions:', output1.length, '| totalEvalUSD:', totalEvalUSD.toFixed(2));
+      console.log('[present-balance] output3 → tot_asst_amt:', output3.tot_asst_amt, '| frcr_evlu_tota:', output3.frcr_evlu_tota, '| totalAssetKRW:', totalAssetKRW);
 
       // USD 행만 추출 (crcy_cd = 'USD')
       const usdRow = output2.find(r => (r.crcy_cd ?? '').toUpperCase() === 'USD');
 
-      // 외화예수금 후보 필드들 — 가능한 후보 모두 시도 후 0이 아닌 첫 값
+      // 외화예수금 후보 필드들
       const candidates = [
         usdRow?.frcr_dncl_amt_2,
         usdRow?.frcr_dncl_amt,
         usdRow?.dncl_amt,
-        output3?.frcr_dncl_amt_2,
-        output3?.frcr_dncl_amt,
+        output3.frcr_dncl_amt_2,
+        output3.frcr_dncl_amt,
       ].map(v => (v != null ? parseFloat(v) : NaN)).filter(v => !isNaN(v));
 
       const foreignCash = candidates.find(v => v > 0) ?? candidates[0] ?? 0;
-      const foreignCashKRW = parseFloat(output3?.frcr_evlu_tot_amt ?? '0') || 0;
-      const exchangeRate = parseFloat(usdRow?.frst_bltn_exrt ?? '0') || 0;
+      const foreignCashKRW = parseFloat(output3.frcr_evlu_tot_amt ?? '0') || 0;
+      const exchangeRate = parseFloat(usdRow?.frst_bltn_exrt ?? output3.frst_bltn_exrt ?? '0') || 0;
 
       return {
         success: true,
         data: {
           foreignCash,
           foreignCashKRW,
+          totalEvalUSD,
+          totalBuyUSD,
+          totalAssetKRW,
           exchangeRate,
           currency: 'USD',
-          raw: { output2, output3 },
+          raw: { output1: output1.map(i => ({ pdno: i.pdno, frcr_evlu_amt2: i.frcr_evlu_amt2, frcr_evlu_amt: i.frcr_evlu_amt, frcr_pchs_amt: i.frcr_pchs_amt })), output2, output3 },
         },
       };
     } catch (error) {

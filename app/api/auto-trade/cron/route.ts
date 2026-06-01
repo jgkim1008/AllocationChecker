@@ -328,6 +328,16 @@ export async function GET(request: NextRequest) {
 
     // 7. 텔레그램 알림 (사용자별로 발송)
     if (results.length > 0) {
+      // 오늘 DCA 해외 주문 조회 (22:30 cron이 제출한 것)
+      const todayUtcStart = new Date();
+      todayUtcStart.setUTCHours(0, 0, 0, 0);
+      const { data: dcaOverseasOrders } = await serviceClient
+        .from('pending_orders')
+        .select('user_id, symbol, side, order_quantity, order_price, status, order_type')
+        .eq('market', 'overseas')
+        .eq('strategy_version', 'dca')
+        .gte('order_time', todayUtcStart.toISOString());
+
       // 사용자별로 그룹화
       const resultsByUser = new Map<string, typeof results>();
       for (const r of results) {
@@ -356,6 +366,17 @@ export async function GET(request: NextRequest) {
           }
           if (r.errors && r.errors.length > 0) {
             alertText += `   ⚠️ ${r.errors.join(', ')}\n`;
+          }
+        }
+
+        // DCA 해외 주문 현황 섹션
+        const userDcaOrders = (dcaOverseasOrders ?? []).filter(o => o.user_id === userId);
+        if (userDcaOrders.length > 0) {
+          alertText += `\n📈 <b>DCA 해외 주문</b>\n`;
+          for (const o of userDcaOrders) {
+            const typeLabel = o.order_type === 'loc' ? 'LOC' : `$${Number(o.order_price).toFixed(2)}`;
+            const statusEmoji = o.status === 'filled' ? '✅' : o.status === 'submitted' ? '⏳' : '❌';
+            alertText += `${statusEmoji} <b>${o.symbol}</b> ${o.order_quantity}주 @ ${typeLabel}\n`;
           }
         }
 

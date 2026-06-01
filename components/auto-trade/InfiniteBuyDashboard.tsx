@@ -37,6 +37,7 @@ interface Portfolio {
   strategy_version: string;
   total_capital: number;
   is_enabled: boolean;
+  trade_mode?: 'real' | 'virtual';  // DB 저장: 실제/가상 자금 모드
   currentPrice?: number;
   change?: number;
   changeRate?: number;
@@ -98,19 +99,36 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
   const [filterTab, setFilterTab] = useState<'all' | 'profit' | 'loss'>('all');
   const [activePreset, setActivePreset] = useState<'laor' | 'v4' | 'real'>('laor');
-  // 선택된 포트폴리오의 자금 모드 (실제/가상) — 종목별 localStorage 공유
-  const [detailFundMode, setDetailFundMode] = useState<'real' | 'virtual'>('virtual');
 
-  useEffect(() => {
-    if (!selectedSymbol || typeof window === 'undefined') return;
-    const saved = localStorage.getItem(`inf-buy-mode-${selectedSymbol.toUpperCase()}`);
-    setDetailFundMode(saved === 'real' ? 'real' : 'virtual');
-  }, [selectedSymbol]);
-
-  const handleDetailFundModeChange = (mode: 'real' | 'virtual') => {
-    if (!selectedSymbol || typeof window === 'undefined') return;
-    setDetailFundMode(mode);
-    localStorage.setItem(`inf-buy-mode-${selectedSymbol.toUpperCase()}`, mode);
+  // trade_mode는 DB에서 로드 (selectedPortfolio.trade_mode 직접 참조)
+  // 모드 변경: DB 업데이트 후 portfolios 리로드
+  const handleTradeModeChange = async (mode: 'real' | 'virtual') => {
+    const p = portfolios.find(x => x.symbol === selectedSymbol);
+    if (!p) return;
+    setActionLoading(`mode-${p.symbol}`);
+    try {
+      const res = await fetch('/api/auto-trade/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          symbol: p.symbol,
+          broker_type: p.broker_type,
+          broker_credential_id: p.broker_credential_id,
+          strategy_version: p.strategy_version,
+          total_capital: p.total_capital,
+          is_enabled: p.is_enabled,
+          trade_mode: mode,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        await loadPortfolios(true);
+      } else {
+        alert(data.error || '모드 변경 실패');
+      }
+    } finally {
+      setActionLoading(null);
+    }
   };
 
   // 원금(total_capital) 인라인 편집 state
@@ -154,6 +172,8 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
   const [balanceSource, setBalanceSource] = useState<'positions' | 'records' | 'none'>('none');
   const [loadingBalance, setLoadingBalance] = useState(false);
   const [balanceError, setBalanceError] = useState<string | null>(null);
+  // 브로커 포지션: 실제 모드에서 avgPrice·quantity 기반 T값/진행상태 계산용
+  const [brokerPosition, setBrokerPosition] = useState<{ quantity: number; avgPrice: number } | null>(null);
   // USD → KRW 환율 (KIS 응답의 frst_bltn_exrt). 0이면 미표시
   const [exchangeRate, setExchangeRate] = useState<number>(0);
   // 예산 현황 표시 통화 (해외 포트폴리오용 토글)
@@ -166,6 +186,7 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
   const loadBrokerBalance = useCallback(async (portfolio: Portfolio | null | undefined, silent = false) => {
     if (!portfolio) {
       setBrokerBalance(null);
+      setBrokerPosition(null);
       setBalanceError('포트폴리오 정보 없음');
       return;
     }
@@ -180,6 +201,7 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
       } else {
         setBalanceError('계좌 연결 정보 없음 — 자동매매 > 계좌 연결에서 등록해주세요');
         setBrokerBalance(null);
+        setBrokerPosition(null);
         return;
       }
       // 국내·해외 통합 조회 (KIS만 해당, 키움은 단일 응답)
@@ -212,6 +234,19 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
         : (domestic ?? single);
       const positionAsset = targetBalance?.totalAsset ?? 0;
 
+      // 종목별 포지션 데이터 추출 (avgPrice × quantity → T값·진행상태 자동 계산용)
+      const allPositions: Array<{ symbol: string; quantity: number; avgPrice: number }> =
+        isOverseasPortfolio
+          ? (data.data?.overseas?.positions ?? [])
+          : (data.data?.domestic?.positions ?? []);
+      const matchedPos = allPositions.find(
+        pos => pos.symbol.toUpperCase() === portfolio.symbol.toUpperCase()
+      );
+      setBrokerPosition(matchedPos
+        ? { quantity: matchedPos.quantity, avgPrice: matchedPos.avgPrice }
+        : null
+      );
+
       // KIS 해외 잔고 API는 USD 예수금을 별도 endpoint로만 조회 가능 →
       // 평가금이 0이면 누적 매수금(records 기반)을 fallback으로 표시
       if (positionAsset > 0) {
@@ -227,6 +262,7 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
     } catch {
       setBalanceError('잔액 조회 중 오류');
       setBrokerBalance(null);
+      setBrokerPosition(null);
     } finally {
       if (!silent) setLoadingBalance(false);
     }
@@ -238,21 +274,24 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
   useEffect(() => {
     if (!selectedPortfolioForBalance) {
       setBrokerBalance(null);
+      setBrokerPosition(null);
       setBalanceError(null);
       return;
     }
-    if (detailFundMode === 'real') {
+    const tradeMode = selectedPortfolioForBalance.trade_mode ?? 'virtual';
+    if (tradeMode === 'real') {
       // 실제 모드: 표시용 + 30초 폴링
       loadBrokerBalance(selectedPortfolioForBalance, false);
       const interval = setInterval(() => loadBrokerBalance(selectedPortfolioForBalance, true), 30000);
       return () => clearInterval(interval);
     } else {
-      // 가상 모드: 환율 표시용으로만 1회 silent fetch
+      // 가상 모드: 환율 표시용으로만 1회 silent fetch (포지션 데이터 불필요)
       setBrokerBalance(null);
+      setBrokerPosition(null);
       setBalanceError(null);
       loadBrokerBalance(selectedPortfolioForBalance, true);
     }
-  }, [detailFundMode, selectedPortfolioForBalance, loadBrokerBalance]);
+  }, [selectedPortfolioForBalance, loadBrokerBalance]);
 
   // 원금 저장 — DB(auto_trade_settings)에 반영
   async function handleSaveCapital(portfolio: Portfolio) {
@@ -633,6 +672,8 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
   if (selectedPortfolio) {
     const p = selectedPortfolio;
     const isOverseas = !/^\d{6}$/.test(p.symbol);
+    // DB에서 로드된 trade_mode 사용 (undefined면 'virtual' 기본값)
+    const detailFundMode = p.trade_mode ?? 'virtual';
 
     // 통화 토글에 따른 포맷터 (해외는 KRW 변환 항상 가능, 환율 정보 없으면 1500 fallback)
     const FALLBACK_RATE = 1500;
@@ -656,12 +697,33 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
     const detailVersionLower = p.strategy_version.toLowerCase();
     const divisions = (detailVersionLower === 'v3.0' || detailVersionLower === 'v4.0') ? 20 : 40;
     const unitBuy = p.total_capital / divisions;
-    const remainingCapital = p.total_capital - (p.invested ?? 0);
-    const investedPct = p.total_capital > 0 ? ((p.invested ?? 0) / p.total_capital * 100) : 0;
-    const remainingPct = 100 - investedPct;
-    const evalPct = p.total_capital > 0 ? ((p.evalAmount ?? 0) / p.total_capital * 100) : 0;
 
-    const t = p.currentT ?? 0;
+    // 실제 모드 + 브로커 포지션 있으면 브로커 avgPrice × quantity 기반으로 자동 계산
+    // 가상 모드 또는 브로커 포지션 없으면 records 기반 값 사용
+    const useBrokerData = detailFundMode === 'real' && brokerPosition != null;
+    const effectiveShares  = useBrokerData ? brokerPosition!.quantity                        : (p.shares ?? 0);
+    const effectiveAvgCost = useBrokerData ? brokerPosition!.avgPrice                        : (p.avgCost ?? 0);
+    const effectiveInvested = useBrokerData
+      ? brokerPosition!.quantity * brokerPosition!.avgPrice
+      : (p.invested ?? 0);
+    const effectiveT = unitBuy > 0 && effectiveInvested > 0
+      ? Math.ceil((effectiveInvested / unitBuy) * 100) / 100
+      : (p.currentT ?? 0);
+    const effectiveDivisionsUsed = effectiveInvested > 0
+      ? Math.round(effectiveInvested / unitBuy)
+      : (p.divisionsUsed ?? 0);
+    const effectiveStarPct    = computeStarPct(p.strategy_version, p.symbol, effectiveT, divisions);
+    const effectiveTargetPrice = effectiveAvgCost > 0 ? effectiveAvgCost * (1 + effectiveStarPct / 100) : 0;
+    const effectiveEvalAmount  = (p.currentPrice ?? 0) * effectiveShares;
+    const effectivePnl         = effectiveEvalAmount - effectiveInvested;
+    const effectivePnlRate     = effectiveInvested > 0 ? (effectivePnl / effectiveInvested) * 100 : 0;
+
+    const remainingCapital = p.total_capital - effectiveInvested;
+    const investedPct = p.total_capital > 0 ? (effectiveInvested / p.total_capital * 100) : 0;
+    const remainingPct = 100 - investedPct;
+    const evalPct = p.total_capital > 0 ? (effectiveEvalAmount / p.total_capital * 100) : 0;
+
+    const t = effectiveT;
     const tPct = divisions > 0 ? (t / divisions) * 100 : 0;
     let nextStep = '초기 매수';
     let nextStepDesc = '발자점 + 평단 LOC';
@@ -698,29 +760,31 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
                 일시정지 중
               </span>
             )}
-            {/* 실제/가상 자금 모드 토글 */}
+            {/* 실제/가상 자금 모드 토글 (DB 저장) */}
             <span className="inline-flex rounded-md border border-gray-200 overflow-hidden text-[10px] font-bold ml-1">
               <button
                 type="button"
-                onClick={() => handleDetailFundModeChange('real')}
-                className={`px-2 py-0.5 transition-colors ${
+                onClick={() => handleTradeModeChange('real')}
+                disabled={actionLoading === `mode-${p.symbol}`}
+                className={`px-2 py-0.5 transition-colors disabled:opacity-50 ${
                   detailFundMode === 'real'
                     ? 'bg-green-600 text-white'
                     : 'bg-white text-gray-500 hover:bg-gray-50'
                 }`}
-                title="실제 자금"
+                title="실제 자금 — 실계좌 잔액 표시"
               >
                 실제
               </button>
               <button
                 type="button"
-                onClick={() => handleDetailFundModeChange('virtual')}
-                className={`px-2 py-0.5 transition-colors border-l border-gray-200 ${
+                onClick={() => handleTradeModeChange('virtual')}
+                disabled={actionLoading === `mode-${p.symbol}`}
+                className={`px-2 py-0.5 transition-colors border-l border-gray-200 disabled:opacity-50 ${
                   detailFundMode === 'virtual'
                     ? 'bg-purple-600 text-white'
                     : 'bg-white text-gray-500 hover:bg-gray-50'
                 }`}
-                title="가상자금"
+                title="가상자금 — 수동 설정 원금 기준"
               >
                 가상
               </button>
@@ -786,7 +850,7 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
           </button>
           <button
             onClick={() => handleLiquidate(p)}
-            disabled={actionLoading === `liquidate-${p.symbol}` || (p.shares ?? 0) <= 0}
+            disabled={actionLoading === `liquidate-${p.symbol}` || effectiveShares <= 0}
             className="flex items-center gap-1.5 px-3 py-2 text-sm text-red-500 bg-white border border-red-200 rounded-lg hover:bg-red-50 transition-colors disabled:opacity-50"
           >
             {actionLoading === `liquidate-${p.symbol}` ? (
@@ -812,23 +876,31 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
 
           <div className="grid grid-cols-3 gap-4 mt-6 pt-4 border-t border-gray-100">
             <div>
-              <div className="text-xs text-slate-600 font-medium mb-1">평단가</div>
-              <div className="text-sm font-bold text-black">{formatPrice(p.avgCost ?? 0, p.symbol)}</div>
+              <div className="text-xs text-slate-600 font-medium mb-1 flex items-center gap-1">
+                평단가
+                {useBrokerData && <span className="text-[9px] text-green-600 font-bold bg-green-50 px-1 rounded">계좌</span>}
+              </div>
+              <div className="text-sm font-bold text-black">{formatPrice(effectiveAvgCost, p.symbol)}</div>
             </div>
             <div>
-              <div className="text-xs text-slate-600 font-medium mb-1">익절 (+{(p.starPct ?? 0).toFixed(0)}%)</div>
-              <div className="text-sm font-bold text-red-500">{formatPrice(p.targetPrice ?? 0, p.symbol)}</div>
+              <div className="text-xs text-slate-600 font-medium mb-1">익절 (+{effectiveStarPct.toFixed(0)}%)</div>
+              <div className="text-sm font-bold text-red-500">{formatPrice(effectiveTargetPrice, p.symbol)}</div>
             </div>
             <div>
-              <div className="text-xs text-slate-600 font-medium mb-1">보유 수량</div>
-              <div className="text-sm font-bold text-black">{(p.shares ?? 0).toLocaleString()} 주</div>
+              <div className="text-xs text-slate-600 font-medium mb-1 flex items-center gap-1">
+                보유 수량
+                {useBrokerData && <span className="text-[9px] text-green-600 font-bold bg-green-50 px-1 rounded">계좌</span>}
+              </div>
+              <div className="text-sm font-bold text-black">{effectiveShares.toLocaleString()} 주</div>
             </div>
           </div>
         </div>
 
         {/* 진행 상태 */}
         {(() => {
-          const autoDivisions = p.divisionsUsed ?? 0;
+          // 실제 모드: 브로커 avgPrice × quantity → T 기반으로 자동 계산
+          // 가상 모드: records 기반 divisionsUsed
+          const autoDivisions = effectiveDivisionsUsed;
           const effectiveDivisions = divisionsOverride !== null ? divisionsOverride : autoDivisions;
           const progressPct = Math.min((effectiveDivisions / divisions) * 100, 100);
           return (
@@ -1101,10 +1173,13 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
               )}
             </div>
             <div>
-              <div className="text-xs text-slate-600 font-medium mb-1">투입액</div>
-              <div className="font-bold text-black">{fmtCurrency(p.invested ?? 0)}</div>
-              {fmtSub(p.invested ?? 0) && (
-                <div className="text-[10px] text-slate-400">{fmtSub(p.invested ?? 0)}</div>
+              <div className="text-xs text-slate-600 font-medium mb-1 flex items-center gap-1">
+                투입액
+                {useBrokerData && <span className="text-[9px] text-green-600 font-bold bg-green-50 px-1 rounded">계좌</span>}
+              </div>
+              <div className="font-bold text-black">{fmtCurrency(effectiveInvested)}</div>
+              {fmtSub(effectiveInvested) && (
+                <div className="text-[10px] text-slate-400">{fmtSub(effectiveInvested)}</div>
               )}
               <div className="text-xs text-slate-700">{investedPct.toFixed(1)}%</div>
             </div>
@@ -1121,12 +1196,12 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
             </div>
             <div>
               <div className="text-xs text-slate-600 font-medium mb-1">평가액</div>
-              <div className="font-bold text-black">{fmtCurrency(p.evalAmount ?? 0)}</div>
-              {fmtSub(p.evalAmount ?? 0) && (
-                <div className="text-[10px] text-slate-400">{fmtSub(p.evalAmount ?? 0)}</div>
+              <div className="font-bold text-black">{fmtCurrency(effectiveEvalAmount)}</div>
+              {fmtSub(effectiveEvalAmount) && (
+                <div className="text-[10px] text-slate-400">{fmtSub(effectiveEvalAmount)}</div>
               )}
-              <div className={`text-xs font-medium ${(p.pnl ?? 0) >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-                {(p.pnl ?? 0) >= 0 ? '+' : ''}{fmtCurrency(p.pnl ?? 0)} ({(p.pnl ?? 0) >= 0 ? '+' : ''}{(p.pnlRate ?? 0).toFixed(2)}%)
+              <div className={`text-xs font-medium ${effectivePnl >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                {effectivePnl >= 0 ? '+' : ''}{fmtCurrency(effectivePnl)} ({effectivePnl >= 0 ? '+' : ''}{effectivePnlRate.toFixed(2)}%)
               </div>
               <div className="mt-2 h-1.5 bg-gray-100 rounded-full overflow-hidden">
                 <div className="h-full bg-green-400 rounded-full" style={{ width: `${Math.min(100, evalPct)}%` }} />
@@ -1327,6 +1402,13 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
                       <div className="flex items-center gap-2">
                         <span className="font-bold text-black">{p.symbol}</span>
                         <span className="text-xs text-slate-600">{p.strategy_version}</span>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
+                          (p.trade_mode ?? 'virtual') === 'real'
+                            ? 'bg-green-100 text-green-700'
+                            : 'bg-purple-100 text-purple-700'
+                        }`}>
+                          {(p.trade_mode ?? 'virtual') === 'real' ? '실제' : '가상'}
+                        </span>
                         {!p.is_enabled && (
                           <span className="text-xs px-1.5 py-0.5 bg-yellow-100 text-yellow-700 rounded font-medium">
                             일시정지

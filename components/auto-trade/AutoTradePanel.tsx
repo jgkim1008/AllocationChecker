@@ -134,7 +134,7 @@ export function AutoTradePanel({
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [autoTradeEnabled, setAutoTradeEnabled] = useState(false);
   const [isSavingAutoTrade, setIsSavingAutoTrade] = useState(false);
-  const [allSettings, setAllSettings] = useState<{ id: string; symbol: string; broker_type: string; broker_credential_id?: string; strategy_version: string; total_capital: number; is_enabled: boolean }[]>([]);
+  const [allSettings, setAllSettings] = useState<{ id: string; symbol: string; broker_type: string; broker_credential_id?: string; strategy_version: string; total_capital: number; is_enabled: boolean; trade_mode?: 'real' | 'virtual' }[]>([]);
   const [togglingSettingId, setTogglingSettingId] = useState<string | null>(null);
   const cardRef = useRef<HTMLDivElement>(null);
   const [todayDuplicates, setTodayDuplicates] = useState<{
@@ -412,6 +412,10 @@ export function AutoTradePanel({
         setAllSettings(list);
         const current = list.find((s: { symbol: string }) => s.symbol === symbol.toUpperCase());
         setAutoTradeEnabled(current?.is_enabled ?? false);
+        // DB에 저장된 trade_mode가 있으면 동기화
+        if (current?.trade_mode) {
+          setFundMode(current.trade_mode as 'real' | 'virtual');
+        }
       }
     } catch {}
   };
@@ -444,6 +448,7 @@ export function AutoTradePanel({
             strategy_version: strategyVersion,
             total_capital: totalCapital,
             is_enabled: true,
+            trade_mode: fundMode,
           }),
         });
         const data = await res.json();
@@ -493,6 +498,7 @@ export function AutoTradePanel({
           strategy_version: s.strategy_version,
           total_capital: s.total_capital,
           is_enabled: !s.is_enabled,
+          trade_mode: s.trade_mode,
         }),
       });
       await loadAutoTradeSettings();
@@ -507,17 +513,30 @@ export function AutoTradePanel({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [symbol]);
 
-  // 자금 모드 동기화 — symbol 변경 시 localStorage에서 로드
-  useEffect(() => {
-    if (typeof window === 'undefined' || !symbol) return;
-    const saved = localStorage.getItem(`inf-buy-mode-${symbol.toUpperCase()}`);
-    setFundMode(saved === 'real' ? 'real' : 'virtual');
-  }, [symbol]);
+  // 자금 모드 동기화 — symbol 변경 시 DB 설정에서 로드 (loadAutoTradeSettings에서 처리)
 
-  const handleFundModeChange = (mode: 'real' | 'virtual') => {
-    if (typeof window === 'undefined' || !symbol) return;
+  const handleFundModeChange = async (mode: 'real' | 'virtual') => {
+    if (!symbol) return;
     setFundMode(mode);
-    localStorage.setItem(`inf-buy-mode-${symbol.toUpperCase()}`, mode);
+    // 이미 등록된 포트폴리오라면 DB도 업데이트
+    const existing = allSettings.find(s => s.symbol === symbol.toUpperCase());
+    if (existing) {
+      try {
+        await fetch('/api/auto-trade/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            symbol: existing.symbol,
+            broker_type: existing.broker_type,
+            broker_credential_id: existing.broker_credential_id || null,
+            strategy_version: existing.strategy_version,
+            total_capital: existing.total_capital,
+            is_enabled: existing.is_enabled,
+            trade_mode: mode,
+          }),
+        });
+      } catch {}
+    }
   };
 
   useEffect(() => {
@@ -907,6 +926,13 @@ export function AutoTradePanel({
                         if (acc) return `${acc.brokerType === 'kis' ? '한투' : '키움'} — ${acc.accountAlias === 'default' ? '기본계좌' : acc.accountAlias}`;
                         return s.broker_type === 'kis' ? '한투' : '키움';
                       })()}
+                    </span>
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
+                      (s.trade_mode ?? 'virtual') === 'real'
+                        ? 'bg-green-100 text-green-700'
+                        : 'bg-purple-100 text-purple-700'
+                    }`}>
+                      {(s.trade_mode ?? 'virtual') === 'real' ? '실제' : '가상'}
                     </span>
                     {s.is_enabled ? (
                       <Badge className="bg-emerald-500 text-white text-xs border-0">ON</Badge>
