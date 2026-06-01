@@ -382,24 +382,52 @@ function matchOrder(
   );
 }
 
-function OrderBadge({ order, market }: { order: TodayOrder | null; market: 'US' | 'KR' }) {
-  if (!order) return null;
-  const map: Record<string, { label: string; cls: string }> = {
-    filled:    { label: '체결', cls: 'bg-emerald-100 text-emerald-700' },
-    partial:   { label: '부분체결', cls: 'bg-blue-100 text-blue-700' },
-    submitted: { label: '대기중', cls: 'bg-amber-100 text-amber-700' },
-    cancelled: { label: '취소', cls: 'bg-gray-100 text-gray-400' },
-    expired:   { label: '만료', cls: 'bg-gray-100 text-gray-400' },
+function orderRowStyle(order: TodayOrder | null, base: 'buy' | 'sell'): {
+  row: string; label: string; price: string; badge: string | null; badgeCls: string; icon: string;
+} {
+  if (!order) return {
+    row: base === 'buy' ? 'bg-green-50/30 border border-dashed border-green-200' : 'bg-red-50/30 border border-dashed border-red-200',
+    label: base === 'buy' ? 'text-green-700/50' : 'text-red-700/50',
+    price: base === 'buy' ? 'text-green-700/40' : 'text-red-600/40',
+    badge: '미제출',
+    badgeCls: 'bg-gray-100 text-gray-400',
+    icon: '○',
   };
-  const { label, cls } = map[order.status] ?? { label: order.status, cls: 'bg-gray-100 text-gray-400' };
-  const filledExtra = (order.status === 'filled' || order.status === 'partial') && order.filled_price
-    ? ` @${market === 'US' ? `$${order.filled_price.toFixed(2)}` : `₩${order.filled_price.toLocaleString('ko-KR')}`}`
-    : '';
-  return (
-    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap ${cls}`}>
-      {label}{filledExtra}
-    </span>
-  );
+  const map: Record<string, { row: string; label: string; price: string; badge: string; badgeCls: string; icon: string }> = {
+    submitted: {
+      row:      base === 'buy' ? 'bg-blue-50 border border-blue-200' : 'bg-orange-50 border border-orange-200',
+      label:    base === 'buy' ? 'text-blue-700' : 'text-orange-700',
+      price:    base === 'buy' ? 'text-blue-700' : 'text-orange-600',
+      badge:    '주문접수',
+      badgeCls: base === 'buy' ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700',
+      icon:     '⏳',
+    },
+    partial: {
+      row: 'bg-violet-50 border border-violet-200',
+      label: 'text-violet-700', price: 'text-violet-700',
+      badge: '부분체결', badgeCls: 'bg-violet-100 text-violet-700', icon: '◑',
+    },
+    filled: {
+      row: 'bg-emerald-50 border border-emerald-300',
+      label: 'text-emerald-700', price: 'text-emerald-700',
+      badge: '체결완료', badgeCls: 'bg-emerald-100 text-emerald-700', icon: '✓',
+    },
+    cancelled: {
+      row: 'bg-gray-50 border border-gray-200 opacity-60',
+      label: 'text-gray-400', price: 'text-gray-400',
+      badge: '취소', badgeCls: 'bg-gray-100 text-gray-400', icon: '✗',
+    },
+    expired: {
+      row: 'bg-gray-50 border border-gray-200 opacity-60',
+      label: 'text-gray-400', price: 'text-gray-400',
+      badge: '만료', badgeCls: 'bg-gray-100 text-gray-400', icon: '✗',
+    },
+  };
+  return map[order.status] ?? {
+    row: 'bg-gray-50 border border-gray-200',
+    label: 'text-gray-500', price: 'text-gray-500',
+    badge: order.status, badgeCls: 'bg-gray-100 text-gray-400', icon: '?',
+  };
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -410,16 +438,28 @@ function BuyRow({ label1, sub, price, desc, market, matchedOrder }: {
   label1: string; sub: string; price: number; desc: string; market: 'US' | 'KR';
   matchedOrder?: TodayOrder | null;
 }) {
+  const o = matchedOrder ?? null;
+  const s = orderRowStyle(o, 'buy');
+  const filledAt = (o?.status === 'filled' || o?.status === 'partial') && o?.filled_price
+    ? ` · 체결 ${market === 'US' ? `$${o.filled_price.toFixed(2)}` : `₩${o.filled_price.toLocaleString('ko-KR')}`}`
+    : '';
   return (
-    <div className="flex items-center justify-between p-2 bg-green-50/50 rounded-lg">
-      <div>
-        <span className="text-xs font-medium text-green-700">{label1}</span>
-        <span className="text-[10px] text-gray-500 ml-1.5">{sub}</span>
+    <div className={`flex items-center justify-between p-2 rounded-lg ${s.row}`}>
+      <div className="flex items-center gap-1.5">
+        <span className="text-sm">{s.icon}</span>
+        <div>
+          <span className={`text-xs font-medium ${s.label}`}>{label1}</span>
+          <span className="text-[10px] text-gray-400 ml-1.5">{sub}</span>
+        </div>
       </div>
       <div className="flex items-center gap-1.5">
-        <OrderBadge order={matchedOrder ?? null} market={market} />
+        {s.badge && (
+          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${s.badgeCls}`}>
+            {s.badge}{filledAt}
+          </span>
+        )}
         <div className="text-right">
-          <p className="text-sm font-bold text-green-700">{fmtP(price, market)}</p>
+          <p className={`text-sm font-bold ${s.price}`}>{fmtP(price, market)}</p>
           <p className="text-[10px] text-gray-400">{desc}</p>
         </div>
       </div>
@@ -431,16 +471,28 @@ function SellRow({ label, qty, price, desc, market, matchedOrder }: {
   label: string; qty: string; price: number; desc: string; market: 'US' | 'KR';
   matchedOrder?: TodayOrder | null;
 }) {
+  const o = matchedOrder ?? null;
+  const s = orderRowStyle(o, 'sell');
+  const filledAt = (o?.status === 'filled' || o?.status === 'partial') && o?.filled_price
+    ? ` · 체결 ${market === 'US' ? `$${o.filled_price.toFixed(2)}` : `₩${o.filled_price.toLocaleString('ko-KR')}`}`
+    : '';
   return (
-    <div className="flex items-center justify-between p-2 bg-red-50/50 rounded-lg">
-      <div>
-        <span className="text-xs font-medium text-red-700">{label}</span>
-        <span className="text-[10px] text-gray-500 ml-1.5">{qty}</span>
+    <div className={`flex items-center justify-between p-2 rounded-lg ${s.row}`}>
+      <div className="flex items-center gap-1.5">
+        <span className="text-sm">{s.icon}</span>
+        <div>
+          <span className={`text-xs font-medium ${s.label}`}>{label}</span>
+          <span className="text-[10px] text-gray-400 ml-1.5">{qty}</span>
+        </div>
       </div>
       <div className="flex items-center gap-1.5">
-        <OrderBadge order={matchedOrder ?? null} market={market} />
+        {s.badge && (
+          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${s.badgeCls}`}>
+            {s.badge}{filledAt}
+          </span>
+        )}
         <div className="text-right">
-          <p className="text-sm font-bold text-red-600">{fmtP(price, market)}</p>
+          <p className={`text-sm font-bold ${s.price}`}>{fmtP(price, market)}</p>
           <p className="text-[10px] text-gray-400">{desc}</p>
         </div>
       </div>
