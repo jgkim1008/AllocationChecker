@@ -162,11 +162,11 @@ export function TradingGuide({
             <div className="p-3">
               {isFirstHalf ? (
                 <div className="space-y-2">
-                  <BuyRow label1="주문 1" sub={`절반 (${fmtP(unitBuy / 2, market)})`} price={buyInfo.price1} desc={buyInfo.label1} market={market} />
-                  <BuyRow label1="주문 2" sub={`절반 (${fmtP(unitBuy / 2, market)})`} price={buyInfo.price2!} desc={buyInfo.label2!} market={market} />
+                  <BuyRow label1="주문 1" sub={`절반 (${fmtP(unitBuy / 2, market)})`} price={buyInfo.price1} desc={buyInfo.label1} market={market} matchedOrder={matchOrder(todayOrders, 'buy', 'loc', buyInfo.price1)} />
+                  <BuyRow label1="주문 2" sub={`절반 (${fmtP(unitBuy / 2, market)})`} price={buyInfo.price2!} desc={buyInfo.label2!} market={market} matchedOrder={matchOrder(todayOrders, 'buy', 'loc', buyInfo.price2!)} />
                 </div>
               ) : (
-                <BuyRow label1="전액 주문" sub={fmtP(unitBuy, market)} price={buyInfo.price1} desc={buyInfo.label1} market={market} />
+                <BuyRow label1="전액 주문" sub={fmtP(unitBuy, market)} price={buyInfo.price1} desc={buyInfo.label1} market={market} matchedOrder={matchOrder(todayOrders, 'buy', 'loc', buyInfo.price1)} />
               )}
             </div>
           </div>
@@ -178,8 +178,8 @@ export function TradingGuide({
               <p className="text-[10px] text-red-600 mt-0.5">1/4 별지점 LOC + 3/4 기본목표 지정가</p>
             </div>
             <div className="p-3 space-y-2">
-              <SellRow label="1차 익절" qty={`1/4 (${Math.round(position.shares / 4)}주)`} price={sellInfo.price1} desc={sellInfo.label1} market={market} />
-              <SellRow label="2차 익절" qty={`3/4 (${position.shares - Math.round(position.shares / 4)}주)`} price={sellInfo.price2} desc={sellInfo.label2} market={market} />
+              <SellRow label="1차 익절" qty={`1/4 (${Math.round(position.shares / 4)}주)`} price={sellInfo.price1} desc={sellInfo.label1} market={market} matchedOrder={matchOrder(todayOrders, 'sell', 'loc', sellInfo.price1)} />
+              <SellRow label="2차 익절" qty={`3/4 (${position.shares - Math.round(position.shares / 4)}주)`} price={sellInfo.price2} desc={sellInfo.label2} market={market} matchedOrder={matchOrder(todayOrders, 'sell', 'limit', sellInfo.price2)} />
             </div>
           </div>
 
@@ -195,7 +195,6 @@ export function TradingGuide({
             )}
             <p className="pt-1 border-t border-gray-200 mt-2">• 매도: 1/4은 별지점 LOC, 3/4은 +{(getV22BaseRate(symbol) * 100).toFixed(0)}% 지정가</p>
           </div>
-          <TodayOrdersSection orders={todayOrders} market={market} />
         </div>
       </div>
     );
@@ -256,11 +255,11 @@ export function TradingGuide({
             <div className="p-3">
               {buyInfo.price2 !== null ? (
                 <div className="space-y-2">
-                  <BuyRow label1="주문 1" sub={`절반 (${fmtP(unitBuy * buyInfo.ratio1, market)})`} price={buyInfo.price1} desc={buyInfo.label1} market={market} />
-                  <BuyRow label1="주문 2" sub={`절반 (${fmtP(unitBuy * buyInfo.ratio2, market)})`} price={buyInfo.price2} desc={buyInfo.label2!} market={market} />
+                  <BuyRow label1="주문 1" sub={`절반 (${fmtP(unitBuy * buyInfo.ratio1, market)})`} price={buyInfo.price1} desc={buyInfo.label1} market={market} matchedOrder={matchOrder(todayOrders, 'buy', 'loc', buyInfo.price1)} />
+                  <BuyRow label1="주문 2" sub={`절반 (${fmtP(unitBuy * buyInfo.ratio2, market)})`} price={buyInfo.price2} desc={buyInfo.label2!} market={market} matchedOrder={matchOrder(todayOrders, 'buy', 'loc', buyInfo.price2)} />
                 </div>
               ) : (
-                <BuyRow label1="전액 주문" sub={fmtP(unitBuy, market)} price={buyInfo.price1} desc={buyInfo.label1} market={market} />
+                <BuyRow label1="전액 주문" sub={fmtP(unitBuy, market)} price={buyInfo.price1} desc={buyInfo.label1} market={market} matchedOrder={matchOrder(todayOrders, 'buy', 'loc', buyInfo.price1)} />
               )}
             </div>
           </div>
@@ -271,8 +270,8 @@ export function TradingGuide({
               <p className="text-[10px] text-red-600 mt-0.5">1/4 별지점 LOC + 3/4 기본목표 지정가</p>
             </div>
             <div className="p-3 space-y-2">
-              <SellRow label="1차 익절" qty={`1/4 (${Math.round(position.shares / 4)}주)`} price={sellInfo.price1} desc={sellInfo.label1} market={market} />
-              <SellRow label="2차 익절" qty={`3/4 (${position.shares - Math.round(position.shares / 4)}주)`} price={sellInfo.price2} desc={sellInfo.label2} market={market} />
+              <SellRow label="1차 익절" qty={`1/4 (${Math.round(position.shares / 4)}주)`} price={sellInfo.price1} desc={sellInfo.label1} market={market} matchedOrder={matchOrder(todayOrders, 'sell', 'loc', sellInfo.price1)} />
+              <SellRow label="2차 익절" qty={`3/4 (${position.shares - Math.round(position.shares / 4)}주)`} price={sellInfo.price2} desc={sellInfo.label2} market={market} matchedOrder={matchOrder(todayOrders, 'sell', 'limit', sellInfo.price2)} />
             </div>
           </div>
 
@@ -281,7 +280,6 @@ export function TradingGuide({
             <p>• V3.0: 별지점({starPct.toFixed(2)}%)-$0.01 LOC 매수</p>
             <p>• 매도: 1/4은 별지점 LOC, 3/4은 +{(baseRate * 100).toFixed(0)}% 지정가</p>
           </div>
-          <TodayOrdersSection orders={todayOrders} market={market} />
         </div>
       </div>
     );
@@ -339,7 +337,7 @@ export function TradingGuide({
             <p className="text-[10px] text-green-600 mt-0.5">잔금/(N-T) = {fmtP(dynamicUnitBuy, market)}</p>
           </div>
           <div className="p-3">
-            <BuyRow label1="별지점 매수" sub={fmtP(dynamicUnitBuy, market)} price={starBuyPrice} desc={`별지점(${starPct.toFixed(2)}%)-$0.01`} market={market} />
+            <BuyRow label1="별지점 매수" sub={fmtP(dynamicUnitBuy, market)} price={starBuyPrice} desc={`별지점(${starPct.toFixed(2)}%)-$0.01`} market={market} matchedOrder={matchOrder(todayOrders, 'buy', 'loc', starBuyPrice)} />
           </div>
         </div>
 
@@ -349,8 +347,8 @@ export function TradingGuide({
             <p className="text-[10px] text-red-600 mt-0.5">1/4 별지점 LOC + 3/4 기본목표 지정가</p>
           </div>
           <div className="p-3 space-y-2">
-            <SellRow label="1차 익절" qty={`1/4 (${Math.round(position.shares / 4)}주)`} price={starSellPrice} desc={`별지점(${starPct.toFixed(2)}%) LOC`} market={market} />
-            <SellRow label="2차 익절" qty={`3/4 (${position.shares - Math.round(position.shares / 4)}주)`} price={baseSellPrice} desc={`기본목표(+${(baseRate * 100).toFixed(0)}%) 지정가`} market={market} />
+            <SellRow label="1차 익절" qty={`1/4 (${Math.round(position.shares / 4)}주)`} price={starSellPrice} desc={`별지점(${starPct.toFixed(2)}%) LOC`} market={market} matchedOrder={matchOrder(todayOrders, 'sell', 'loc', starSellPrice)} />
+            <SellRow label="2차 익절" qty={`3/4 (${position.shares - Math.round(position.shares / 4)}주)`} price={baseSellPrice} desc={`기본목표(+${(baseRate * 100).toFixed(0)}%) 지정가`} market={market} matchedOrder={matchOrder(todayOrders, 'sell', 'limit', baseSellPrice)} />
           </div>
         </div>
 
@@ -359,9 +357,48 @@ export function TradingGuide({
           <p>• 1회매수금이 잔금/(N-T)로 매일 동적 계산됨 → 후반전에 매수금 증가</p>
           <p>• 매수가 진행될수록 분할금이 커져 평단 회복이 빠름</p>
         </div>
-        <TodayOrdersSection orders={todayOrders} market={market} />
       </div>
     </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// 주문 매칭 헬퍼
+// ─────────────────────────────────────────────────────────────
+
+function matchOrder(
+  orders: TodayOrder[],
+  side: 'buy' | 'sell',
+  orderType: 'loc' | 'limit',
+  guidePrice: number,
+): TodayOrder | null {
+  const candidates = orders.filter(
+    o => o.side === side && o.order_type === orderType,
+  );
+  if (candidates.length === 0) return null;
+  // 가격이 가장 가까운 주문 반환
+  return candidates.reduce((best, cur) =>
+    Math.abs(cur.order_price - guidePrice) < Math.abs(best.order_price - guidePrice) ? cur : best
+  );
+}
+
+function OrderBadge({ order, market }: { order: TodayOrder | null; market: 'US' | 'KR' }) {
+  if (!order) return null;
+  const map: Record<string, { label: string; cls: string }> = {
+    filled:    { label: '체결', cls: 'bg-emerald-100 text-emerald-700' },
+    partial:   { label: '부분체결', cls: 'bg-blue-100 text-blue-700' },
+    submitted: { label: '대기중', cls: 'bg-amber-100 text-amber-700' },
+    cancelled: { label: '취소', cls: 'bg-gray-100 text-gray-400' },
+    expired:   { label: '만료', cls: 'bg-gray-100 text-gray-400' },
+  };
+  const { label, cls } = map[order.status] ?? { label: order.status, cls: 'bg-gray-100 text-gray-400' };
+  const filledExtra = (order.status === 'filled' || order.status === 'partial') && order.filled_price
+    ? ` @${market === 'US' ? `$${order.filled_price.toFixed(2)}` : `₩${order.filled_price.toLocaleString('ko-KR')}`}`
+    : '';
+  return (
+    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap ${cls}`}>
+      {label}{filledExtra}
+    </span>
   );
 }
 
@@ -369,8 +406,9 @@ export function TradingGuide({
 // 하위 컴포넌트 — 매수/매도 행
 // ─────────────────────────────────────────────────────────────
 
-function BuyRow({ label1, sub, price, desc, market }: {
+function BuyRow({ label1, sub, price, desc, market, matchedOrder }: {
   label1: string; sub: string; price: number; desc: string; market: 'US' | 'KR';
+  matchedOrder?: TodayOrder | null;
 }) {
   return (
     <div className="flex items-center justify-between p-2 bg-green-50/50 rounded-lg">
@@ -378,16 +416,20 @@ function BuyRow({ label1, sub, price, desc, market }: {
         <span className="text-xs font-medium text-green-700">{label1}</span>
         <span className="text-[10px] text-gray-500 ml-1.5">{sub}</span>
       </div>
-      <div className="text-right">
-        <p className="text-sm font-bold text-green-700">{fmtP(price, market)}</p>
-        <p className="text-[10px] text-gray-400">{desc}</p>
+      <div className="flex items-center gap-1.5">
+        <OrderBadge order={matchedOrder ?? null} market={market} />
+        <div className="text-right">
+          <p className="text-sm font-bold text-green-700">{fmtP(price, market)}</p>
+          <p className="text-[10px] text-gray-400">{desc}</p>
+        </div>
       </div>
     </div>
   );
 }
 
-function SellRow({ label, qty, price, desc, market }: {
+function SellRow({ label, qty, price, desc, market, matchedOrder }: {
   label: string; qty: string; price: number; desc: string; market: 'US' | 'KR';
+  matchedOrder?: TodayOrder | null;
 }) {
   return (
     <div className="flex items-center justify-between p-2 bg-red-50/50 rounded-lg">
@@ -395,61 +437,12 @@ function SellRow({ label, qty, price, desc, market }: {
         <span className="text-xs font-medium text-red-700">{label}</span>
         <span className="text-[10px] text-gray-500 ml-1.5">{qty}</span>
       </div>
-      <div className="text-right">
-        <p className="text-sm font-bold text-red-600">{fmtP(price, market)}</p>
-        <p className="text-[10px] text-gray-400">{desc}</p>
-      </div>
-    </div>
-  );
-}
-
-function TodayOrdersSection({ orders, market }: { orders: TodayOrder[]; market: 'US' | 'KR' }) {
-  if (orders.length === 0) return null;
-
-  const statusInfo = (status: string) => {
-    switch (status) {
-      case 'filled':   return { label: '체결', cls: 'bg-emerald-100 text-emerald-700' };
-      case 'partial':  return { label: '부분체결', cls: 'bg-blue-100 text-blue-700' };
-      case 'submitted': return { label: '대기중', cls: 'bg-amber-100 text-amber-700' };
-      case 'cancelled': return { label: '취소', cls: 'bg-gray-100 text-gray-500' };
-      case 'expired':  return { label: '만료', cls: 'bg-gray-100 text-gray-500' };
-      default:         return { label: status, cls: 'bg-gray-100 text-gray-500' };
-    }
-  };
-
-  const fmtPrice = (price: number) =>
-    market === 'US' ? `$${price.toFixed(2)}` : `₩${price.toLocaleString('ko-KR')}`;
-
-  return (
-    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-      <div className="px-3 py-2 bg-gray-50 border-b border-gray-100">
-        <p className="text-xs font-bold text-gray-700">📋 오늘 제출된 주문</p>
-      </div>
-      <div className="divide-y divide-gray-50">
-        {orders.map(o => {
-          const { label, cls } = statusInfo(o.status);
-          const isBuy = o.side === 'buy';
-          const typeLabel = o.order_type === 'loc' ? 'LOC' : o.order_type === 'limit' ? '지정가' : o.order_type;
-          const filledInfo = (o.status === 'filled' || o.status === 'partial') && o.filled_quantity
-            ? ` · ${o.filled_quantity}주 @ ${fmtPrice(o.filled_price ?? 0)}`
-            : '';
-          return (
-            <div key={o.id} className="flex items-center justify-between px-3 py-2">
-              <div className="flex items-center gap-2">
-                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${isBuy ? 'bg-blue-50 text-blue-700' : 'bg-red-50 text-red-700'}`}>
-                  {isBuy ? '매수' : '매도'}
-                </span>
-                <span className="text-xs text-gray-600">
-                  {o.order_quantity}주 {typeLabel} {fmtPrice(o.order_price)}
-                </span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                {filledInfo && <span className="text-[10px] text-gray-400">{filledInfo}</span>}
-                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${cls}`}>{label}</span>
-              </div>
-            </div>
-          );
-        })}
+      <div className="flex items-center gap-1.5">
+        <OrderBadge order={matchedOrder ?? null} market={market} />
+        <div className="text-right">
+          <p className="text-sm font-bold text-red-600">{fmtP(price, market)}</p>
+          <p className="text-[10px] text-gray-400">{desc}</p>
+        </div>
       </div>
     </div>
   );
