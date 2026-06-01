@@ -10,7 +10,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { fetchTrackerPosition, type TrackerPosition } from '@/lib/infinite-buy/tracker/position';
 import {
   fmtP, calcT,
@@ -27,6 +27,33 @@ interface TradingGuideProps {
   n: number;
   market?: 'US' | 'KR';
   currentCycle?: number;
+}
+
+interface PreviewOrder {
+  side: 'buy' | 'sell';
+  orderType: string;
+  quantity: number;
+  price: number;
+  reason: string;
+  wouldSubmit: boolean;
+  skipReason: string;
+}
+
+interface PreviewData {
+  smartSkipTriggered: boolean;
+  smartSkipReason: string;
+  orders: PreviewOrder[];
+  context: {
+    t: number;
+    currentShares: number;
+    currentInvested: number;
+    capital: number;
+    tradeMode: string;
+    smartSkipEnabled: boolean;
+    todayBuyExists: boolean;
+    todaySellExists: boolean;
+    currentPrice: number;
+  };
 }
 
 interface TodayOrder {
@@ -48,6 +75,9 @@ export function TradingGuide({
   const [currentPrice, setCurrentPrice] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [todayOrders, setTodayOrders] = useState<TodayOrder[]>([]);
+  const [showPreview, setShowPreview] = useState(false);
+  const [previewData, setPreviewData] = useState<PreviewData | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
 
   const fetchTodayOrders = useCallback(async () => {
     if (!symbol) return;
@@ -56,6 +86,24 @@ export function TradingGuide({
     const data = await res.json();
     setTodayOrders(data.orders ?? []);
   }, [symbol]);
+
+  const fetchPreview = useCallback(async () => {
+    if (!symbol) return;
+    setPreviewLoading(true);
+    const res = await fetch(`/api/auto-trade/preview?symbol=${symbol}`).catch(() => null);
+    if (res?.ok) {
+      const data = await res.json();
+      setPreviewData(data.preview ?? null);
+    }
+    setPreviewLoading(false);
+  }, [symbol]);
+
+  const togglePreview = useCallback(() => {
+    setShowPreview(prev => {
+      if (!prev) fetchPreview();
+      return !prev;
+    });
+  }, [fetchPreview]);
 
   const reload = useCallback(async () => {
     if (!symbol) return;
@@ -124,6 +172,10 @@ export function TradingGuide({
               </div>
               <button onClick={reload} className="p-1.5 rounded-lg hover:bg-blue-200/50 transition-colors" title="데이터 새로고침">
                 <RefreshCw className={`h-3.5 w-3.5 text-blue-600 ${loading ? 'animate-spin' : ''}`} />
+              </button>
+              <button onClick={togglePreview} className={`p-1.5 rounded-lg transition-colors flex items-center gap-1 text-[10px] font-bold ${showPreview ? 'bg-blue-200/70 text-blue-800' : 'hover:bg-blue-200/50 text-blue-500'}`} title="크론 미리보기">
+                {showPreview ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                미리보기
               </button>
             </div>
             <div className="text-right">
@@ -195,6 +247,18 @@ export function TradingGuide({
             )}
             <p className="pt-1 border-t border-gray-200 mt-2">• 매도: 1/4은 별지점 LOC, 3/4은 +{(getV22BaseRate(symbol) * 100).toFixed(0)}% 지정가</p>
           </div>
+
+          {showPreview && (
+            <div className="bg-white rounded-xl border border-blue-200 overflow-hidden">
+              <div className="px-3 py-2 bg-blue-50 border-b border-blue-100">
+                <p className="text-xs font-bold text-blue-800">🔍 크론 실행 시 예상 주문</p>
+                <p className="text-[10px] text-blue-500 mt-0.5">실제 주문 없음 — 시뮬레이션 결과</p>
+              </div>
+              <div className="p-3">
+                <PreviewPanel data={previewData} loading={previewLoading} market={market} />
+              </div>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -218,6 +282,10 @@ export function TradingGuide({
               </div>
               <button onClick={reload} className="p-1.5 rounded-lg hover:bg-orange-200/50 transition-colors" title="데이터 새로고침">
                 <RefreshCw className={`h-3.5 w-3.5 text-orange-600 ${loading ? 'animate-spin' : ''}`} />
+              </button>
+              <button onClick={togglePreview} className={`p-1.5 rounded-lg transition-colors flex items-center gap-1 text-[10px] font-bold ${showPreview ? 'bg-orange-200/70 text-orange-800' : 'hover:bg-orange-200/50 text-orange-500'}`} title="크론 미리보기">
+                {showPreview ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                미리보기
               </button>
             </div>
             <div className="text-right">
@@ -280,6 +348,18 @@ export function TradingGuide({
             <p>• V3.0: 별지점({starPct.toFixed(2)}%)-$0.01 LOC 매수</p>
             <p>• 매도: 1/4은 별지점 LOC, 3/4은 +{(baseRate * 100).toFixed(0)}% 지정가</p>
           </div>
+
+          {showPreview && (
+            <div className="bg-white rounded-xl border border-orange-200 overflow-hidden">
+              <div className="px-3 py-2 bg-orange-50 border-b border-orange-100">
+                <p className="text-xs font-bold text-orange-800">🔍 크론 실행 시 예상 주문</p>
+                <p className="text-[10px] text-orange-500 mt-0.5">실제 주문 없음 — 시뮬레이션 결과</p>
+              </div>
+              <div className="p-3">
+                <PreviewPanel data={previewData} loading={previewLoading} market={market} />
+              </div>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -306,6 +386,10 @@ export function TradingGuide({
             </div>
             <button onClick={reload} className="p-1.5 rounded-lg hover:bg-purple-200/50 transition-colors" title="데이터 새로고침">
               <RefreshCw className={`h-3.5 w-3.5 text-purple-600 ${loading ? 'animate-spin' : ''}`} />
+            </button>
+            <button onClick={togglePreview} className={`p-1.5 rounded-lg transition-colors flex items-center gap-1 text-[10px] font-bold ${showPreview ? 'bg-purple-200/70 text-purple-800' : 'hover:bg-purple-200/50 text-purple-500'}`} title="크론 미리보기">
+              {showPreview ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+              미리보기
             </button>
           </div>
           <div className="text-right">
@@ -357,7 +441,103 @@ export function TradingGuide({
           <p>• 1회매수금이 잔금/(N-T)로 매일 동적 계산됨 → 후반전에 매수금 증가</p>
           <p>• 매수가 진행될수록 분할금이 커져 평단 회복이 빠름</p>
         </div>
+
+        {showPreview && (
+          <div className="bg-white rounded-xl border border-purple-200 overflow-hidden">
+            <div className="px-3 py-2 bg-purple-50 border-b border-purple-100">
+              <p className="text-xs font-bold text-purple-800">🔍 크론 실행 시 예상 주문</p>
+              <p className="text-[10px] text-purple-500 mt-0.5">실제 주문 없음 — 시뮬레이션 결과</p>
+            </div>
+            <div className="p-3">
+              <PreviewPanel data={previewData} loading={previewLoading} market={market} />
+            </div>
+          </div>
+        )}
       </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// 크론 미리보기 패널
+// ─────────────────────────────────────────────────────────────
+
+function PreviewPanel({ data, loading, market }: { data: PreviewData | null; loading: boolean; market: 'US' | 'KR' }) {
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center gap-2 py-4 text-xs text-gray-500">
+        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        크론 시뮬레이션 중...
+      </div>
+    );
+  }
+  if (!data) {
+    return <p className="text-xs text-gray-400 py-3 text-center">설정 없음 또는 데이터 조회 실패</p>;
+  }
+
+  const { smartSkipTriggered, smartSkipReason, orders, context } = data;
+
+  return (
+    <div className="space-y-2 pt-1">
+      <div className="flex items-center gap-2 text-[10px] text-gray-500">
+        <span>현재가 {context.currentPrice != null ? (market === 'US' ? `$${context.currentPrice.toFixed(2)}` : `₩${context.currentPrice.toLocaleString('ko-KR')}`) : '-'}</span>
+        <span>·</span>
+        <span>T={context.t != null ? context.t.toFixed(2) : '-'}</span>
+        <span>·</span>
+        <span className={context.tradeMode === 'real' ? 'text-emerald-600 font-bold' : 'text-violet-600 font-bold'}>
+          {context.tradeMode === 'real' ? '실제모드' : '가상모드'}
+        </span>
+        {context.smartSkipEnabled && <span>· SmartSkip ON</span>}
+      </div>
+
+      {smartSkipTriggered ? (
+        <div className="bg-gray-100 rounded-lg px-3 py-2.5 text-xs text-gray-500 flex items-center gap-2">
+          <span className="text-base">⏭</span>
+          <div>
+            <p className="font-bold text-gray-600">Smart Skip 적용 — 주문 없음</p>
+            <p>{smartSkipReason}</p>
+          </div>
+        </div>
+      ) : orders.length === 0 ? (
+        <p className="text-xs text-gray-400 py-2 text-center">실행할 주문 없음</p>
+      ) : (
+        orders.map((o, i) => {
+          const isBuy = o.side === 'buy';
+          const typeLabel = o.orderType === 'loc' ? 'LOC' : o.orderType === 'limit' ? '지정가' : o.orderType.toUpperCase();
+          const priceLabel = market === 'US' ? `$${o.price.toFixed(2)}` : `₩${o.price.toLocaleString('ko-KR')}`;
+          return (
+            <div key={i} className={`flex items-start justify-between rounded-lg px-3 py-2 text-xs ${
+              !o.wouldSubmit
+                ? 'bg-gray-50 border border-dashed border-gray-200 opacity-60'
+                : isBuy
+                  ? 'bg-blue-50 border border-blue-200'
+                  : 'bg-orange-50 border border-orange-200'
+            }`}>
+              <div className="flex items-center gap-1.5">
+                <span>{!o.wouldSubmit ? '✗' : isBuy ? '📥' : '📤'}</span>
+                <div>
+                  <span className={`font-bold ${!o.wouldSubmit ? 'text-gray-400' : isBuy ? 'text-blue-700' : 'text-orange-700'}`}>
+                    {isBuy ? '매수' : '매도'} {o.quantity}주 · {typeLabel}
+                  </span>
+                  <p className="text-gray-400 mt-0.5">{o.reason}</p>
+                  {!o.wouldSubmit && o.skipReason && (
+                    <p className="text-red-400 mt-0.5">{o.skipReason}</p>
+                  )}
+                </div>
+              </div>
+              <span className={`font-bold tabular-nums shrink-0 ${!o.wouldSubmit ? 'text-gray-400' : isBuy ? 'text-blue-700' : 'text-orange-700'}`}>
+                {priceLabel}
+              </span>
+            </div>
+          );
+        })
+      )}
+
+      {!smartSkipTriggered && orders.filter(o => o.wouldSubmit).length > 0 && (
+        <p className="text-[10px] text-gray-400 text-center pt-1">
+          ↑ 크론 실행 시 {orders.filter(o => o.wouldSubmit).length}건 제출 예정
+        </p>
+      )}
     </div>
   );
 }
