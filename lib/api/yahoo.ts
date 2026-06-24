@@ -154,15 +154,11 @@ export async function getDividendHistory(
   }
 }
 
-export async function getDailyHistory(
-  symbol: string,
-  market: 'US' | 'KR' = 'KR',
-  options: { useRawClose?: boolean } = {}
+async function fetchYahooHistory(
+  ticker: string,
+  options: { useRawClose?: boolean },
 ): Promise<{ date: string; open: number; high: number; low: number; price: number; volume: number }[]> {
-  const ticker = market === 'KR' ? ensureSuffix(symbol) : toYahooUSTicker(symbol);
-  // 5년치 일봉 데이터 (장기 차트 + 이평선 계산용)
   const url = `${QUERY_URL}/v8/finance/chart/${encodeURIComponent(ticker)}?range=5y&interval=1d`;
-
   try {
     const res = await fetch(url, {
       headers: { 'User-Agent': 'Mozilla/5.0' },
@@ -174,47 +170,63 @@ export async function getDailyHistory(
     const result = data?.chart?.result?.[0];
     if (!result) return [];
 
-    const timestamps: number[] = result.timestamp ?? [];
-    const quotes = result.indicators?.quote?.[0] ?? {};
-    const adjClose = result.indicators?.adjclose?.[0]?.adjclose ?? [];
-
-    const { open = [], high = [], low = [], close = [], volume = [] } = quotes;
-
-    const history = [];
-    for (let i = 0; i < timestamps.length; i++) {
-      if (close[i] == null) continue;
-
-      const d = new Date(timestamps[i] * 1000);
-
-      if (options.useRawClose) {
-        // 미조정 raw close — 실제 브로커 차트와 동일한 가격 (주문가 계산용)
-        history.push({
-          date: d.toISOString().split('T')[0],
-          open: open[i] ?? close[i],
-          high: high[i] ?? close[i],
-          low: low[i] ?? close[i],
-          price: close[i],
-          volume: volume[i] ?? 0,
-        });
-      } else {
-        // 배당/액면분할 조정된 adjClose (백테스트·전략 분석용)
-        if (adjClose[i] == null) continue;
-        const adjustmentFactor = adjClose[i] / close[i];
-        history.push({
-          date: d.toISOString().split('T')[0],
-          open: (open[i] ?? close[i]) * adjustmentFactor,
-          high: (high[i] ?? close[i]) * adjustmentFactor,
-          low: (low[i] ?? close[i]) * adjustmentFactor,
-          price: adjClose[i],
-          volume: volume[i] ?? 0,
-        });
-      }
-    }
-
-    return history.reverse(); // 최신순
+    return parseYahooChart(result, options);
   } catch {
     return [];
   }
+}
+
+function parseYahooChart(
+  result: { timestamp?: number[]; indicators?: { quote?: { open?: number[]; high?: number[]; low?: number[]; close?: number[]; volume?: number[] }[]; adjclose?: { adjclose?: number[] }[] } },
+  options: { useRawClose?: boolean },
+) {
+  const timestamps = result.timestamp ?? [];
+  const quotes = result.indicators?.quote?.[0] ?? {};
+  const adjClose = result.indicators?.adjclose?.[0]?.adjclose ?? [];
+  const { open = [], high = [], low = [], close = [], volume = [] } = quotes;
+  const history: { date: string; open: number; high: number; low: number; price: number; volume: number }[] = [];
+  for (let i = 0; i < timestamps.length; i++) {
+    if (close[i] == null) continue;
+    const d = new Date(timestamps[i] * 1000);
+    if (options.useRawClose) {
+      history.push({
+        date: d.toISOString().split('T')[0],
+        open: open[i] ?? close[i],
+        high: high[i] ?? close[i],
+        low: low[i] ?? close[i],
+        price: close[i] as number,
+        volume: volume[i] ?? 0,
+      });
+    } else {
+      if (adjClose[i] == null) continue;
+      const adjustmentFactor = adjClose[i] / (close[i] as number);
+      history.push({
+        date: d.toISOString().split('T')[0],
+        open: (open[i] ?? close[i] as number) * adjustmentFactor,
+        high: (high[i] ?? close[i] as number) * adjustmentFactor,
+        low: (low[i] ?? close[i] as number) * adjustmentFactor,
+        price: adjClose[i] as number,
+        volume: volume[i] ?? 0,
+      });
+    }
+  }
+  return history.reverse();
+}
+
+export async function getDailyHistory(
+  symbol: string,
+  market: 'US' | 'KR' = 'KR',
+  options: { useRawClose?: boolean } = {}
+): Promise<{ date: string; open: number; high: number; low: number; price: number; volume: number }[]> {
+  const ticker = market === 'KR' ? ensureSuffix(symbol) : toYahooUSTicker(symbol);
+  let history = await fetchYahooHistory(ticker, options);
+
+  // KR 종목인데 .KS에서 빈 결과면 .KQ로 fallback (KOSDAQ ETF/주식 대응)
+  if (history.length === 0 && market === 'KR' && ticker.endsWith('.KS')) {
+    const kqTicker = ticker.replace(/\.KS$/, '.KQ');
+    history = await fetchYahooHistory(kqTicker, options);
+  }
+  return history;
 }
 
 /**

@@ -23,6 +23,8 @@ import { calculateStrongClose } from '@/lib/utils/kis-strong-close-calculator';
 import { calculateVolatility } from '@/lib/utils/kis-volatility-calculator';
 import { calculateMeanReversion } from '@/lib/utils/kis-mean-reversion-calculator';
 import { calculateTrendFilter } from '@/lib/utils/kis-trend-filter-calculator';
+import { analyzeETF } from '@/lib/utils/etf-analyzer-calculator';
+import { pickBenchmarkForEtf, fetchNaverEtfMeta } from '@/lib/api/naver-etf';
 import type { SignalStrategyType, SignalResult } from './types';
 import { SIGNAL_STRATEGIES } from './types';
 
@@ -434,6 +436,31 @@ export async function evaluateSignal(
       };
       break;
     }
+    case 'etf-analyzer': {
+      // ETF 이름·기초지수로 벤치마크 결정 후 일봉 가격 시리즈로 분석
+      const meta = await fetchNaverEtfMeta(symbol);
+      const benchmark = pickBenchmarkForEtf(meta?.name ?? symbol, meta?.baseIndex);
+      const benchHistory = await getDailyHistory(benchmark.symbol, benchmark.market);
+      if (!benchHistory || benchHistory.length < 20) {
+        return { isActive: false, syncRate: 0, criteria: { dataInsufficient: true } };
+      }
+      const analysis = analyzeETF(
+        history.map(h => ({ date: h.date, price: h.price })),
+        benchHistory.map(h => ({ date: h.date, price: h.price })),
+      );
+      if (!analysis) {
+        return { isActive: false, syncRate: 0, criteria: { calculationFailed: true } };
+      }
+      result = {
+        syncRate: analysis.syncRate,
+        criteria: {
+          supplyBuy: analysis.criteria.supplyBuy,
+          heatBuy: analysis.criteria.heatBuy,
+          bothBuy: analysis.criteria.bothBuy,
+        },
+      };
+      break;
+    }
     default:
       return {
         isActive: false,
@@ -525,6 +552,10 @@ function checkEntryConditions(
     case 'elliott-wave':
       // 파동2 또는 파동4 완료 신호 + 추세 방향 확인
       return criteria.isImpulseSignal === true && criteria.trendDirection !== false;
+
+    case 'etf-analyzer':
+      // 수급 또는 과열도 하나라도 BUY (OR 조건)
+      return criteria.supplyBuy === true || criteria.heatBuy === true;
 
     case 'infinite-buy':
       // 무한매수법은 별도 모듈 사용

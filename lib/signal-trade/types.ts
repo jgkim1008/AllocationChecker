@@ -14,6 +14,7 @@ export type SignalStrategyType =
   | 'inbum-bijag'            // 인범 빗각채널 + 구름대 전략
   | 'turtle-trading'         // 터틀 투자법 (돈키안 채널 돌파)
   | 'elliott-wave'           // 엘리어트 파동 (ZigZag 5파 임펄스)
+  | 'etf-analyzer'           // ETF 매수 분석기 (수급+과열도)
   | 'infinite-buy'           // 무한매수법 (자동매매 비활성)
   // KIS Strategy Builder 전략
   | 'kis-golden-cross'       // 골든크로스 (MA5 > MA20 상향돌파)
@@ -255,6 +256,16 @@ export const SIGNAL_STRATEGIES: SignalStrategyInfo[] = [
     autoTradeEnabled: true,
   },
 
+  // ── ETF 전용 전략 ──
+  {
+    id: 'etf-analyzer',
+    name: 'ETF 매수 분석기',
+    description: '한국 ETF의 수급(40일 상대 알파)과 과열도(5일 모멘텀)를 정량 분석. 수급 또는 과열도가 BUY일 때 진입',
+    requiredHistory: 50,
+    category: 'daily',
+    autoTradeEnabled: true,
+  },
+
   // ── 시스템 전략 (자동매매 비활성) ──
   {
     id: 'infinite-buy',
@@ -363,6 +374,7 @@ export const STRATEGY_ENTRY_CONDITIONS: Record<SignalStrategyType, string[]> = {
   'inbum-bijag': ['isConfluence', 'isAboveCloud'],      // 채널+구름 동시 또는 N자 리테스트
   'turtle-trading': ['s1Breakout', 's2Breakout', 'uptrend'],  // S1/S2 돌파 + 추세
   'elliott-wave':   ['isImpulseSignal', 'trendDirection'], // 파동2/4 완료 + 추세 방향
+  'etf-analyzer':   ['supplyBuy', 'heatBuy'],               // 수급 또는 과열도 BUY (OR)
   'infinite-buy': [],  // 별도 로직 (무한매수법 모듈 사용)
   // KIS Strategy Builder 전략
   'kis-golden-cross': ['isGoldenCross', 'isFreshCross'],   // MA5 > MA20 상향돌파

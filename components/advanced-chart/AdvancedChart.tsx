@@ -568,6 +568,31 @@ function computeStrategyMarkers(data: ChartData[], strategyId: string | undefine
       }
       break;
     }
+    case 'etf-analyzer': {
+      // 5일 모멘텀 기반 단기 과매수/과매도 전환점
+      // -3% 이하 (강한 단기 과매도) → 매수 신호
+      // +3% 이상 (강한 단기 과매수) → 매도 신호
+      const HEAT_WIN = 5;
+      const BUY_THRESH = -3;
+      const SELL_THRESH = 3;
+      let lastState: 'oversold' | 'overbought' | 'neutral' = 'neutral';
+      for (let i = HEAT_WIN; i < data.length; i++) {
+        const cur = data[i].close;
+        const prev = data[i - HEAT_WIN].close;
+        if (!cur || !prev) continue;
+        const pct = (cur / prev - 1) * 100;
+        if (pct <= BUY_THRESH && lastState !== 'oversold') {
+          tryBuy(i, data[i].date, '과매도');
+          lastState = 'oversold';
+        } else if (pct >= SELL_THRESH && lastState !== 'overbought') {
+          trySell(i, data[i].date, '과매수');
+          lastState = 'overbought';
+        } else if (Math.abs(pct) < 1) {
+          lastState = 'neutral';
+        }
+      }
+      break;
+    }
   }
 
   return markers;
