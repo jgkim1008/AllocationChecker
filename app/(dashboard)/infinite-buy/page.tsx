@@ -6,13 +6,14 @@ import { BuyTracker } from '@/components/infinite-buy/BuyTracker';
 import { BacktestSim } from '@/components/infinite-buy/BacktestSim';
 import { StrategyGuide } from '@/components/infinite-buy/StrategyGuide';
 
-const PRESET_SYMBOLS = ['TQQQ', 'UPRO', 'SOXL', 'FNGU', 'TECL', '122630'];
+const PRESET_SYMBOLS = ['TQQQ', 'UPRO', 'SOXL', 'QLD', 'FNGU', 'TECL', '122630'];
 
 // 각 종목 한줄 설명
 const SYMBOL_DESC: Record<string, string> = {
   TQQQ: '나스닥100 3배',
   UPRO: 'S&P500 3배',
   SOXL: '반도체 3배',
+  QLD: '나스닥100 2배',
   FNGU: 'FANG+ 3배',
   TECL: '기술주 3배',
   '122630': 'KOSPI200 2배',
@@ -23,15 +24,17 @@ const KR_SYMBOLS = new Set(['122630']);
 // 전략 버전
 type StrategyVersion = 'v2.2' | 'v3.0' | 'v4.0';
 
-// V2.2 종목별 기본 목표 수익률 (SOXL 12%, 나머지 10%)
+// V2.2 종목별 기본 목표 수익률 (SOXL 12%, QLD 7%, 나머지 10%)
 const V22_TARGET_RATES: Record<string, number> = {
   SOXL: 0.12,
+  QLD: 0.07,
 };
 
-// V3.0 종목별 목표 수익률
+// V3.0 종목별 목표 수익률 (QLD 2배는 TQQQ의 약 2/3)
 const V3_TARGET_RATES: Record<string, number> = {
   TQQQ: 0.15,
   SOXL: 0.20,
+  QLD: 0.10,
 };
 
 function getDefaultTargetRate(version: StrategyVersion, sym: string): number {

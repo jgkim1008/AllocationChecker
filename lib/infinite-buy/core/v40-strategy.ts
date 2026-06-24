@@ -72,11 +72,16 @@ export class V40Strategy extends BaseStrategy {
     const ticker = this.params.ticker.toUpperCase();
     const a = this.params.divisions;
 
+    // QLD(나스닥100 2배): TQQQ(3배)의 약 2/3 변동성
     let pct: number;
     if (a === 40) {
-      pct = ticker === 'SOXL' ? 20 - t : 15 - 0.75 * t;
+      if (ticker === 'SOXL') pct = 20 - t;
+      else if (ticker === 'QLD') pct = 10 - 0.5 * t;
+      else pct = 15 - 0.75 * t;
     } else {
-      pct = ticker === 'SOXL' ? 20 - 2 * t : 15 - 1.5 * t;
+      if (ticker === 'SOXL') pct = 20 - 2 * t;
+      else if (ticker === 'QLD') pct = 10 - t;
+      else pct = 15 - 1.5 * t;
     }
     return Math.max(0, pct);
   }
@@ -91,7 +96,10 @@ export class V40Strategy extends BaseStrategy {
 
   // ── 기본 익절 목표율 ──────────────────────────────────────────────────
   private getBaseTargetRate(): number {
-    return this.params.ticker.toUpperCase() === 'SOXL' ? 0.20 : 0.15;
+    const ticker = this.params.ticker.toUpperCase();
+    if (ticker === 'SOXL') return 0.20;
+    if (ticker === 'QLD') return 0.10;
+    return 0.15;
   }
 
   // ── 리버스모드 별지점 (최근 5거래일 평균) ────────────────────────────
@@ -333,7 +341,7 @@ export class V40Strategy extends BaseStrategy {
     // 리버스모드 종료 조건
     if (this.isReverseMode && this.state.avgCost > 0) {
       const ticker = this.params.ticker.toUpperCase();
-      const threshold = ticker === 'SOXL' ? 0.80 : 0.85;
+      const threshold = ticker === 'SOXL' ? 0.80 : ticker === 'QLD' ? 0.88 : 0.85;
       if (closePrice > this.state.avgCost * threshold) {
         this.isReverseMode = false;
         this.state.mode = 'normal';

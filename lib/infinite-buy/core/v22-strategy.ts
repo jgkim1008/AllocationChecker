@@ -50,6 +50,9 @@ export class V22Strategy extends BaseStrategy {
     let pct: number;
     if (ticker === 'SOXL') {
       pct = 12 - t * 0.6;
+    } else if (ticker === 'QLD') {
+      // QLD(나스닥100 2배): TQQQ(3배)의 약 2/3 변동성
+      pct = 7 - t / 3;
     } else {
       // TQQQ 및 기타
       pct = 10 - t / 2;
@@ -64,12 +67,18 @@ export class V22Strategy extends BaseStrategy {
     if (ticker === 'SOXL') {
       return Math.max(0, 12 - t * 0.6 * (40 / a));
     }
+    if (ticker === 'QLD') {
+      return Math.max(0, 7 - (t / 3) * (40 / a));
+    }
     return Math.max(0, 10 - (t / 2) * (40 / a));
   }
 
-  // ── 기본 익절 목표율 (TQQQ 10%, SOXL 12%) ────────────────────────────
+  // ── 기본 익절 목표율 (TQQQ 10%, SOXL 12%, QLD 7%) ─────────────────────
   private getBaseTargetRate(): number {
-    return this.params.ticker.toUpperCase() === 'SOXL' ? 0.12 : 0.10;
+    const ticker = this.params.ticker.toUpperCase();
+    if (ticker === 'SOXL') return 0.12;
+    if (ticker === 'QLD') return 0.07;
+    return 0.10;
   }
 
   // ── 매수 주문 ─────────────────────────────────────────────────────────
