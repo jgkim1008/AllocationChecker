@@ -25,6 +25,7 @@ import { calculateVolatility } from '@/lib/utils/kis-volatility-calculator';
 import { calculateMeanReversion } from '@/lib/utils/kis-mean-reversion-calculator';
 import { calculateTrendFilter } from '@/lib/utils/kis-trend-filter-calculator';
 import { IndicatorDashboard } from '@/components/indicators/IndicatorDashboard';
+import { LeverageConvergencePanel } from '@/components/stock-scan/LeverageConvergencePanel';
 
 interface MonteCarloResult {
   currentPrice: number;
@@ -2325,6 +2326,19 @@ export default function AnalystAlphaDetailPage({ params }: { params: Promise<{ s
           </div>
           </PremiumGate>
         )}
+
+        {/* ── 레버리지 수렴 신호 (나스닥100 ^IXIC / 반도체 SOXL 전용) ──
+             지수는 펀더멘탈(f)이 없어 위 블록에서 걸러지므로 게이트 밖에서 독립 렌더 */}
+        {!loading && (() => {
+          let decoded = upperSymbol;
+          try { decoded = decodeURIComponent(upperSymbol); } catch { /* keep as-is */ }
+          if (decoded !== '^IXIC' && decoded !== 'SOXL') return null;
+          return (
+            <div className="mt-5">
+              <LeverageConvergencePanel symbol={decoded} />
+            </div>
+          );
+        })()}
 
         {/* AI 챗봇 */}
         {!loading && data && f && (

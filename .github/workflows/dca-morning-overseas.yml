@@ -1,9 +1,10 @@
 name: DCA Morning Overseas Cron
 
 on:
-  schedule:
-    - cron: '30 13 * * 1-5'  # KST 22:30 (EDT, 여름)
-    - cron: '30 14 * * 1-5'  # KST 23:30 (EST, 겨울)
+  # schedule 비활성화 (2026-07-24): 로컬 PC crontab으로 전환. 필요 시 아래 주석 해제.
+  # schedule:
+  #   - cron: '30 13 * * 1-5'  # KST 22:30 (EDT, 여름)
+  #   - cron: '30 14 * * 1-5'  # KST 23:30 (EST, 겨울)
   workflow_dispatch:
 
 jobs:

@@ -94,6 +94,9 @@ export async function proxy(request: NextRequest) {
                       pathname.startsWith('/api/auto-trade/dca/backtest') ||
                       pathname.startsWith('/api/auto-trade/check-fills') ||
                       pathname.startsWith('/api/auto-trade/morning-alert') ||
+                      pathname.startsWith('/api/auto-trade/daily-sync') ||
+                      pathname.startsWith('/api/auto-trade/closing-alert') ||
+                      pathname.startsWith('/api/strategies/value-scan/run') ||
                       pathname.startsWith('/api/admin/');
 
   if (!user && !isAuthPage && !isPublicApi) {

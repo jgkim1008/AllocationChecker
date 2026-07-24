@@ -1,8 +1,9 @@
 name: Value Scan Cron
 
 on:
-  schedule:
-    - cron: '0 0 * * 0'  # KST 09:00 일요일
+  # schedule 비활성화 (2026-07-24): 로컬 PC crontab으로 전환. 필요 시 아래 주석 해제.
+  # schedule:
+  #   - cron: '0 0 * * 0'  # KST 09:00 일요일
   workflow_dispatch:
 
 jobs:

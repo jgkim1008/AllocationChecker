@@ -39,6 +39,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# 로컬 cron 실행 로그 (crontab.backup 포함, 시크릿 노출 위험)
+/logs/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

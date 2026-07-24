@@ -1,8 +1,9 @@
 name: Daily Position Sync
 
 on:
-  schedule:
-    - cron: '0 0 * * 1-5'  # KST 09:00 월~금 (UTC 00:00)
+  # schedule 비활성화 (2026-07-24): 로컬 PC crontab으로 전환. 필요 시 아래 주석 해제.
+  # schedule:
+  #   - cron: '0 0 * * 1-5'  # KST 09:00 월~금 (UTC 00:00)
   workflow_dispatch:         # 수동 실행 가능
 
 jobs:

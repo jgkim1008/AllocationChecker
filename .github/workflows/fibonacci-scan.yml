@@ -1,10 +1,11 @@
 name: Fibonacci Scan Cron
 
 on:
-  schedule:
-    - cron: '0 22 * * 1-5'  # KST 07:00 월~금 - US
-    - cron: '0 7 * * 1-5'   # KST 16:00 월~금 - KR
-    - cron: '30 7 * * 1-5'  # KST 16:30 월~금 - INDEX
+  # schedule 비활성화 (2026-07-24): 로컬 PC crontab으로 전환. 필요 시 아래 주석 해제.
+  # schedule:
+  #   - cron: '0 22 * * 1-5'  # KST 07:00 (UTC 월~금 기준) — 실제 발동 요일은 화~토
+  #   - cron: '0 7 * * 1-5'   # KST 16:00 월~금 - KR
+  #   - cron: '30 7 * * 1-5'  # KST 16:30 월~금 - INDEX
   workflow_dispatch:
     inputs:
       market:
