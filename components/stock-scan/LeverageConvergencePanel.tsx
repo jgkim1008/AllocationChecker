@@ -186,9 +186,10 @@ export function LeverageConvergencePanel({ symbol }: { symbol: string }) {
             <Tooltip
               contentStyle={{ borderRadius: 12, border: '1px solid #e5e7eb', fontSize: 12 }}
               labelFormatter={l => fmtDate(l as string)}
-              formatter={(value: number | string, name: string) => {
-                if (name === '저점 신호') return [null, null] as unknown as [string, string];
-                return [`${Number(value).toFixed(0)} (${(Number(value) - 100 >= 0 ? '+' : '')}${(Number(value) - 100).toFixed(0)}%)`, name];
+              formatter={(value, name) => {
+                if (name === '저점 신호' || value == null) return ['', ''];
+                const n = Number(value);
+                return [`${n.toFixed(0)} (${(n - 100 >= 0 ? '+' : '')}${(n - 100).toFixed(0)}%)`, name];
               }}
             />
             <Legend wrapperStyle={{ fontSize: 11, fontWeight: 700 }} iconType="plainline" />
