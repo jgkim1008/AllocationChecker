@@ -119,9 +119,10 @@ async function fetchMonthlyMAChanges(): Promise<MonthlyMAChanged[]> {
 function buildTelegramMessage(
   statuses: SymbolStatus[],
   market: 'US' | 'KR',
-  maChanges: MonthlyMAChanged[]
+  maChanges: MonthlyMAChanged[],
+  headerOverride?: string
 ): string {
-  const marketLabel = market === 'US' ? '🇺🇸 미국장 마감' : '🇰🇷 한국장 마감';
+  const marketLabel = headerOverride ?? (market === 'US' ? '🇺🇸 미국장 마감' : '🇰🇷 한국장 마감');
   const today = new Date().toLocaleDateString('ko-KR', {
     month: '2-digit', day: '2-digit', timeZone: 'Asia/Seoul',
   }).replace('. ', '/').replace('.', '');
@@ -192,6 +193,23 @@ export async function buildMarketCloseSection(market: 'US' | 'KR'): Promise<stri
     ]);
     if (statuses.length === 0) return '';
     return '\n\n' + buildTelegramMessage(statuses, market, maChanges);
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * 아침 알림용 지수 피보나치 + 월봉 10이평 섹션 (장마감 프레이밍 없이 중립 헤더)
+ * 국내/해외 구분 없이 5개 지수 전체를 한 번에 보여줌
+ */
+export async function buildMorningIndicatorSection(): Promise<string> {
+  try {
+    const [statuses, maChanges] = await Promise.all([
+      fetchTargetStatuses(),
+      fetchMonthlyMAChanges(),
+    ]);
+    if (statuses.length === 0) return '';
+    return '\n\n' + buildTelegramMessage(statuses, 'US', maChanges, '📊 지수 피보나치 현황');
   } catch {
     return '';
   }

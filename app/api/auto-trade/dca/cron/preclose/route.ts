@@ -12,12 +12,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { getBrokerClientByCredentialId, getBrokerClient } from '@/lib/broker/session';
 import type { MarketType } from '@/lib/broker/types';
-import type { SupabaseClient } from '@supabase/supabase-js';
 import { buildMarketCloseSection } from '@/lib/notifications/fibonacci-alert';
+import { buildTurtleSection, buildMarketIndicatorsSection } from '@/lib/notifications/market-sections';
 
 const CRON_SECRET = process.env.CRON_SECRET;
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL;
 
 async function sendTelegramMessage(chatId: number | string, text: string) {
   if (!TELEGRAM_BOT_TOKEN) return;
@@ -28,91 +27,6 @@ async function sendTelegramMessage(chatId: number | string, text: string) {
       body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' }),
     });
   } catch {}
-}
-
-// ── 터틀 전략 섹션 (strategy_cache에서 직접 조회, market 필터링) ──
-async function buildTurtleSection(
-  serviceClient: SupabaseClient,
-  market: MarketType
-): Promise<string> {
-  try {
-    const { data: cached } = await serviceClient
-      .from('strategy_cache')
-      .select('data, created_at')
-      .eq('cache_key', 'turtle_trading_scan')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .single();
-
-    if (!cached?.data || !Array.isArray(cached.data)) {
-      return '\n\n🐢 <b>터틀 전략</b>\n   스캔 캐시 없음 — /api/strategies/turtle-trading/scan 호출 필요';
-    }
-
-    const ageH = Math.round((Date.now() - new Date(cached.created_at).getTime()) / 3600000);
-    const filterMarket = market === 'domestic' ? 'KR' : 'US';
-    const active = (cached.data as Array<{
-      symbol: string;
-      name: string;
-      market: 'US' | 'KR';
-      currentPrice: number;
-      signal: string;
-      syncRate: number;
-      recentBreakout: { daysAgo: number; system: 'S1' | 'S2'; price: number } | null;
-    }>).filter(s => s.market === filterMarket &&
-      (s.signal === 'S2_BREAKOUT' || s.signal === 'S1_BREAKOUT' || s.signal === 'NEAR_BREAKOUT')
-    ).slice(0, 8);
-
-    if (active.length === 0) {
-      return `\n\n🐢 <b>터틀 전략 (${filterMarket}, ${ageH}h 전 캐시)</b>\n   돌파 신호 없음`;
-    }
-
-    const lines = active.map(s => {
-      const emoji = s.signal === 'S2_BREAKOUT' ? '🔥' : s.signal === 'S1_BREAKOUT' ? '⚡' : '👀';
-      const label = s.signal === 'S2_BREAKOUT' ? '55일 돌파' : s.signal === 'S1_BREAKOUT' ? '20일 돌파' : '돌파 근접';
-      const bo = s.recentBreakout ? ` (${s.recentBreakout.daysAgo}d 전)` : '';
-      const price = filterMarket === 'KR'
-        ? `${Math.round(s.currentPrice).toLocaleString('ko-KR')}원`
-        : `$${s.currentPrice.toFixed(2)}`;
-      return `   ${emoji} ${s.symbol} ${s.name} — ${label}${bo} · ${price} · 싱크${s.syncRate}%`;
-    });
-
-    return `\n\n🐢 <b>터틀 전략 (${filterMarket}, ${ageH}h 전 캐시)</b>\n${lines.join('\n')}`;
-  } catch {
-    return '\n\n🐢 <b>터틀 전략</b>\n   조회 실패';
-  }
-}
-
-// ── 시장 지표 섹션 (/api/market-indicators 호출) ──
-async function buildMarketIndicatorsSection(): Promise<string> {
-  if (!APP_URL) return '';
-  try {
-    const res = await fetch(`${APP_URL}/api/market-indicators`, { cache: 'no-store' });
-    if (!res.ok) return '\n\n📊 <b>시장 지표</b>\n   조회 실패';
-
-    const data = await res.json() as {
-      indicators: Array<{ name: string; value: string; alertLevel: 'danger'|'warning'|'neutral'|'positive'; trendText: string; changePercent: number }>;
-      marketComment: { level: 'safe'|'caution'|'risk'; text: string };
-    };
-
-    const levelEmoji = { safe: '🟢', caution: '🟡', risk: '🔴' }[data.marketComment.level];
-    const alertEmoji = { danger: '🔴', warning: '🟡', positive: '🟢', neutral: '⚪' };
-
-    // 위험/경고 지표 우선 표시, 나머지는 그 다음
-    const sorted = [...data.indicators].sort((a, b) => {
-      const order = { danger: 0, warning: 1, neutral: 2, positive: 3 };
-      return order[a.alertLevel] - order[b.alertLevel];
-    });
-
-    const lines = sorted.map(i => {
-      const arrow = i.changePercent > 0 ? '▲' : i.changePercent < 0 ? '▼' : '·';
-      const pct = i.changePercent !== 0 ? ` ${arrow}${Math.abs(i.changePercent).toFixed(2)}%` : '';
-      return `   ${alertEmoji[i.alertLevel]} ${i.name}: ${i.value}${pct}`;
-    });
-
-    return `\n\n📊 <b>시장 지표</b> ${levelEmoji} ${data.marketComment.text}\n${lines.join('\n')}`;
-  } catch {
-    return '\n\n📊 <b>시장 지표</b>\n   조회 실패';
-  }
 }
 
 export async function GET(request: NextRequest) {
@@ -129,16 +43,15 @@ export async function GET(request: NextRequest) {
 
     const serviceClient = await createServiceClient();
 
-    // 활성화된 DCA 설정 조회
-    const { data: settings } = await serviceClient
+    // 활성화된 DCA 설정 조회 (없어도 피보나치·터틀·시장지표는 계속 발송)
+    const { data: settingsData } = await serviceClient
       .from('dca_settings')
       .select('*, broker_credentials(id, broker_type, account_alias)')
       .eq('is_enabled', true)
       .eq('market', market);
 
-    if (!settings || settings.length === 0) {
-      return NextResponse.json({ success: true, message: '활성화된 DCA 설정 없음' });
-    }
+    const settings = settingsData ?? [];
+    const noActiveSettings = settings.length === 0;
 
     // 오늘 날짜 범위 (UTC 기준)
     const todayStart = new Date();
@@ -377,12 +290,16 @@ export async function GET(request: NextRequest) {
         }
 
         // 구독자별로 해당 사용자의 DCA 결과 포함 전송
+        // (활성화된 DCA 설정이 아예 없으면 모든 구독자에게 "설정 없음"으로 표시하고,
+        //  피보나치·터틀·시장지표 섹션은 그대로 첨부해서 계속 발송)
         for (const sub of allSubscribers) {
           const userResults = byUser.get(sub.user_id) ?? [];
           const dcaPart = userResults.length > 0
             ? `🔔 <b>DCA ${market === 'domestic' ? '국내' : '해외'} LOC 폴백</b>\n` +
               userResults.map(r => `${r.success ? '✅' : '⏭️'} ${r.symbol}: ${r.message}`).join('\n')
-            : '';
+            : noActiveSettings
+              ? `🔔 <b>DCA ${market === 'domestic' ? '국내' : '해외'}</b>\n   활성화된 DCA 설정 없음`
+              : '';
 
           const msg = [dcaPart, fibSection, turtleSection, marketSection]
             .filter(Boolean)

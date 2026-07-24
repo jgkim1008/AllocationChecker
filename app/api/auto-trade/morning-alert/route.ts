@@ -13,6 +13,8 @@ import { buildLiveOrders, type LiveStrategyConfig } from '@/lib/infinite-buy/bro
 import type { StrategyVersion, MarketType } from '@/lib/infinite-buy/core/types';
 import { getQuotes as getYahooQuotes } from '@/lib/api/yahoo';
 import { getQuotes as getPolygonQuotes } from '@/lib/api/fmp';
+import { buildMorningIndicatorSection } from '@/lib/notifications/fibonacci-alert';
+import { buildTurtleSection, buildMarketIndicatorsSection } from '@/lib/notifications/market-sections';
 
 const CRON_SECRET = process.env.CRON_SECRET;
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -152,7 +154,7 @@ export async function GET(request: NextRequest) {
     }
 
     // 활성화된 자동매매 설정 조회
-    const { data: settings, error: settingsError } = await serviceClient
+    const { data: settingsRaw, error: settingsError } = await serviceClient
       .from('auto_trade_settings')
       .select('*')
       .eq('is_enabled', true);
@@ -163,18 +165,14 @@ export async function GET(request: NextRequest) {
     }
 
     // DCA 설정 조회
-    const { data: dcaSettings } = await serviceClient
+    const { data: dcaSettingsRaw } = await serviceClient
       .from('dca_settings')
       .select('*')
       .eq('is_enabled', true);
 
-    if ((!settings || settings.length === 0) && (!dcaSettings || dcaSettings.length === 0)) {
-      return NextResponse.json({
-        success: true,
-        message: '활성화된 자동매매 설정이 없습니다.',
-        data: { processed: 0 },
-      });
-    }
+    // 활성화된 설정이 없어도 지수 피보나치·월봉10이평·터틀 섹션은 계속 발송 (아래에서 처리)
+    const settings = settingsRaw ?? [];
+    const dcaSettings = dcaSettingsRaw ?? [];
 
     // 무한매수법 매수/매도 예정
     const buySchedule: {
@@ -325,7 +323,6 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 텔레그램 구독자에게 알림 전송 (사용자별)
     const today = new Date().toLocaleDateString('ko-KR', {
       year: 'numeric',
       month: 'long',
@@ -333,23 +330,36 @@ export async function GET(request: NextRequest) {
       weekday: 'short',
     });
 
-    for (const [userId, schedules] of userSchedules) {
-      const { data: subscribers } = await serviceClient
-        .from('telegram_subscribers')
-        .select('chat_id')
-        .eq('is_active', true)
-        .eq('user_id', userId);
+    // 지수 피보나치 + 월봉10이평 + 터틀(국내/해외) + 시장지표 — 사용자 무관하게 1회 조회 후 모든 메시지에 첨부
+    const [fibSection, turtleDomestic, turtleOverseas, marketSection] = TELEGRAM_BOT_TOKEN
+      ? await Promise.all([
+          buildMorningIndicatorSection(),
+          buildTurtleSection(serviceClient, 'domestic'),
+          buildTurtleSection(serviceClient, 'overseas'),
+          buildMarketIndicatorsSection(),
+        ])
+      : ['', '', '', ''];
 
-      if (!subscribers || subscribers.length === 0) continue;
+    // 텔레그램 구독자에게 알림 전송 (전체 구독자 대상 — 개인 예정이 없어도 지수/터틀 섹션은 계속 발송)
+    const { data: allSubscribers } = await serviceClient
+      .from('telegram_subscribers')
+      .select('chat_id, user_id')
+      .eq('is_active', true);
 
-      const { buySchedule: userBuySchedule, dcaSchedule: userDcaSchedule } = schedules;
+    for (const sub of allSubscribers || []) {
+      const userId = sub.user_id;
+      const schedules = userSchedules.get(userId);
+      const userBuySchedule = schedules?.buySchedule ?? [];
+      const userDcaSchedule = schedules?.dcaSchedule ?? [];
       const userYesterdayOrdersCount = (yesterdayOrdersByUser.get(userId) || []).length;
-
-      // 오늘 예정도 없고 어제 주문도 없으면 스킵
-      if (userBuySchedule.length === 0 && userDcaSchedule.length === 0 && userYesterdayOrdersCount === 0) continue;
+      const hasPersonalContent = userBuySchedule.length > 0 || userDcaSchedule.length > 0 || userYesterdayOrdersCount > 0;
 
       let alertText = `📅 <b>${today} 자동매매 예정</b>\n`;
       alertText += `━━━━━━━━━━━━━━━\n\n`;
+
+      if (!hasPersonalContent) {
+        alertText += `오늘 예정된 자동매매가 없습니다.\n\n`;
+      }
 
       // 무한매수법 섹션
       if (userBuySchedule.length > 0) {
@@ -507,11 +517,13 @@ export async function GET(request: NextRequest) {
         }
       }
 
-      alertText += `\n💡 장 시작 후 자동 주문이 실행됩니다.`;
-
-      for (const sub of subscribers) {
-        await sendTelegramMessage(sub.chat_id, alertText);
+      if (hasPersonalContent) {
+        alertText += `\n💡 장 시작 후 자동 주문이 실행됩니다.`;
       }
+
+      alertText += [fibSection, turtleDomestic, turtleOverseas, marketSection].filter(Boolean).join('\n');
+
+      await sendTelegramMessage(sub.chat_id, alertText);
     }
 
     const totalYesterdayOrders = (yesterdayOrders || []).length;
