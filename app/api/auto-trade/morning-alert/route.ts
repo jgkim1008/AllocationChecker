@@ -14,7 +14,7 @@ import type { StrategyVersion, MarketType } from '@/lib/infinite-buy/core/types'
 import { getQuotes as getYahooQuotes } from '@/lib/api/yahoo';
 import { getQuotes as getPolygonQuotes } from '@/lib/api/fmp';
 import { buildMorningIndicatorSection } from '@/lib/notifications/fibonacci-alert';
-import { buildTurtleSection, buildMarketIndicatorsSection } from '@/lib/notifications/market-sections';
+import { buildTurtleSection, buildMarketIndicatorsSection, buildBriefingSummarySection } from '@/lib/notifications/market-sections';
 
 const CRON_SECRET = process.env.CRON_SECRET;
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -330,15 +330,17 @@ export async function GET(request: NextRequest) {
       weekday: 'short',
     });
 
-    // 지수 피보나치 + 월봉10이평 + 터틀(국내/해외) + 시장지표 — 사용자 무관하게 1회 조회 후 모든 메시지에 첨부
-    const [fibSection, turtleDomestic, turtleOverseas, marketSection] = TELEGRAM_BOT_TOKEN
+    // 지수 피보나치 + 월봉10이평 + 터틀(국내/해외) + 시장지표 + 브리핑 요약(유동성·워치리스트·이벤트)
+    // — 사용자 무관하게 1회 조회 후 모든 메시지에 첨부
+    const [fibSection, turtleDomestic, turtleOverseas, marketSection, briefingSection] = TELEGRAM_BOT_TOKEN
       ? await Promise.all([
           buildMorningIndicatorSection(),
           buildTurtleSection(serviceClient, 'domestic'),
           buildTurtleSection(serviceClient, 'overseas'),
           buildMarketIndicatorsSection(),
+          buildBriefingSummarySection(),
         ])
-      : ['', '', '', ''];
+      : ['', '', '', '', ''];
 
     // 텔레그램 구독자에게 알림 전송 (전체 구독자 대상 — 개인 예정이 없어도 지수/터틀 섹션은 계속 발송)
     const { data: allSubscribers } = await serviceClient
@@ -521,7 +523,7 @@ export async function GET(request: NextRequest) {
         alertText += `\n💡 장 시작 후 자동 주문이 실행됩니다.`;
       }
 
-      alertText += [fibSection, turtleDomestic, turtleOverseas, marketSection].filter(Boolean).join('\n');
+      alertText += [briefingSection, fibSection, turtleDomestic, turtleOverseas, marketSection].filter(Boolean).join('\n');
 
       await sendTelegramMessage(sub.chat_id, alertText);
     }
