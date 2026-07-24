@@ -182,36 +182,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 텔레그램 알림 (사용자별로 발송)
     const successCount = results.filter(r => r.success).length;
-    if (TELEGRAM_BOT_TOKEN) {
-      // 사용자별로 결과 그룹화
-      const byUser = new Map<string, typeof results>();
-      for (const r of results) {
-        const list = byUser.get(r.user_id) ?? [];
-        list.push(r);
-        byUser.set(r.user_id, list);
-      }
-
-      for (const [userId, userResults] of byUser) {
-        const { data: subscribers } = await serviceClient
-          .from('telegram_subscribers')
-          .select('chat_id')
-          .eq('is_active', true)
-          .eq('user_id', userId);
-
-        if (!subscribers || subscribers.length === 0) continue;
-
-        const userSuccessCount = userResults.filter(r => r.success).length;
-        const summary = userResults.map(r => `${r.success ? '✅' : '❌'} ${r.symbol}: ${r.message}`).join('\n');
-        const msg = `🌅 <b>DCA 지정가 주문</b>\n${summary}\n\n총 ${userSuccessCount}/${userResults.length}건 제출`;
-
-        for (const sub of subscribers) {
-          await sendTelegramMessage(sub.chat_id, msg);
-        }
-      }
-    }
-
     return NextResponse.json({ success: true, data: { processed: results.length, succeeded: successCount, results } });
   } catch (err) {
     console.error('DCA morning cron 오류:', err);

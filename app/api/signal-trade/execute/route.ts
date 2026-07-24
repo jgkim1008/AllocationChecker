@@ -64,6 +64,7 @@ function getStrategyName(type: SignalStrategyType): string {
     'inbum-bijag': '인범 빗각+구름대',
     'turtle-trading': '터틀 투자법',
     'elliott-wave':   '엘리어트 파동',
+    'etf-analyzer':   'ETF 매수 분석기',
     'infinite-buy': '무한매수법',
     // KIS Strategy Builder 전략
     'kis-golden-cross': '골든크로스',

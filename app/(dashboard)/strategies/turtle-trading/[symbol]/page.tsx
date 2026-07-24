@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, RefreshCw, TrendingUp, TrendingDown, Activity, Target, Shield, HelpCircle, ChevronDown, ChevronUp } from 'lucide-react';
-import { TurtleTradingChart } from '@/components/turtle-trading/TurtleTradingChart';
+import { StrategyChartShell } from '@/components/strategies/StrategyChartShell';
 import type { TurtleCandle, TurtleResult } from '@/lib/utils/turtle-trading-calculator';
 
 function formatPrice(price: number, market: string): string {
@@ -427,10 +427,8 @@ export default function TurtleTradingDetailPage() {
           </div>
           {loading ? (
             <div className="h-[480px] bg-gray-50 rounded-xl animate-pulse" />
-          ) : result ? (
-            <TurtleTradingChart candles={candles} result={result} market={market} />
           ) : (
-            <div className="h-[480px] flex items-center justify-center text-gray-400 text-sm">데이터 부족 (최소 60일)</div>
+            <StrategyChartShell symbol={symbol} market={market} strategyId="turtle-trading" height={550} />
           )}
         </div>
 

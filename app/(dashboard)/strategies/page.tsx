@@ -1,11 +1,21 @@
 'use client';
 
 import Link from 'next/link';
-import { TrendingUp, TrendingDown, Infinity, ChevronRight, Activity, Zap, BookOpen, CalendarDays, BarChart2, CandlestickChart, GitMerge, Layers } from 'lucide-react';
+import { TrendingUp, TrendingDown, Infinity, ChevronRight, Activity, Zap, BookOpen, CalendarDays, BarChart2, CandlestickChart, GitMerge, Layers, PieChart } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { PremiumGate } from '@/components/PremiumGate';
 
 const STRATEGIES = [
+  {
+    id: 'etf-analyzer',
+    title: 'ETF 매수 분석기',
+    description: '한국 상장 ETF 거래량 상위 50종목을 자동 스캔합니다. 수급(40일 상대 알파, 승자편입식)과 과열도(5일 모멘텀, 과매수/과매도)를 정량 분석하여 매매 신호와 분할매매 전략을 제시합니다. ETF 구성종목·비중·기여도까지 상세 표시.',
+    icon: PieChart,
+    href: '/strategies/etf-analyzer',
+    color: 'bg-rose-50 text-rose-600',
+    tag: '신규',
+    tagColor: 'bg-rose-100 text-rose-700',
+  },
   {
     id: 'elliott-wave',
     title: '엘리어트 파동',

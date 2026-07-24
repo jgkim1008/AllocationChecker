@@ -32,9 +32,9 @@ export function useInfiniteBuyRecords(symbol: string, cycleNumber: number = 1) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchRecords = useCallback(async () => {
+  const fetchRecords = useCallback(async (silent = false) => {
     if (!symbol) return;
-    setLoading(true);
+    if (!silent) setLoading(true);
     setError(null);
     try {
       const [buyRes, sellRes] = await Promise.all([
@@ -49,7 +49,7 @@ export function useInfiniteBuyRecords(symbol: string, cycleNumber: number = 1) {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [symbol, cycleNumber]);
 
@@ -147,15 +147,22 @@ export function useInfiniteBuyRecords(symbol: string, cycleNumber: number = 1) {
   }, []);
 
   useEffect(() => {
-    fetchRecords();
+    fetchRecords(false);  // 초기 로드만 로딩 표시
   }, [fetchRecords]);
 
-  // 5초마다 자동 동기화 (다른 탭에서 데이터 변경 감지)
+  // 15초마다 silent 백그라운드 폴링 — UI 깜빡임 없음
   useEffect(() => {
     const interval = setInterval(() => {
-      fetchRecords();
-    }, 5000);
+      fetchRecords(true);
+    }, 15000);
     return () => clearInterval(interval);
+  }, [fetchRecords]);
+
+  // 탭으로 돌아왔을 때만 silent 갱신
+  useEffect(() => {
+    const handler = () => { if (document.visibilityState === 'visible') fetchRecords(true); };
+    document.addEventListener('visibilitychange', handler);
+    return () => document.removeEventListener('visibilitychange', handler);
   }, [fetchRecords]);
 
   return {

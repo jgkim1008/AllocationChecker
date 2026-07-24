@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, RefreshCw, TrendingUp, Info, Target, Sparkles } from 'lucide-react';
-import { InverseAlignmentTable } from '@/components/strategies/InverseAlignmentTable';
+import { InverseAlignmentTable } from '@/components/inverse-alignment/InverseAlignmentTable';
+import { IndexTable } from '@/components/strategies/IndexTable';
 import { PremiumGate } from '@/components/PremiumGate';
 import type { InverseAlignmentStock } from '@/types/strategies';
 import { getClientCache, setClientCache, clearClientCache } from '@/lib/client-cache';
@@ -89,6 +90,9 @@ export default function InverseAlignmentPage() {
             <p className="text-sm font-bold text-red-700 leading-snug">{error}</p>
           </div>
         )}
+
+        {/* 지수 비교 테이블 */}
+        <IndexTable strategyPath="/strategies/inverse-alignment" accent="blue" />
 
         {/* 결과 리스트 */}
         <div className="space-y-6">

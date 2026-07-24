@@ -8,6 +8,7 @@ import {
   AlertTriangle, CheckCircle, XCircle, Target, Layers, Ban,
 } from 'lucide-react';
 import { PullbackHoverCard } from '@/components/strategies/PullbackHoverCard';
+import { StrategyChartShell } from '@/components/strategies/StrategyChartShell';
 import { createChart, ColorType, CrosshairMode, CandlestickSeries, LineSeries, createSeriesMarkers, IChartApi } from 'lightweight-charts';
 
 interface MonthlyCandle {
@@ -1079,14 +1080,7 @@ export default function MonthlyMADetailPage() {
               </div>
             </div>
             <div className="p-4">
-              <MonthlyChartWithPopup
-                candles={candles}
-                market={market}
-                symbol={symbol}
-                showChannel={showChannel}
-                showSRFlip={showSRFlip}
-                showBijag={showBijag}
-              />
+              <StrategyChartShell symbol={symbol} market={market as 'US' | 'KR'} strategyId="monthly-ma" height={550} />
             </div>
           </div>
         )}

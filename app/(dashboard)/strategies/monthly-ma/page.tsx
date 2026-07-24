@@ -8,6 +8,7 @@ import {
   ChevronUp, ChevronDown, Target, Ban,
 } from 'lucide-react';
 import { PremiumGate } from '@/components/PremiumGate';
+import { IndexTable } from '@/components/strategies/IndexTable';
 import { PullbackHoverCard } from '@/components/strategies/PullbackHoverCard';
 import type { MonthlyMAStock } from '@/app/api/strategies/monthly-ma/scan/route';
 import { getClientCache, setClientCache, clearClientCache } from '@/lib/client-cache';
@@ -327,6 +328,9 @@ export default function MonthlyMAPage() {
             {loading ? '분석 중...' : '새로고침'}
           </button>
         </div>
+
+        {/* 지수 비교 테이블 */}
+        <IndexTable strategyPath="/strategies/monthly-ma" accent="indigo" />
 
         <PremiumGate featureName="월봉 10이평 전략">
 

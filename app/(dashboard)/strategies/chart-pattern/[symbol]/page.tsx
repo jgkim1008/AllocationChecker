@@ -3,7 +3,7 @@
 import React, { useState, useEffect, use, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, CheckCircle2, XCircle, Activity, Target, Loader2, TrendingUp, TrendingDown, BookOpen, Eye, AlertTriangle, Lightbulb, ChevronDown, ChevronUp } from 'lucide-react';
-import { ChartPatternChart } from '@/components/strategies/ChartPatternChart';
+import { StrategyChartShell } from '@/components/strategies/StrategyChartShell';
 import { detectAllPatterns, PATTERN_INFO, type PatternGuide, type PriceBar } from '@/lib/utils/chart-pattern-calculator';
 import type { PatternResult, PatternStatus } from '@/lib/utils/chart-pattern-calculator';
 import { PremiumGate } from '@/components/PremiumGate';
@@ -219,13 +219,8 @@ function DetailContent({ params }: { params: Promise<{ symbol: string }> }) {
                   </div>
                 </div>
 
-                <div className="h-[500px] -mx-4">
-                  <ChartPatternChart
-                    history={chartData}
-                    market={market}
-                    pattern={selectedPattern}
-                    viewMode={chartViewMode}
-                  />
+                <div className="-mx-4">
+                  <StrategyChartShell symbol={symbol} market={market} strategyId="chart-pattern" height={500} />
                 </div>
               </div>
 

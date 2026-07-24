@@ -198,8 +198,11 @@ export class KISAccount {
         frcr_buy_amt_smtl1: '0',
       };
 
-      const totalBuyAmount = parseFloat(output2.frcr_buy_amt_smtl1 || output2.frcr_pchs_amt1);
-      const totalProfitLoss = parseFloat(output2.ovrs_tot_pfls);
+      // KIS는 "0.000000" 같은 truthy 문자열을 반환하므로 || 대신 수치 비교 사용
+      const buyAmt = parseFloat(output2.frcr_buy_amt_smtl1 ?? '0') || 0;
+      const pchsAmt = parseFloat(output2.frcr_pchs_amt1 ?? '0') || 0;
+      const totalBuyAmount = buyAmt > 0 ? buyAmt : pchsAmt;
+      const totalProfitLoss = parseFloat(output2.ovrs_tot_pfls ?? '0') || 0;
 
       const balance: Balance = {
         totalAsset: totalBuyAmount + totalProfitLoss,
@@ -253,11 +256,17 @@ export class KISAccount {
 
     const results = await Promise.all(exchanges.map(ex => this.getOverseasBalanceByExchange(ex)));
 
-    // 심볼 기준 중복 제거하며 positions 합산
-    const positionMap = new Map<string, Position>();
-    let totalBuyAmount = 0;
-    let totalProfitLoss = 0;
+    // 실패한 거래소 로그 (토큰 만료 등 진단용)
+    results.forEach((r, i) => {
+      if (!r.success) {
+        console.warn(`[KIS overseas balance] ${exchanges[i]} 실패:`, r.error?.code, r.error?.message);
+      } else if (r.data) {
+        console.log(`[KIS overseas balance] ${exchanges[i]} OK: positions=${r.data.positions.length}, buy=${r.data.balance.totalBuyAmount}, pnl=${r.data.balance.totalProfitLoss}`);
+      }
+    });
 
+    // 심볼 기준 중복 제거 (KIS는 NASD/AMEX 양쪽에 같은 포지션을 반환할 수 있음)
+    const positionMap = new Map<string, Position>();
     for (const r of results) {
       if (r.success && r.data) {
         for (const p of r.data.positions) {
@@ -265,18 +274,25 @@ export class KISAccount {
             positionMap.set(p.symbol, p);
           }
         }
-        totalBuyAmount += r.data.balance.totalBuyAmount;
-        totalProfitLoss += r.data.balance.totalProfitLoss;
       }
     }
-
     const allPositions = Array.from(positionMap.values());
 
+    // 거래소별 balance는 중복 합산 위험이 있어, 중복 제거된 positions로부터
+    // 매수금/평가금/손익을 직접 계산 (정확성 보장)
+    const totalBuyAmount = allPositions.reduce(
+      (sum, p) => sum + p.quantity * p.avgPrice, 0
+    );
+    const totalEvalAmount = allPositions.reduce(
+      (sum, p) => sum + p.evalAmount, 0
+    );
+    const totalProfitLoss = totalEvalAmount - totalBuyAmount;
+
     const balance: Balance = {
-      totalAsset: totalBuyAmount + totalProfitLoss,
+      totalAsset: totalEvalAmount,  // 통합잔고: 평가금 (예수금은 별도 endpoint에서 합산)
       totalDeposit: 0,
       totalBuyAmount,
-      totalEvalAmount: totalBuyAmount + totalProfitLoss,
+      totalEvalAmount,
       totalProfitLoss,
       totalProfitLossRate: totalBuyAmount > 0 ? (totalProfitLoss / totalBuyAmount) * 100 : 0,
       currency: 'USD',
@@ -320,5 +336,118 @@ export class KISAccount {
         overseas: overseasResult.data!,
       },
     };
+  }
+
+  /**
+   * 해외 외화예수금 + 통합잔고 조회 (inquire-present-balance)
+   * - 일반 inquire-balance가 누락하는 USD 예수금까지 포함
+   * - output1(종목별)에서 총 평가금 합산 → 거래소별 조회 0 문제 우회
+   */
+  async getOverseasPresentBalance(): Promise<
+    BrokerResponse<{
+      foreignCash: number;    // 외화예수금 (USD)
+      foreignCashKRW: number; // 외화예수금 원화환산
+      totalEvalUSD: number;   // 해외주식 평가금 합계 (USD) — output1 종목별 합산
+      totalBuyUSD: number;    // 해외주식 매입금액 합계 (USD)
+      totalAssetKRW: number;  // 해외 총 자산 원화환산 (주식+예수금) — output3 기준
+      exchangeRate: number;   // USD→KRW 환율 (현재가 기준)
+      currency: string;
+      raw: unknown;           // 원본 응답 — 필드명 검증용
+    }>
+  > {
+    const [accountNo, accountProduct] = this.auth.getAccountParts();
+    const trId = 'CTRP6504R'; // KIS Open API 해외주식 체결기준현재잔고 (실전)
+
+    try {
+      const url = new URL(`${this.auth.getBaseUrl()}${KIS_ENDPOINTS.OVERSEAS.PRESENT_BALANCE}`);
+      url.searchParams.set('CANO', accountNo);
+      url.searchParams.set('ACNT_PRDT_CD', accountProduct);
+      url.searchParams.set('WCRC_FRCR_DVSN_CD', '02');  // 02: 외화 기준 조회
+      url.searchParams.set('NATN_CD', '840');           // 840: 미국
+      url.searchParams.set('TR_MKET_CD', '00');         // 00: 전체 시장
+      url.searchParams.set('INQR_DVSN_CD', '00');       // 00: 전체
+
+      const response = await fetch(url.toString(), {
+        method: 'GET',
+        headers: {
+          ...this.auth.getAuthHeaders(),
+          tr_id: trId,
+        },
+      });
+
+      const data = await response.json();
+
+      if (data.rt_cd !== '0') {
+        return {
+          success: false,
+          error: { code: data.msg_cd, message: data.msg1 },
+        };
+      }
+
+      // output1: 종목별 잔고, output2: 외화별 잔고, output3: 종합
+      const output1Raw = data.output1 ?? [];
+      const output1: Array<Record<string, string>> = Array.isArray(output1Raw)
+        ? output1Raw
+        : Object.keys(output1Raw).length > 0 ? [output1Raw as Record<string, string>] : [];
+      const output2: Array<Record<string, string>> = Array.isArray(data.output2) ? data.output2 : [];
+      const output3: Record<string, string> = data.output3 ?? {};
+
+      // 종목별 평가금·매입금 합산 (USD) — TTTS3012R 거래소별 조회가 0일 때 우회용
+      const totalEvalUSD = output1.reduce((sum, item) => {
+        const v = parseFloat(item.frcr_evlu_amt2 ?? item.frcr_evlu_amt ?? '0') || 0;
+        return sum + v;
+      }, 0);
+      const totalBuyUSD = output1.reduce((sum, item) => {
+        const v = parseFloat(item.frcr_pchs_amt ?? '0') || 0;
+        return sum + v;
+      }, 0);
+
+      // output3 총 자산 (KRW) — tot_asst_amt: 총자산금액, frcr_evlu_tota: 외화평가총액
+      const totalAssetKRW =
+        parseFloat(output3.tot_asst_amt ?? '0') ||
+        parseFloat(output3.frcr_evlu_tota ?? '0') ||
+        parseFloat(output3.frcr_evlu_tot_amt ?? '0') || 0;
+
+      console.log('[present-balance] output1 positions:', output1.length, '| totalEvalUSD:', totalEvalUSD.toFixed(2));
+      console.log('[present-balance] output3 → tot_asst_amt:', output3.tot_asst_amt, '| frcr_evlu_tota:', output3.frcr_evlu_tota, '| totalAssetKRW:', totalAssetKRW);
+
+      // USD 행만 추출 (crcy_cd = 'USD')
+      const usdRow = output2.find(r => (r.crcy_cd ?? '').toUpperCase() === 'USD');
+
+      // 외화예수금 후보 필드들
+      const candidates = [
+        usdRow?.frcr_dncl_amt_2,
+        usdRow?.frcr_dncl_amt,
+        usdRow?.dncl_amt,
+        output3.frcr_dncl_amt_2,
+        output3.frcr_dncl_amt,
+      ].map(v => (v != null ? parseFloat(v) : NaN)).filter(v => !isNaN(v));
+
+      const foreignCash = candidates.find(v => v > 0) ?? candidates[0] ?? 0;
+      const foreignCashKRW = parseFloat(output3.frcr_evlu_tot_amt ?? '0') || 0;
+      const exchangeRate = parseFloat(usdRow?.frst_bltn_exrt ?? output3.frst_bltn_exrt ?? '0') || 0;
+
+      return {
+        success: true,
+        data: {
+          foreignCash,
+          foreignCashKRW,
+          totalEvalUSD,
+          totalBuyUSD,
+          totalAssetKRW,
+          exchangeRate,
+          currency: 'USD',
+          raw: { output1: output1.map(i => ({ pdno: i.pdno, frcr_evlu_amt2: i.frcr_evlu_amt2, frcr_evlu_amt: i.frcr_evlu_amt, frcr_pchs_amt: i.frcr_pchs_amt })), output2, output3 },
+        },
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: {
+          code: 'PRESENT_BALANCE_ERROR',
+          message: error instanceof Error ? error.message : '알 수 없는 오류',
+        },
+      };
+    }
   }
 }

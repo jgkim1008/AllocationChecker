@@ -41,6 +41,7 @@ export const KIS_ENDPOINTS = {
 
     // 잔고
     BALANCE: '/uapi/overseas-stock/v1/trading/inquire-balance',
+    PRESENT_BALANCE: '/uapi/overseas-stock/v1/trading/inquire-present-balance', // 외화 예수금 포함
 
     // 주문
     ORDER: '/uapi/overseas-stock/v1/trading/order',
@@ -128,6 +129,7 @@ export const KIS_TR_ID = {
     PRICE: 'HHDFS00000300',
     DAILY_PRICE: 'HHDFS76240000',
     BALANCE: 'TTTS3012R',
+    PRESENT_BALANCE: 'CTRP6504R',   // 해외주식 체결기준현재잔고 (외화예수금 포함)
     BUY: 'TTTT1002U',     // 미국 매수 (NASD/NYSE/AMEX)
     SELL: 'TTTT1006U',    // 미국 매도 (NASD/NYSE/AMEX)
     CANCEL: 'TTTT1004U',  // 미국 정정취소
@@ -141,6 +143,7 @@ export const KIS_TR_ID = {
     PRICE: 'HHDFS00000300',
     DAILY_PRICE: 'HHDFS76240000',
     BALANCE: 'VTTS3012R',
+    PRESENT_BALANCE: 'VTRP6504R',
     BUY: 'VTTT1002U',
     SELL: 'VTTT1006U',
     CANCEL: 'VTTT1004U',

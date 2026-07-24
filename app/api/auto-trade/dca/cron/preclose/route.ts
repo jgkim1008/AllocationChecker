@@ -13,6 +13,7 @@ import { createServiceClient } from '@/lib/supabase/server';
 import { getBrokerClientByCredentialId, getBrokerClient } from '@/lib/broker/session';
 import type { MarketType } from '@/lib/broker/types';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { buildMarketCloseSection } from '@/lib/notifications/fibonacci-alert';
 
 const CRON_SECRET = process.env.CRON_SECRET;
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -349,42 +350,45 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 터틀 + 시장 지표는 사용자 무관하게 1회 조회 후 모든 메시지에 첨부
-    const [turtleSection, marketSection] = TELEGRAM_BOT_TOKEN
+    // 피보나치 + 터틀 + 시장 지표 — 사용자 무관하게 1회 조회 후 모든 메시지에 첨부
+    const fibMarket = market === 'domestic' ? 'KR' : 'US';
+    const [fibSection, turtleSection, marketSection] = TELEGRAM_BOT_TOKEN
       ? await Promise.all([
+          buildMarketCloseSection(fibMarket),
           buildTurtleSection(serviceClient, market),
           buildMarketIndicatorsSection(),
         ])
-      : ['', ''];
+      : ['', '', ''];
 
-    // 텔레그램 알림 (DCA 설정 보유 사용자별로 발송 — 결과 성공 여부와 무관)
+    // 텔레그램 알림 (전체 구독자에게 발송 — DCA 결과 + 피보나치 + 터틀 + 시장지표 통합)
     if (TELEGRAM_BOT_TOKEN) {
-      // 사용자별로 결과 그룹화
-      const byUser = new Map<string, typeof results>();
-      for (const r of results) {
-        const list = byUser.get(r.user_id) ?? [];
-        list.push(r);
-        byUser.set(r.user_id, list);
-      }
+      const { data: allSubscribers } = await serviceClient
+        .from('telegram_subscribers')
+        .select('chat_id, user_id')
+        .eq('is_active', true);
 
-      const marketLabel = market === 'domestic' ? '국내' : '해외';
+      if (allSubscribers && allSubscribers.length > 0) {
+        // 사용자별로 결과 그룹화
+        const byUser = new Map<string, typeof results>();
+        for (const r of results) {
+          const list = byUser.get(r.user_id) ?? [];
+          list.push(r);
+          byUser.set(r.user_id, list);
+        }
 
-      for (const [userId, userResults] of byUser) {
-        const { data: subscribers } = await serviceClient
-          .from('telegram_subscribers')
-          .select('chat_id')
-          .eq('is_active', true)
-          .eq('user_id', userId);
+        // 구독자별로 해당 사용자의 DCA 결과 포함 전송
+        for (const sub of allSubscribers) {
+          const userResults = byUser.get(sub.user_id) ?? [];
+          const dcaPart = userResults.length > 0
+            ? `🔔 <b>DCA ${market === 'domestic' ? '국내' : '해외'} LOC 폴백</b>\n` +
+              userResults.map(r => `${r.success ? '✅' : '⏭️'} ${r.symbol}: ${r.message}`).join('\n')
+            : '';
 
-        if (!subscribers || subscribers.length === 0) continue;
+          const msg = [dcaPart, fibSection, turtleSection, marketSection]
+            .filter(Boolean)
+            .join('\n');
 
-        const dcaSummary = userResults.length > 0
-          ? userResults.map(r => `${r.success ? '✅' : '⏭️'} ${r.symbol}: ${r.message}`).join('\n')
-          : '   설정 없음';
-        const msg = `🔔 <b>DCA ${marketLabel} 장마감 (LOC 폴백)</b>\n${dcaSummary}${turtleSection}${marketSection}`;
-
-        for (const sub of subscribers) {
-          await sendTelegramMessage(sub.chat_id, msg);
+          if (msg.trim()) await sendTelegramMessage(sub.chat_id, msg);
         }
       }
     }

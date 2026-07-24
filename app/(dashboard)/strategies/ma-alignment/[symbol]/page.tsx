@@ -3,7 +3,7 @@
 import { useState, useEffect, use, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, CheckCircle2, XCircle, Activity, Target, Loader2, RefreshCw } from 'lucide-react';
-import { MAAlignmentChart } from '@/components/strategies/MAAlignmentChart';
+import { StrategyChartShell } from '@/components/strategies/StrategyChartShell';
 import { calculateMAAlignment } from '@/lib/utils/ma-alignment-calculator';
 import { PremiumGate } from '@/components/PremiumGate';
 
@@ -132,8 +132,8 @@ function MAAlignmentDetailContent({
                     </div>
                   </div>
                 </div>
-                <div className="h-[550px] -mx-4">
-                  <MAAlignmentChart history={data.chartData} market={market} />
+                <div className="-mx-4">
+                  <StrategyChartShell symbol={symbol} market={market} strategyId="ma-alignment" height={550} />
                 </div>
               </div>
             </div>

@@ -5,6 +5,7 @@ import { RefreshCw, TrendingUp, AlertCircle, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 import { FibonacciTable } from '@/components/fibonacci/FibonacciTable';
 import { FibonacciLevelBadge } from '@/components/fibonacci/FibonacciLevelBadge';
+import { IndexTable } from '@/components/strategies/IndexTable';
 import { PremiumGate } from '@/components/PremiumGate';
 import type { FibonacciReport, FibonacciLevel } from '@/types/fibonacci';
 
@@ -225,6 +226,9 @@ export default function FibonacciPage() {
             </button>
           </div>
         )}
+
+        {/* 지수 비교 테이블 */}
+        <IndexTable strategyPath="/strategies/fibonacci" accent="indigo" />
 
         {/* 결과 테이블 */}
         {!loading && report && (

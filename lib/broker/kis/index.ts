@@ -249,6 +249,19 @@ export class KISClient implements IBroker {
   }
 
   /**
+   * 해외 외화 예수금 조회 (CTRP6504R)
+   */
+  async getOverseasPresentBalance() {
+    if (!this.isConnected()) {
+      return {
+        success: false as const,
+        error: { code: 'NOT_CONNECTED', message: '연결되지 않았습니다.' },
+      };
+    }
+    return this.account.getOverseasPresentBalance();
+  }
+
+  /**
    * 일봉 종가 이력 조회 (MA 계산용, 원주가 기준)
    */
   async getDailyPriceHistory(

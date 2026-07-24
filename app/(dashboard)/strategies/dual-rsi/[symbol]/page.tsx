@@ -3,7 +3,7 @@
 import { useState, useEffect, use, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, CheckCircle2, XCircle, Activity, Target, Loader2, RefreshCw } from 'lucide-react';
-import { DualRSIChart } from '@/components/strategies/DualRSIChart';
+import { StrategyChartShell } from '@/components/strategies/StrategyChartShell';
 import { calculateDualRSI } from '@/lib/utils/dual-rsi-calculator';
 import { PremiumGate } from '@/components/PremiumGate';
 
@@ -142,8 +142,8 @@ function DualRSIDetailContent({
                     </div>
                   </div>
                 </div>
-                <div className="h-[550px] -mx-4">
-                  <DualRSIChart history={data.chartData} market={market} />
+                <div className="-mx-4">
+                  <StrategyChartShell symbol={symbol} market={market} strategyId="dual-rsi" height={550} />
                 </div>
               </div>
             </div>

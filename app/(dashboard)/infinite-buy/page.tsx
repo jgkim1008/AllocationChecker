@@ -78,6 +78,9 @@ export default function InfiniteBuyPage() {
   // 사이클 번호 (localStorage 저장, 종목별 관리)
   const [currentCycle, setCurrentCycle] = useState<number>(1);
 
+  // 자금 모드 (실제 / 가상) — 종목별 localStorage 저장. UI 라벨링 용도, 계산엔 영향 없음
+  const [fundMode, setFundMode] = useState<'real' | 'virtual'>('virtual');
+
   // 버전 변경 시 분할 횟수 자동 조정
   const handleVersionChange = (v: StrategyVersion) => {
     setVersion(v);
@@ -136,11 +139,13 @@ export default function InfiniteBuyPage() {
     setCapitalInput(minCap.toString());
   }
 
-  // 종목 변경 시 해당 종목의 사이클 번호 불러오기
+  // 종목 변경 시 해당 종목의 사이클 번호 + 자금 모드 불러오기
   useEffect(() => {
     if (!activeSymbol) return;
-    const saved = parseInt(localStorage.getItem(`inf-buy-cycle-${activeSymbol}`) || '1', 10);
-    setCurrentCycle(saved);
+    const savedCycle = parseInt(localStorage.getItem(`inf-buy-cycle-${activeSymbol}`) || '1', 10);
+    setCurrentCycle(savedCycle);
+    const savedMode = localStorage.getItem(`inf-buy-mode-${activeSymbol}`);
+    setFundMode(savedMode === 'real' ? 'real' : 'virtual');
   }, [activeSymbol]);
 
   function handleCycleReset() {
@@ -151,6 +156,20 @@ export default function InfiniteBuyPage() {
       // 강제 페이지 새로고침으로 BuyTracker의 기록도 새 회차로 초기화
       window.location.reload();
     }
+  }
+
+  // 회차 직접 수정 (BuyTracker의 진행상태 편집에서 호출)
+  function handleCycleChange(newCycle: number) {
+    if (!activeSymbol || newCycle < 1) return;
+    setCurrentCycle(newCycle);
+    localStorage.setItem(`inf-buy-cycle-${activeSymbol}`, newCycle.toString());
+  }
+
+  // 자금 모드 변경
+  function handleFundModeChange(mode: 'real' | 'virtual') {
+    if (!activeSymbol) return;
+    setFundMode(mode);
+    localStorage.setItem(`inf-buy-mode-${activeSymbol}`, mode);
   }
 
   function handlePresetClick(sym: string) {
@@ -291,10 +310,39 @@ export default function InfiniteBuyPage() {
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {/* 총 투자금 */}
           <div>
-            <label className="text-xs font-medium text-gray-600 block mb-1">
-              총 투자금 (C)
-              <span className="font-normal text-gray-400 ml-1">— 이번 사이클에 쓸 전체 금액</span>
-            </label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-medium text-gray-600">
+                총 투자금 (C)
+                <span className="font-normal text-gray-400 ml-1">— 이번 사이클에 쓸 전체 금액</span>
+              </label>
+              {/* 자금 모드 토글: 실제 / 가상 */}
+              <div className="inline-flex rounded-md border border-gray-200 overflow-hidden text-[10px] font-bold">
+                <button
+                  type="button"
+                  onClick={() => handleFundModeChange('real')}
+                  className={`px-2 py-0.5 transition-colors ${
+                    fundMode === 'real'
+                      ? 'bg-green-600 text-white'
+                      : 'bg-white text-gray-500 hover:bg-gray-50'
+                  }`}
+                  title="실제 자금 — 증권사 실계좌에 운용 중"
+                >
+                  실제
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleFundModeChange('virtual')}
+                  className={`px-2 py-0.5 transition-colors border-l border-gray-200 ${
+                    fundMode === 'virtual'
+                      ? 'bg-purple-600 text-white'
+                      : 'bg-white text-gray-500 hover:bg-gray-50'
+                  }`}
+                  title="가상자금 — 페이퍼 트레이딩 / 시뮬레이션"
+                >
+                  가상
+                </button>
+              </div>
+            </div>
             <div className="flex gap-1.5">
               <div className="relative flex-1">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">{activeMarket === 'KR' ? '₩' : '$'}</span>
@@ -309,7 +357,11 @@ export default function InfiniteBuyPage() {
                     setCapital(clamped);
                     setCapitalInput(clamped.toString());
                   }}
-                  className="w-full text-sm border border-gray-200 rounded-lg pl-7 pr-3 py-2 bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-green-500"
+                  className={`w-full text-sm border rounded-lg pl-7 pr-3 py-2 bg-white text-gray-900 focus:outline-none focus:ring-2 ${
+                    fundMode === 'real'
+                      ? 'border-green-300 focus:ring-green-500'
+                      : 'border-purple-300 focus:ring-purple-500'
+                  }`}
                 />
               </div>
               <button
@@ -321,6 +373,11 @@ export default function InfiniteBuyPage() {
                 최소
               </button>
             </div>
+            {fundMode === 'virtual' && (
+              <p className="text-[10px] text-purple-600 mt-1 font-medium">
+                💡 가상자금 모드 — 실제 거래와 연동되지 않습니다
+              </p>
+            )}
           </div>
 
           {/* 분할 횟수 */}
@@ -448,6 +505,7 @@ export default function InfiniteBuyPage() {
             activePrice={activePrice}
             currentCycle={currentCycle}
             onCycleReset={handleCycleReset}
+            onCycleChange={handleCycleChange}
             onCapitalChange={(newCapital) => {
               setCapital(newCapital);
               setCapitalInput(newCapital.toString());

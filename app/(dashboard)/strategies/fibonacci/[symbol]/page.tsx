@@ -3,7 +3,7 @@
 import { useState, useEffect, use, useMemo, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, RefreshCw, TrendingUp, TrendingDown, Target, Maximize2, ArrowUpRight, SlidersHorizontal, RotateCcw } from 'lucide-react';
-import { FibonacciChart } from '@/components/fibonacci/FibonacciChart';
+import { StrategyChartShell } from '@/components/strategies/StrategyChartShell';
 import type { PivotPoint, CustomP012, PickStep } from '@/components/fibonacci/FibonacciChart';
 import { FibonacciLevelBadge } from '@/components/fibonacci/FibonacciLevelBadge';
 import { calculateFibonacciPosition, findNearestFibonacciLevel } from '@/lib/utils/fibonacci-calculator';
@@ -360,19 +360,7 @@ export default function FibonacciDetailPage({
                 </div>
               )}
 
-              <FibonacciChart
-                history={data.history}
-                fibLevels={data.fibLevels}
-                yearHigh={data.yearHigh}
-                yearLow={data.yearLow}
-                market={market}
-                showProjection={showProjection}
-                showExtension={showExtension}
-                showExpansion={showExpansion}
-                customP012={hasCustom ? customP012 : null}
-                pickingStep={pickingStep}
-                onPickPoint={handlePickPoint}
-              />
+              <StrategyChartShell symbol={symbol} market={market} strategyId="fibonacci" height={550} />
             </div>
 
             {/* 피보나치 되돌림 섹션 */}

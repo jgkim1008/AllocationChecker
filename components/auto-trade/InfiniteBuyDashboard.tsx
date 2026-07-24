@@ -14,7 +14,17 @@ import {
   Menu,
   AlertTriangle,
   Check,
+  Pencil,
 } from 'lucide-react';
+import { getV22StarPct, getV3StarPct } from '@/components/infinite-buy/StrategyCalc';
+import { TradingGuide } from '@/components/infinite-buy/TradingGuide';
+
+// 전략 버전별 별%(목표 익절률) 계산 — 정식 공식 (StrategyCalc.tsx)
+function computeStarPct(strategyVersion: string, symbol: string, t: number, divisions: number): number {
+  const v = strategyVersion.toLowerCase();
+  if (v === 'v3.0' || v === 'v4.0') return getV3StarPct(symbol, t);
+  return getV22StarPct(symbol, t, divisions);
+}
 
 type StrategyVersion = 'v2.2' | 'v3.0' | 'v4.0';
 type BrokerType = 'kis' | 'kiwoom';
@@ -27,6 +37,7 @@ interface Portfolio {
   strategy_version: string;
   total_capital: number;
   is_enabled: boolean;
+  trade_mode?: 'real' | 'virtual';  // DB 저장: 실제/가상 자금 모드
   currentPrice?: number;
   change?: number;
   changeRate?: number;
@@ -40,6 +51,8 @@ interface Portfolio {
   starPct?: number;
   targetPrice?: number;
   cycle?: number;
+  divisionsUsed?: number;  // 자동 계산: 현재 회차의 매수 기록 수 (BuyTracker와 동일 소스)
+  smart_skip_loc?: boolean;  // 스마트 스킵: 일일 체결 수 달성 시 LOC 주문 생략
 }
 
 interface PendingOrder {
@@ -75,6 +88,12 @@ interface InfiniteBuyDashboardProps {
   onNavigateToManual?: () => void;
 }
 
+interface SavedAccount {
+  id: string;
+  brokerType: BrokerType;
+  accountAlias: string;
+}
+
 export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboardProps) {
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
   const [pendingOrders, setPendingOrders] = useState<PendingOrder[]>([]);
@@ -86,6 +105,278 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
   const [filterTab, setFilterTab] = useState<'all' | 'profit' | 'loss'>('all');
   const [activePreset, setActivePreset] = useState<'laor' | 'v4' | 'real'>('laor');
+  const [savedAccounts, setSavedAccounts] = useState<SavedAccount[]>([]);
+
+  // 저장된 계좌 목록 로드
+  useEffect(() => {
+    fetch('/api/broker/credentials')
+      .then(r => r.json())
+      .then(data => {
+        if (data.success && data.data) {
+          setSavedAccounts(data.data.map((c: { id: string; brokerType?: string; broker_type?: string; accountAlias?: string; account_alias?: string }) => ({
+            id: c.id,
+            brokerType: (c.brokerType ?? c.broker_type) as BrokerType,
+            accountAlias: c.accountAlias ?? c.account_alias ?? 'default',
+          })));
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  // 계좌 변경: DB 업데이트 후 portfolios 리로드
+  const handleCredentialChange = async (portfolioSymbol: string, credentialId: string) => {
+    const p = portfolios.find(x => x.symbol === portfolioSymbol);
+    if (!p) return;
+    const acc = savedAccounts.find(a => a.id === credentialId);
+    setActionLoading(`cred-${portfolioSymbol}`);
+    try {
+      const res = await fetch('/api/auto-trade/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          symbol: p.symbol,
+          broker_type: acc?.brokerType ?? p.broker_type,
+          broker_credential_id: credentialId,
+          strategy_version: p.strategy_version,
+          total_capital: p.total_capital,
+          is_enabled: p.is_enabled,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) await loadPortfolios(true);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // trade_mode는 DB에서 로드 (selectedPortfolio.trade_mode 직접 참조)
+  // 모드 변경: DB 업데이트 후 portfolios 리로드
+  const handleTradeModeChange = async (mode: 'real' | 'virtual') => {
+    const p = portfolios.find(x => x.symbol === selectedSymbol);
+    if (!p) return;
+    setActionLoading(`mode-${p.symbol}`);
+    try {
+      const res = await fetch('/api/auto-trade/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          symbol: p.symbol,
+          broker_type: p.broker_type,
+          broker_credential_id: p.broker_credential_id,
+          strategy_version: p.strategy_version,
+          total_capital: p.total_capital,
+          is_enabled: p.is_enabled,
+          trade_mode: mode,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        await loadPortfolios(true);
+      } else {
+        alert(data.error || '모드 변경 실패');
+      }
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // 원금(total_capital) 인라인 편집 state
+  const [editingCapital, setEditingCapital] = useState(false);
+  const [capitalEditValue, setCapitalEditValue] = useState('');
+  const [savingCapital, setSavingCapital] = useState(false);
+
+  // 진행 상태(divisionsUsed) 수동 오버라이드 — BuyTracker와 동일 localStorage 키 공유
+  const [divisionsOverride, setDivisionsOverride] = useState<number | null>(null);
+  const [editingDivisions, setEditingDivisions] = useState(false);
+  const [divisionsEditValue, setDivisionsEditValue] = useState('');
+
+  // 선택된 포트폴리오의 cycle 기준으로 오버라이드 로드
+  useEffect(() => {
+    if (!selectedSymbol || typeof window === 'undefined') {
+      setDivisionsOverride(null);
+      return;
+    }
+    const p = portfolios.find(x => x.symbol === selectedSymbol);
+    if (!p) {
+      setDivisionsOverride(null);
+      return;
+    }
+    const key = `inf-buy-divisions-${selectedSymbol.toUpperCase()}-${p.cycle ?? 1}`;
+    const saved = localStorage.getItem(key);
+    setDivisionsOverride(saved !== null ? parseInt(saved, 10) : null);
+  }, [selectedSymbol, portfolios]);
+
+  function saveDivisionsOverride(value: number | null) {
+    if (!selectedSymbol || typeof window === 'undefined') return;
+    const p = portfolios.find(x => x.symbol === selectedSymbol);
+    if (!p) return;
+    const key = `inf-buy-divisions-${selectedSymbol.toUpperCase()}-${p.cycle ?? 1}`;
+    if (value === null) localStorage.removeItem(key);
+    else localStorage.setItem(key, String(value));
+    setDivisionsOverride(value);
+  }
+
+  // 실제 모드: 브로커 잔액 (싱크한 계좌의 totalAsset)
+  const [brokerBalance, setBrokerBalance] = useState<number | null>(null);
+  const [balanceSource, setBalanceSource] = useState<'positions' | 'records' | 'none'>('none');
+  const [loadingBalance, setLoadingBalance] = useState(false);
+  const [balanceError, setBalanceError] = useState<string | null>(null);
+  // 브로커 포지션: 실제 모드에서 avgPrice·quantity 기반 T값/진행상태 계산용
+  const [brokerPosition, setBrokerPosition] = useState<{ quantity: number; avgPrice: number } | null>(null);
+  // USD → KRW 환율 (KIS 응답의 frst_bltn_exrt). 0이면 미표시
+  const [exchangeRate, setExchangeRate] = useState<number>(0);
+  // 예산 현황 표시 통화 (해외 포트폴리오용 토글)
+  const [displayCurrency, setDisplayCurrency] = useState<'USD' | 'KRW'>('USD');
+
+  // 실제 모드일 때 브로커 잔액 fetch
+  // - includeOverseas=true로 국내·해외 통합 조회
+  // - 종목 시장(KR/US)에 맞는 쪽의 totalAsset만 사용
+  // - broker_credential_id 없으면 broker_type로 fallback
+  const loadBrokerBalance = useCallback(async (portfolio: Portfolio | null | undefined, silent = false) => {
+    if (!portfolio) {
+      setBrokerBalance(null);
+      setBrokerPosition(null);
+      setBalanceError('포트폴리오 정보 없음');
+      return;
+    }
+    if (!silent) setLoadingBalance(true);
+    setBalanceError(null);
+    try {
+      const params = new URLSearchParams();
+      if (portfolio.broker_credential_id) {
+        params.set('credentialId', portfolio.broker_credential_id);
+      } else if (portfolio.broker_type) {
+        params.set('brokerType', portfolio.broker_type);
+      } else {
+        setBalanceError('계좌 연결 정보 없음 — 자동매매 > 계좌 연결에서 등록해주세요');
+        setBrokerBalance(null);
+        setBrokerPosition(null);
+        return;
+      }
+      // 국내·해외 통합 조회 (KIS만 해당, 키움은 단일 응답)
+      params.set('includeOverseas', 'true');
+      const res = await fetch(`/api/broker/balance?${params.toString()}`);
+      const data = await res.json();
+      console.log('[dashboard] balance API 응답:', {
+        success: data.success,
+        exchangeRate: data.exchangeRate,
+        hasOverseas: !!data.data?.overseas,
+        overseasTotalAsset: data.data?.overseas?.balance?.totalAsset,
+        error: data.error,
+      });
+      if (data.exchangeRate && data.exchangeRate > 0) {
+        setExchangeRate(data.exchangeRate);
+      }
+      if (!data.success) {
+        setBalanceError(data.error || '잔액 조회 실패');
+        setBrokerBalance(null);
+        setBalanceSource('none');
+        return;
+      }
+      const isOverseasPortfolio = !/^\d{6}$/.test(portfolio.symbol);
+      // includeOverseas 응답 → { domestic: {...}, overseas: {...} }
+      const overseas = data.data?.overseas?.balance;
+      const domestic = data.data?.domestic?.balance;
+      const single = data.data?.balance;
+      const targetBalance = isOverseasPortfolio
+        ? (overseas ?? single)
+        : (domestic ?? single);
+      const positionAsset = targetBalance?.totalAsset ?? 0;
+
+      // 종목별 포지션 데이터 추출 (avgPrice × quantity → T값·진행상태 자동 계산용)
+      const allPositions: Array<{ symbol: string; quantity: number; avgPrice: number }> =
+        isOverseasPortfolio
+          ? (data.data?.overseas?.positions ?? [])
+          : (data.data?.domestic?.positions ?? []);
+      const matchedPos = allPositions.find(
+        pos => pos.symbol.toUpperCase() === portfolio.symbol.toUpperCase()
+      );
+      setBrokerPosition(matchedPos
+        ? { quantity: matchedPos.quantity, avgPrice: matchedPos.avgPrice }
+        : null
+      );
+
+      // KIS 해외 잔고 API는 USD 예수금을 별도 endpoint로만 조회 가능 →
+      // 평가금이 0이면 누적 매수금(records 기반)을 fallback으로 표시
+      if (positionAsset > 0) {
+        setBrokerBalance(positionAsset);
+        setBalanceSource('positions');
+      } else if (portfolio.invested && portfolio.invested > 0) {
+        setBrokerBalance(portfolio.invested);
+        setBalanceSource('records');
+      } else {
+        setBrokerBalance(0);
+        setBalanceSource('none');
+      }
+    } catch {
+      setBalanceError('잔액 조회 중 오류');
+      setBrokerBalance(null);
+      setBrokerPosition(null);
+    } finally {
+      if (!silent) setLoadingBalance(false);
+    }
+  }, []);
+
+  // 상세 뷰 진입 시 잔액 로드 — 환율(exchangeRate) 정보를 받기 위해 가상 모드에서도 silent 호출
+  // 실제 모드일 때만 brokerBalance를 화면에 반영, 가상 모드는 환율만 활용
+  const selectedPortfolioForBalance = selectedSymbol ? portfolios.find(p => p.symbol === selectedSymbol) : null;
+  useEffect(() => {
+    if (!selectedPortfolioForBalance) {
+      setBrokerBalance(null);
+      setBrokerPosition(null);
+      setBalanceError(null);
+      return;
+    }
+    const tradeMode = selectedPortfolioForBalance.trade_mode ?? 'virtual';
+    if (tradeMode === 'real') {
+      // 실제 모드: 표시용 + 30초 폴링
+      loadBrokerBalance(selectedPortfolioForBalance, false);
+      const interval = setInterval(() => loadBrokerBalance(selectedPortfolioForBalance, true), 30000);
+      return () => clearInterval(interval);
+    } else {
+      // 가상 모드: 환율 표시용으로만 1회 silent fetch (포지션 데이터 불필요)
+      setBrokerBalance(null);
+      setBrokerPosition(null);
+      setBalanceError(null);
+      loadBrokerBalance(selectedPortfolioForBalance, true);
+    }
+  }, [selectedPortfolioForBalance, loadBrokerBalance]);
+
+  // 원금 저장 — DB(auto_trade_settings)에 반영
+  async function handleSaveCapital(portfolio: Portfolio) {
+    const newCapital = parseFloat(capitalEditValue);
+    if (isNaN(newCapital) || newCapital <= 0) {
+      alert('유효한 금액을 입력하세요.');
+      return;
+    }
+    setSavingCapital(true);
+    try {
+      const res = await fetch('/api/auto-trade/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          symbol: portfolio.symbol,
+          broker_type: portfolio.broker_type,
+          broker_credential_id: portfolio.broker_credential_id,
+          strategy_version: portfolio.strategy_version,
+          total_capital: newCapital,
+          is_enabled: portfolio.is_enabled,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setEditingCapital(false);
+        await loadPortfolios(true);
+      } else {
+        alert(data.error || '저장 실패');
+      }
+    } catch (err) {
+      console.error('원금 저장 오류:', err);
+      alert('저장 중 오류가 발생했습니다.');
+    } finally {
+      setSavingCapital(false);
+    }
+  }
   const [summary, setSummary] = useState<DashboardSummary>({
     totalEval: 0,
     totalInvested: 0,
@@ -132,19 +423,26 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
 
           let shares = 0;
           let invested = 0;
+          let divisionsUsed = 0;
 
           try {
-            const recordsRes = await fetch(`/api/infinite-buy/records?symbol=${s.symbol}`);
-            const recordsData = await recordsRes.json();
-            const buyRecords = (recordsData.buyRecords ?? []).filter((r: any) => r.cycle === cycle);
-            const sellRecords = (recordsData.sellRecords ?? []).filter((r: any) => r.cycle === cycle);
+            // 매수·매도 기록을 cycle_number로 서버 필터링하여 병렬 조회
+            const [buyRes, sellRes] = await Promise.all([
+              fetch(`/api/infinite-buy/records?symbol=${s.symbol}&cycle_number=${cycle}`),
+              fetch(`/api/infinite-buy/sell-records?symbol=${s.symbol}&cycle_number=${cycle}`),
+            ]);
+            const buyJson = await buyRes.json();
+            const sellJson = await sellRes.json();
+            const buyRecords: Array<{ shares?: number; amount?: number }> = Array.isArray(buyJson) ? buyJson : [];
+            const sellRecords: Array<{ shares?: number }> = Array.isArray(sellJson) ? sellJson : [];
 
-            const totalBuyShares = buyRecords.reduce((sum: number, r: any) => sum + (r.shares || 0), 0);
-            const totalBuyInvested = buyRecords.reduce((sum: number, r: any) => sum + (r.amount || 0), 0);
-            const totalSoldShares = sellRecords.reduce((sum: number, r: any) => sum + (r.shares || 0), 0);
+            const totalBuyShares = buyRecords.reduce((sum, r) => sum + (r.shares || 0), 0);
+            const totalBuyInvested = buyRecords.reduce((sum, r) => sum + (r.amount || 0), 0);
+            const totalSoldShares = sellRecords.reduce((sum, r) => sum + (r.shares || 0), 0);
 
             shares = Math.max(0, totalBuyShares - totalSoldShares);
             invested = totalBuyInvested;
+            divisionsUsed = buyRecords.length;  // BuyTracker와 동일 소스 (현재 회차 매수 기록 수)
           } catch {}
 
           const avgCost = shares > 0 ? invested / shares : 0;
@@ -152,12 +450,14 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
           const pnl = evalAmount - invested;
           const pnlRate = invested > 0 ? (pnl / invested) * 100 : 0;
 
-          const divisions = s.strategy_version.toLowerCase() === 'v3.0' ? 20 : 40;
+          // V3.0/V4.0: 20분할 · V2.2: 40분할
+          const versionLower = s.strategy_version.toLowerCase();
+          const divisions = (versionLower === 'v3.0' || versionLower === 'v4.0') ? 20 : 40;
           const unitBuy = s.total_capital / divisions;
           const currentT = invested > 0 ? Math.ceil((invested / unitBuy) * 100) / 100 : 0;
 
-          const baseStarPct = s.symbol.toUpperCase() === 'SOXL' ? 20 : 15;
-          const starPct = currentT > 0 ? baseStarPct + currentT : baseStarPct;
+          // 별%(목표 익절률) — 전략 버전별 정식 공식
+          const starPct = computeStarPct(s.strategy_version, s.symbol, currentT, divisions);
           const targetPrice = avgCost > 0 ? avgCost * (1 + starPct / 100) : 0;
 
           return {
@@ -175,6 +475,7 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
             starPct,
             targetPrice,
             cycle,
+            divisionsUsed,
           };
         })
       );
@@ -266,6 +567,36 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
   useEffect(() => {
     loadPortfolios();
   }, [loadPortfolios]);
+
+  // 스마트 스킵 토글
+  const handleToggleSmartSkip = async (portfolio: Portfolio) => {
+    setActionLoading(`smart-${portfolio.symbol}`);
+    try {
+      const res = await fetch('/api/auto-trade/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          symbol: portfolio.symbol,
+          broker_type: portfolio.broker_type,
+          broker_credential_id: portfolio.broker_credential_id,
+          strategy_version: portfolio.strategy_version,
+          total_capital: portfolio.total_capital,
+          is_enabled: portfolio.is_enabled,
+          smart_skip_loc: !portfolio.smart_skip_loc,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        await loadPortfolios(true);
+      } else {
+        alert(data.error || '설정 변경 실패');
+      }
+    } catch {
+      alert('Smart Skip 토글 중 오류가 발생했습니다.');
+    } finally {
+      setActionLoading(null);
+    }
+  };
 
   // Toggle pause/resume
   const handleTogglePause = async (portfolio: Portfolio) => {
@@ -390,14 +721,58 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
   if (selectedPortfolio) {
     const p = selectedPortfolio;
     const isOverseas = !/^\d{6}$/.test(p.symbol);
-    const divisions = p.strategy_version.toLowerCase() === 'v3.0' ? 20 : 40;
-    const unitBuy = p.total_capital / divisions;
-    const remainingCapital = p.total_capital - (p.invested ?? 0);
-    const investedPct = p.total_capital > 0 ? ((p.invested ?? 0) / p.total_capital * 100) : 0;
-    const remainingPct = 100 - investedPct;
-    const evalPct = p.total_capital > 0 ? ((p.evalAmount ?? 0) / p.total_capital * 100) : 0;
+    // DB에서 로드된 trade_mode 사용 (undefined면 'virtual' 기본값)
+    const detailFundMode = p.trade_mode ?? 'virtual';
 
-    const t = p.currentT ?? 0;
+    // 통화 토글에 따른 포맷터 (해외는 KRW 변환 항상 가능, 환율 정보 없으면 1500 fallback)
+    const FALLBACK_RATE = 1500;
+    const effectiveRate = exchangeRate > 0 ? exchangeRate : FALLBACK_RATE;
+    const isFallbackRate = exchangeRate <= 0;
+    const fmtCurrency = (usdAmount: number): string => {
+      if (!isOverseas) return formatMoney(usdAmount, p.symbol);
+      if (displayCurrency === 'KRW') {
+        return `₩${Math.round(usdAmount * effectiveRate).toLocaleString('ko-KR')}`;
+      }
+      return `$${usdAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    };
+    const fmtSub = (usdAmount: number): string => {
+      if (!isOverseas) return '';
+      if (displayCurrency === 'KRW') {
+        return `≈ $${usdAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      }
+      return `≈ ₩${Math.round(usdAmount * effectiveRate).toLocaleString('ko-KR')}`;
+    };
+    // V3.0/V4.0: 20분할 · V2.2: 40분할
+    const detailVersionLower = p.strategy_version.toLowerCase();
+    const divisions = (detailVersionLower === 'v3.0' || detailVersionLower === 'v4.0') ? 20 : 40;
+    const unitBuy = p.total_capital / divisions;
+
+    // 실제 모드 + 브로커 포지션 있으면 브로커 avgPrice × quantity 기반으로 자동 계산
+    // 가상 모드 또는 브로커 포지션 없으면 records 기반 값 사용
+    const useBrokerData = detailFundMode === 'real' && brokerPosition != null;
+    const effectiveShares  = useBrokerData ? brokerPosition!.quantity                        : (p.shares ?? 0);
+    const effectiveAvgCost = useBrokerData ? brokerPosition!.avgPrice                        : (p.avgCost ?? 0);
+    const effectiveInvested = useBrokerData
+      ? brokerPosition!.quantity * brokerPosition!.avgPrice
+      : (p.invested ?? 0);
+    const effectiveT = unitBuy > 0 && effectiveInvested > 0
+      ? Math.ceil((effectiveInvested / unitBuy) * 100) / 100
+      : (p.currentT ?? 0);
+    const effectiveDivisionsUsed = effectiveInvested > 0
+      ? Math.round(effectiveInvested / unitBuy)
+      : (p.divisionsUsed ?? 0);
+    const effectiveStarPct    = computeStarPct(p.strategy_version, p.symbol, effectiveT, divisions);
+    const effectiveTargetPrice = effectiveAvgCost > 0 ? effectiveAvgCost * (1 + effectiveStarPct / 100) : 0;
+    const effectiveEvalAmount  = (p.currentPrice ?? 0) * effectiveShares;
+    const effectivePnl         = effectiveEvalAmount - effectiveInvested;
+    const effectivePnlRate     = effectiveInvested > 0 ? (effectivePnl / effectiveInvested) * 100 : 0;
+
+    const remainingCapital = p.total_capital - effectiveInvested;
+    const investedPct = p.total_capital > 0 ? (effectiveInvested / p.total_capital * 100) : 0;
+    const remainingPct = 100 - investedPct;
+    const evalPct = p.total_capital > 0 ? (effectiveEvalAmount / p.total_capital * 100) : 0;
+
+    const t = effectiveT;
     const tPct = divisions > 0 ? (t / divisions) * 100 : 0;
     let nextStep = '초기 매수';
     let nextStepDesc = '발자점 + 평단 LOC';
@@ -418,7 +793,7 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
     return (
       <div className="space-y-3">
         {/* 헤더 */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <button
             onClick={() => setSelectedSymbol(null)}
             className="flex items-center gap-1.5 text-slate-600 hover:text-black transition-colors"
@@ -426,7 +801,7 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
             <ChevronLeft className="h-5 w-5" />
             <span className="text-sm">목록</span>
           </button>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="font-bold text-xl">{p.symbol}</span>
             <span className="text-sm text-slate-500">{p.symbol} · {isOverseas ? 'AMEX' : 'KRX'} · {p.strategy_version}</span>
             {!p.is_enabled && (
@@ -434,11 +809,66 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
                 일시정지 중
               </span>
             )}
+            {/* 실제/가상 자금 모드 토글 (DB 저장) */}
+            <span className="inline-flex rounded-md border border-gray-200 overflow-hidden text-[10px] font-bold ml-1">
+              <button
+                type="button"
+                onClick={() => handleTradeModeChange('real')}
+                disabled={actionLoading === `mode-${p.symbol}`}
+                className={`px-2 py-0.5 transition-colors disabled:opacity-50 ${
+                  detailFundMode === 'real'
+                    ? 'bg-green-600 text-white'
+                    : 'bg-white text-gray-500 hover:bg-gray-50'
+                }`}
+                title="실제 자금 — 실계좌 잔액 표시"
+              >
+                실제
+              </button>
+              <button
+                type="button"
+                onClick={() => handleTradeModeChange('virtual')}
+                disabled={actionLoading === `mode-${p.symbol}`}
+                className={`px-2 py-0.5 transition-colors border-l border-gray-200 disabled:opacity-50 ${
+                  detailFundMode === 'virtual'
+                    ? 'bg-purple-600 text-white'
+                    : 'bg-white text-gray-500 hover:bg-gray-50'
+                }`}
+                title="가상자금 — 수동 설정 원금 기준"
+              >
+                가상
+              </button>
+            </span>
+            {/* 계좌 선택 */}
+            {savedAccounts.length > 0 && (
+              <select
+                value={p.broker_credential_id ?? ''}
+                onChange={e => handleCredentialChange(p.symbol, e.target.value)}
+                className="text-[10px] px-2 py-0.5 rounded-md border border-gray-200 bg-white text-slate-600 font-medium cursor-pointer hover:border-gray-400 transition-colors ml-1"
+                title="자동매매에 사용할 계좌"
+              >
+                {!p.broker_credential_id && (
+                  <option value="">계좌 미설정</option>
+                )}
+                {savedAccounts.map(acc => (
+                  <option key={acc.id} value={acc.id}>
+                    {acc.brokerType === 'kis' ? '한투' : '키움'} {acc.accountAlias === 'default' ? '기본' : acc.accountAlias}
+                  </option>
+                ))}
+              </select>
+            )}
+            {actionLoading === `cred-${p.symbol}` && (
+              <Loader2 className="h-3 w-3 animate-spin text-slate-400" />
+            )}
           </div>
         </div>
+        {detailFundMode === 'virtual' && (
+          <p className="text-[11px] text-purple-600 font-medium px-1">
+            💡 가상자금 모드 — 다른 화면(트래커·전략계산기)과 동기화됩니다
+          </p>
+        )}
 
         {/* 액션 버튼 */}
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           <button
             onClick={() => handleTogglePause(p)}
             disabled={actionLoading === `pause-${p.symbol}`}
@@ -457,6 +887,25 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
             )}
             {p.is_enabled ? '일시정지' : '재개'}
           </button>
+          {/* Smart Skip 토글: 오늘 체결 수 >= 일일 예상 주문 수면 LOC 생략 */}
+          <button
+            onClick={() => handleToggleSmartSkip(p)}
+            disabled={actionLoading === `smart-${p.symbol}`}
+            className={`flex items-center gap-1.5 px-3 py-2 text-sm border-2 rounded-lg transition-colors disabled:opacity-50 font-bold ${
+              p.smart_skip_loc
+                ? 'bg-black text-white border-black hover:bg-gray-800'
+                : 'bg-white text-black border-black hover:bg-gray-50'
+            }`}
+            title={p.smart_skip_loc
+              ? '활성: 오늘 체결 수 >= 일일 예상이면 LOC 주문 생략'
+              : '비활성: 항상 LOC 주문 제출 (전반전 2건 · 후반전 1건)'}
+          >
+            {actionLoading === `smart-${p.symbol}` ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <span className="text-xs">{p.smart_skip_loc ? '✓ ' : ''}Smart Skip</span>
+            )}
+          </button>
           <button
             onClick={() => handleDelete(p.symbol)}
             disabled={actionLoading === `delete-${p.symbol}`}
@@ -471,7 +920,7 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
           </button>
           <button
             onClick={() => handleLiquidate(p)}
-            disabled={actionLoading === `liquidate-${p.symbol}` || (p.shares ?? 0) <= 0}
+            disabled={actionLoading === `liquidate-${p.symbol}` || effectiveShares <= 0}
             className="flex items-center gap-1.5 px-3 py-2 text-sm text-red-500 bg-white border border-red-200 rounded-lg hover:bg-red-50 transition-colors disabled:opacity-50"
           >
             {actionLoading === `liquidate-${p.symbol}` ? (
@@ -497,19 +946,126 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
 
           <div className="grid grid-cols-3 gap-4 mt-6 pt-4 border-t border-gray-100">
             <div>
-              <div className="text-xs text-slate-600 font-medium mb-1">평단가</div>
-              <div className="text-sm font-bold text-black">{formatPrice(p.avgCost ?? 0, p.symbol)}</div>
+              <div className="text-xs text-slate-600 font-medium mb-1 flex items-center gap-1">
+                평단가
+                {useBrokerData && <span className="text-[9px] text-green-600 font-bold bg-green-50 px-1 rounded">계좌</span>}
+              </div>
+              <div className="text-sm font-bold text-black">{formatPrice(effectiveAvgCost, p.symbol)}</div>
             </div>
             <div>
-              <div className="text-xs text-slate-600 font-medium mb-1">익절 (+{(p.starPct ?? 0).toFixed(0)}%)</div>
-              <div className="text-sm font-bold text-red-500">{formatPrice(p.targetPrice ?? 0, p.symbol)}</div>
+              <div className="text-xs text-slate-600 font-medium mb-1">익절 (+{effectiveStarPct.toFixed(0)}%)</div>
+              <div className="text-sm font-bold text-red-500">{formatPrice(effectiveTargetPrice, p.symbol)}</div>
             </div>
             <div>
-              <div className="text-xs text-slate-600 font-medium mb-1">보유 수량</div>
-              <div className="text-sm font-bold text-black">{(p.shares ?? 0).toLocaleString()} 주</div>
+              <div className="text-xs text-slate-600 font-medium mb-1 flex items-center gap-1">
+                보유 수량
+                {useBrokerData && <span className="text-[9px] text-green-600 font-bold bg-green-50 px-1 rounded">계좌</span>}
+              </div>
+              <div className="text-sm font-bold text-black">{effectiveShares.toLocaleString()} 주</div>
             </div>
           </div>
         </div>
+
+        {/* 진행 상태 */}
+        {(() => {
+          // 실제 모드: 브로커 avgPrice × quantity → T 기반으로 자동 계산
+          // 가상 모드: records 기반 divisionsUsed
+          const autoDivisions = effectiveDivisionsUsed;
+          const effectiveDivisions = divisionsOverride !== null ? divisionsOverride : autoDivisions;
+          const progressPct = Math.min((effectiveDivisions / divisions) * 100, 100);
+          return (
+            <div className="bg-white rounded-xl border border-gray-200 p-5">
+              <div className="flex items-center justify-between mb-3">
+                <span className="font-medium text-black">진행 상태</span>
+                {!editingDivisions ? (
+                  <div className="flex items-center gap-1">
+                    {divisionsOverride !== null && (
+                      <button
+                        onClick={() => saveDivisionsOverride(null)}
+                        className="text-[10px] text-slate-400 hover:text-slate-700 px-1.5 py-0.5 rounded hover:bg-slate-100"
+                        title="자동(매수 기록 수)으로 복귀"
+                      >
+                        자동
+                      </button>
+                    )}
+                    <button
+                      onClick={() => {
+                        setDivisionsEditValue(String(effectiveDivisions));
+                        setEditingDivisions(true);
+                      }}
+                      className="text-slate-400 hover:text-slate-700"
+                      title="진행 회차 수동 조정"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => {
+                        const v = parseInt(divisionsEditValue, 10);
+                        if (!isNaN(v) && v >= 0 && v <= 999) {
+                          saveDivisionsOverride(v);
+                          setEditingDivisions(false);
+                        }
+                      }}
+                      className="text-green-600 hover:text-green-700"
+                      title="저장"
+                    >
+                      <Check className="h-4 w-4" />
+                    </button>
+                    <button
+                      onClick={() => setEditingDivisions(false)}
+                      className="text-slate-400 hover:text-slate-600"
+                      title="취소"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                )}
+              </div>
+              {editingDivisions ? (
+                <div className="flex items-baseline gap-1 mb-2">
+                  <input
+                    type="number"
+                    min={0}
+                    max={999}
+                    value={divisionsEditValue}
+                    onChange={(e) => setDivisionsEditValue(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        const v = parseInt(divisionsEditValue, 10);
+                        if (!isNaN(v) && v >= 0 && v <= 999) {
+                          saveDivisionsOverride(v);
+                          setEditingDivisions(false);
+                        }
+                      } else if (e.key === 'Escape') {
+                        setEditingDivisions(false);
+                      }
+                    }}
+                    autoFocus
+                    className="w-20 text-2xl font-bold text-black border border-gray-300 rounded px-2 py-0.5 focus:outline-none focus:ring-2 focus:ring-green-500"
+                  />
+                  <span className="text-base font-normal text-slate-400">/ {divisions}회</span>
+                </div>
+              ) : (
+                <p className="text-2xl font-bold text-black mb-2">
+                  {effectiveDivisions} <span className="text-base font-normal text-slate-400">/ {divisions}회</span>
+                  {divisionsOverride !== null && (
+                    <span className="ml-2 text-[10px] font-medium text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded align-middle">수동</span>
+                  )}
+                </p>
+              )}
+              <div className="w-full bg-gray-100 rounded-full h-2">
+                <div
+                  className="bg-green-500 h-2 rounded-full transition-all"
+                  style={{ width: `${progressPct}%` }}
+                />
+              </div>
+              <p className="text-xs text-slate-500 mt-1">{progressPct.toFixed(0)}% 소진</p>
+            </div>
+          );
+        })()}
 
         {/* V4.0 사이클 상태 */}
         <div className="bg-white rounded-xl border border-gray-200 p-5">
@@ -547,23 +1103,162 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
         {/* 예산 현황 */}
         <div className="bg-white rounded-xl border border-gray-200 p-5">
           <div className="flex items-center justify-between mb-5">
-            <span className="font-medium text-black">예산 현황</span>
+            <div className="flex items-center gap-2">
+              <span className="font-medium text-black">예산 현황</span>
+              {/* 해외 포트폴리오면 항상 토글 노출 (환율 없으면 KRW 비활성화) */}
+              {isOverseas && (
+                <span className="inline-flex rounded-md border-2 border-black overflow-hidden text-xs font-black shadow-sm">
+                  <button
+                    type="button"
+                    onClick={() => setDisplayCurrency('USD')}
+                    className={`px-3 py-1 transition-colors ${
+                      displayCurrency === 'USD'
+                        ? 'bg-black text-white'
+                        : 'bg-white text-black hover:bg-gray-100'
+                    }`}
+                    title="USD 기준 표시"
+                  >
+                    USD
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDisplayCurrency('KRW')}
+                    className={`px-3 py-1 transition-colors border-l-2 border-black ${
+                      displayCurrency === 'KRW'
+                        ? 'bg-black text-white'
+                        : 'bg-white text-black hover:bg-gray-100'
+                    }`}
+                    title={exchangeRate > 0 ? '원화 환산 기준 표시' : '환율 정보 없음 — 1,500원 가정으로 환산'}
+                  >
+                    KRW{exchangeRate <= 0 ? '*' : ''}
+                  </button>
+                </span>
+              )}
+            </div>
             <span className="text-xs text-slate-700 font-medium">투입률 {investedPct.toFixed(1)}%</span>
           </div>
 
           <div className="grid grid-cols-2 gap-x-8 gap-y-5">
             <div>
-              <div className="text-xs text-slate-600 font-medium mb-1">원금</div>
-              <div className="font-bold text-black">{formatMoney(p.total_capital, p.symbol)}</div>
+              <div className="flex items-center justify-between mb-1">
+                <div className="text-xs text-slate-600 font-medium flex items-center gap-1.5">
+                  원금
+                  {detailFundMode === 'real' && (
+                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
+                      balanceSource === 'positions' ? 'bg-green-100 text-green-700'
+                        : balanceSource === 'records'   ? 'bg-amber-100 text-amber-700'
+                        : 'bg-gray-100 text-gray-600'
+                    }`}>
+                      {balanceSource === 'positions' ? '계좌 평가금'
+                        : balanceSource === 'records'   ? '누적 매수금'
+                        : '데이터 없음'}
+                    </span>
+                  )}
+                </div>
+                {/* 실제 모드: 새로고침 버튼 / 가상 모드: 편집 컨트롤 */}
+                {detailFundMode === 'real' ? (
+                  <button
+                    onClick={() => loadBrokerBalance(p, false)}
+                    disabled={loadingBalance}
+                    className="text-slate-400 hover:text-slate-700 transition-colors disabled:opacity-40"
+                    title="브로커 잔액 새로고침"
+                  >
+                    <RefreshCw className={`h-3 w-3 ${loadingBalance ? 'animate-spin' : ''}`} />
+                  </button>
+                ) : !editingCapital ? (
+                  <button
+                    onClick={() => {
+                      setCapitalEditValue(String(p.total_capital));
+                      setEditingCapital(true);
+                    }}
+                    className="text-slate-400 hover:text-slate-700 transition-colors"
+                    title="가상 원금 변경"
+                  >
+                    <Pencil className="h-3 w-3" />
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => handleSaveCapital(p)}
+                      disabled={savingCapital}
+                      className="text-green-600 hover:text-green-700 disabled:opacity-40"
+                      title="저장 (DB 반영)"
+                    >
+                      <Check className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      onClick={() => setEditingCapital(false)}
+                      className="text-slate-400 hover:text-slate-600"
+                      title="취소"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                )}
+              </div>
+              {detailFundMode === 'real' ? (
+                <>
+                  {/* 메인: 항상 설정 원금 (total_capital) — 잔여·투입률과 일관 유지 */}
+                  <div className="font-bold text-black">{fmtCurrency(p.total_capital)}</div>
+                  {fmtSub(p.total_capital) && (
+                    <div className="text-[10px] text-slate-400 mt-0.5">{fmtSub(p.total_capital)}</div>
+                  )}
+                  {/* 서브: 실제 계좌 평가금 (참고용) */}
+                  {balanceError ? (
+                    <div className="text-[10px] text-red-500 mt-1">{balanceError}</div>
+                  ) : brokerBalance != null && brokerBalance > 0 ? (
+                    <div className="text-[10px] text-slate-500 mt-1">
+                      {balanceSource === 'positions' && (
+                        <>📊 실제 계좌 평가금: <span className="font-bold text-green-600">{fmtCurrency(brokerBalance)}</span></>
+                      )}
+                      {balanceSource === 'records' && (
+                        <>📊 누적 매수금: <span className="font-bold text-amber-600">{fmtCurrency(brokerBalance)}</span> <span className="text-amber-500">(KIS 평가금 0)</span></>
+                      )}
+                    </div>
+                  ) : loadingBalance ? (
+                    <div className="text-[10px] text-slate-400 mt-1">실제 잔액 조회 중...</div>
+                  ) : null}
+                </>
+              ) : editingCapital ? (
+                <input
+                  type="number"
+                  value={capitalEditValue}
+                  onChange={(e) => setCapitalEditValue(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleSaveCapital(p);
+                    else if (e.key === 'Escape') setEditingCapital(false);
+                  }}
+                  autoFocus
+                  min={0}
+                  step="any"
+                  className="w-full font-bold text-black bg-white border rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 border-purple-300 focus:ring-purple-500"
+                />
+              ) : (
+                <>
+                  <div className="font-bold text-black">{fmtCurrency(p.total_capital)}</div>
+                  {fmtSub(p.total_capital) && (
+                    <div className="text-[10px] text-slate-400 mt-0.5">{fmtSub(p.total_capital)}</div>
+                  )}
+                </>
+              )}
             </div>
             <div>
-              <div className="text-xs text-slate-600 font-medium mb-1">투입액</div>
-              <div className="font-bold text-black">{formatMoney(p.invested ?? 0, p.symbol)}</div>
+              <div className="text-xs text-slate-600 font-medium mb-1 flex items-center gap-1">
+                투입액
+                {useBrokerData && <span className="text-[9px] text-green-600 font-bold bg-green-50 px-1 rounded">계좌</span>}
+              </div>
+              <div className="font-bold text-black">{fmtCurrency(effectiveInvested)}</div>
+              {fmtSub(effectiveInvested) && (
+                <div className="text-[10px] text-slate-400">{fmtSub(effectiveInvested)}</div>
+              )}
               <div className="text-xs text-slate-700">{investedPct.toFixed(1)}%</div>
             </div>
             <div>
               <div className="text-xs text-slate-600 font-medium mb-1">잔여 예산</div>
-              <div className="font-bold text-black">{formatMoney(remainingCapital, p.symbol)}</div>
+              <div className="font-bold text-black">{fmtCurrency(remainingCapital)}</div>
+              {fmtSub(remainingCapital) && (
+                <div className="text-[10px] text-slate-400">{fmtSub(remainingCapital)}</div>
+              )}
               <div className="text-xs text-slate-700">{remainingPct.toFixed(1)}%</div>
               <div className="mt-2 h-1.5 bg-gray-100 rounded-full overflow-hidden">
                 <div className="h-full bg-red-400 rounded-full" style={{ width: `${remainingPct}%` }} />
@@ -571,16 +1266,36 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
             </div>
             <div>
               <div className="text-xs text-slate-600 font-medium mb-1">평가액</div>
-              <div className="font-bold text-black">{formatMoney(p.evalAmount ?? 0, p.symbol)}</div>
-              <div className={`text-xs font-medium ${(p.pnl ?? 0) >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-                {(p.pnl ?? 0) >= 0 ? '+' : ''}{formatMoney(p.pnl ?? 0, p.symbol)} ({(p.pnl ?? 0) >= 0 ? '+' : ''}{(p.pnlRate ?? 0).toFixed(2)}%)
+              <div className="font-bold text-black">{fmtCurrency(effectiveEvalAmount)}</div>
+              {fmtSub(effectiveEvalAmount) && (
+                <div className="text-[10px] text-slate-400">{fmtSub(effectiveEvalAmount)}</div>
+              )}
+              <div className={`text-xs font-medium ${effectivePnl >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                {effectivePnl >= 0 ? '+' : ''}{fmtCurrency(effectivePnl)} ({effectivePnl >= 0 ? '+' : ''}{effectivePnlRate.toFixed(2)}%)
               </div>
               <div className="mt-2 h-1.5 bg-gray-100 rounded-full overflow-hidden">
                 <div className="h-full bg-green-400 rounded-full" style={{ width: `${Math.min(100, evalPct)}%` }} />
               </div>
             </div>
           </div>
+          {isOverseas && (
+            <div className="mt-3 pt-3 border-t border-gray-100 text-[10px] text-slate-400">
+              💱 환율: ₩{effectiveRate.toLocaleString('ko-KR', { maximumFractionDigits: 2 })}/USD
+              {isFallbackRate && <span className="ml-1 text-amber-600 font-medium">(* 환율 정보 없음 — 기본값 1,500원 사용)</span>}
+              {!isFallbackRate && <span className="ml-1">(KIS 응답 기준)</span>}
+            </div>
+          )}
         </div>
+
+        {/* 오늘의 매매 가이드 */}
+        <TradingGuide
+          symbol={p.symbol}
+          version={(detailVersionLower === 'v2.2' || detailVersionLower === 'v3.0' || detailVersionLower === 'v4.0') ? detailVersionLower : 'v3.0'}
+          capital={p.total_capital}
+          n={divisions}
+          market={isOverseas ? 'US' : 'KR'}
+          currentCycle={p.cycle ?? 1}
+        />
       </div>
     );
   }
@@ -754,13 +1469,44 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
                     className="w-full flex items-center justify-between px-4 py-4 hover:bg-gray-50 transition-colors text-left"
                   >
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-bold text-black">{p.symbol}</span>
                         <span className="text-xs text-slate-600">{p.strategy_version}</span>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
+                          (p.trade_mode ?? 'virtual') === 'real'
+                            ? 'bg-green-100 text-green-700'
+                            : 'bg-purple-100 text-purple-700'
+                        }`}>
+                          {(p.trade_mode ?? 'virtual') === 'real' ? '실제' : '가상'}
+                        </span>
                         {!p.is_enabled && (
                           <span className="text-xs px-1.5 py-0.5 bg-yellow-100 text-yellow-700 rounded font-medium">
                             일시정지
                           </span>
+                        )}
+                        {/* 계좌 선택 드롭다운 */}
+                        {savedAccounts.length > 0 && (
+                          <select
+                            value={p.broker_credential_id ?? ''}
+                            onClick={e => e.stopPropagation()}
+                            onChange={e => {
+                              e.stopPropagation();
+                              handleCredentialChange(p.symbol, e.target.value);
+                            }}
+                            className="text-[10px] px-1.5 py-0.5 rounded border border-gray-200 bg-white text-slate-600 font-medium cursor-pointer hover:border-gray-400 transition-colors"
+                          >
+                            {!p.broker_credential_id && (
+                              <option value="">계좌 미설정</option>
+                            )}
+                            {savedAccounts.map(acc => (
+                              <option key={acc.id} value={acc.id}>
+                                {acc.brokerType === 'kis' ? '한투' : '키움'} {acc.accountAlias === 'default' ? '기본' : acc.accountAlias}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                        {actionLoading === `cred-${p.symbol}` && (
+                          <Loader2 className="h-3 w-3 animate-spin text-slate-400" />
                         )}
                       </div>
                       <div className="flex items-center gap-1 mt-1 text-xs text-slate-700 flex-wrap">

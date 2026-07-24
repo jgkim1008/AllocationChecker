@@ -49,10 +49,6 @@ export async function GET(request: NextRequest) {
 
     if (error) throw error;
 
-    // 마감 후 카카오톡 알림
-    if (market === 'US') await sendMarketCloseAlert('US');
-    if (market === 'KR') await sendMarketCloseAlert('KR');
-
     return NextResponse.json({
       success: true,
       report_date: today,

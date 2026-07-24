@@ -17,7 +17,7 @@ interface StrategyCalcProps {
   currentCycle?: number;
 }
 
-function fmtP(price: number, market: 'US' | 'KR' = 'US'): string {
+export function fmtP(price: number, market: 'US' | 'KR' = 'US'): string {
   if (market === 'KR') return `₩${Math.round(price).toLocaleString('ko-KR')}`;
   return `$${price.toFixed(2)}`;
 }
@@ -27,14 +27,14 @@ const ADDITIONAL_DROP_RATES = [0, -0.05, -0.1, -0.15, -0.2, -0.25, -0.3, -0.4, -
 
 // ── 공통 유틸 ────────────────────────────────────────────────────────
 // T값: 매수누적액 / 1회매수금 (소수점 둘째자리 올림)
-function calcT(invested: number, unitBuy: number): number {
+export function calcT(invested: number, unitBuy: number): number {
   if (unitBuy <= 0) return 0;
   return Math.ceil((invested / unitBuy) * 100) / 100;
 }
 
 // ── V2.2 ─────────────────────────────────────────────────────────────
 // 별% 공식: TQQQ 10-T/2, SOXL 12-T×0.6 (a분할 일반식 적용)
-function getV22StarPct(symbol: string, t: number, divisions = 40): number {
+export function getV22StarPct(symbol: string, t: number, divisions = 40): number {
   const ticker = symbol.toUpperCase();
   let pct: number;
   if (ticker === 'SOXL') {
@@ -46,12 +46,12 @@ function getV22StarPct(symbol: string, t: number, divisions = 40): number {
 }
 
 // 기본 익절 목표율: TQQQ 10%, SOXL 12%
-function getV22BaseRate(symbol: string): number {
+export function getV22BaseRate(symbol: string): number {
   return symbol.toUpperCase() === 'SOXL' ? 0.12 : 0.10;
 }
 
 // V2.2 매수 주문: 전반전 절반(별지점-$0.01) + 절반(평단), 후반전 전체(별지점-$0.01)
-function getV22BuyPrices(symbol: string, avgCost: number, t: number, divisions = 40): {
+export function getV22BuyPrices(symbol: string, avgCost: number, t: number, divisions = 40): {
   price1: number; label1: string;
   price2: number | null; label2: string | null;
   ratio1: number; ratio2: number;
@@ -82,7 +82,7 @@ function getV22BuyPrices(symbol: string, avgCost: number, t: number, divisions =
 }
 
 // V2.2 매도 주문: 1/4 별지점 LOC + 3/4 기본목표 지정가
-function getV22SellPrices(symbol: string, avgCost: number, t: number, divisions = 40): {
+export function getV22SellPrices(symbol: string, avgCost: number, t: number, divisions = 40): {
   price1: number; label1: string;
   price2: number; label2: string;
   ratio1: number; ratio2: number;
@@ -101,19 +101,19 @@ function getV22SellPrices(symbol: string, avgCost: number, t: number, divisions 
 
 // ── V3.0 ─────────────────────────────────────────────────────────────
 // 별% 공식: TQQQ 15-1.5T, SOXL 20-2T
-function getV3StarPct(symbol: string, t: number): number {
+export function getV3StarPct(symbol: string, t: number): number {
   const ticker = symbol.toUpperCase();
   const pct = ticker === 'SOXL' ? 20 - 2 * t : 15 - 1.5 * t;
   return Math.max(0, pct);
 }
 
 // 기본 익절 목표율: TQQQ 15%, SOXL 20%
-function getV3BaseRate(symbol: string): number {
+export function getV3BaseRate(symbol: string): number {
   return symbol.toUpperCase() === 'SOXL' ? 0.20 : 0.15;
 }
 
 // V3.0 매수: 전반전 절반(별지점-$0.01)+절반(평단), 후반전 전체(별지점-$0.01)
-function getV3BuyPrices(symbol: string, avgCost: number, t: number, divisions = 20): {
+export function getV3BuyPrices(symbol: string, avgCost: number, t: number, divisions = 20): {
   price1: number; label1: string;
   price2: number | null; label2: string | null;
   ratio1: number; ratio2: number;
@@ -144,7 +144,7 @@ function getV3BuyPrices(symbol: string, avgCost: number, t: number, divisions = 
 }
 
 // V3.0 매도: 1/4 별지점 LOC + 3/4 기본목표 지정가
-function getV3SellPrices(symbol: string, avgCost: number, t: number): {
+export function getV3SellPrices(symbol: string, avgCost: number, t: number): {
   price1: number; label1: string;
   price2: number; label2: string;
   ratio1: number; ratio2: number;
@@ -257,16 +257,33 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy, mark
       .catch(() => {});
   }, [symbol, version]);
 
-  // 트래커 포지션 가져오기 (API에서)
-  const loadPosition = useCallback(async () => {
-    setLoadingPosition(true);
+  // 트래커 포지션 가져오기 (silent=true 면 로딩 스피너를 띄우지 않음 — 백그라운드 폴링용)
+  const loadPosition = useCallback(async (silent = false) => {
+    if (!silent) setLoadingPosition(true);
     const pos = await fetchTrackerPosition(symbol, currentCycle);
     setPosition(pos);
-    setLoadingPosition(false);
+    if (!silent) setLoadingPosition(false);
   }, [symbol, currentCycle]);
 
+  // 새로고침 버튼용 (UX 위해 명시적 로딩 표시)
+  const reloadPosition = useCallback(() => { loadPosition(false); }, [loadPosition]);
+
+  // 초기 로드만 로딩 스피너 표시
   useEffect(() => {
-    loadPosition();
+    loadPosition(false);
+  }, [loadPosition]);
+
+  // 15초마다 백그라운드 폴링 (silent) — 깜빡임 없음
+  useEffect(() => {
+    const interval = setInterval(() => { loadPosition(true); }, 15000);
+    return () => clearInterval(interval);
+  }, [loadPosition]);
+
+  // 탭으로 돌아왔을 때만 silent 갱신 — focus 이벤트는 너무 자주 발생해 제외
+  useEffect(() => {
+    const handler = () => { if (document.visibilityState === 'visible') loadPosition(true); };
+    document.addEventListener('visibilitychange', handler);
+    return () => document.removeEventListener('visibilitychange', handler);
   }, [loadPosition]);
 
   const unitBuy = capital / n;
@@ -451,7 +468,7 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy, mark
                     <p className="text-xs text-blue-600 mt-0.5">V2.2 전략 · 현재 포지션 기준 자동 계산</p>
                   </div>
                   <button
-                    onClick={loadPosition}
+                    onClick={reloadPosition}
                     className="p-1.5 rounded-lg hover:bg-blue-200/50 transition-colors"
                     title="데이터 새로고침"
                   >
@@ -612,7 +629,7 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy, mark
                     <p className="text-xs text-orange-600 mt-0.5">V3.0 공격형 · 동적 별% 적용</p>
                   </div>
                   <button
-                    onClick={loadPosition}
+                    onClick={reloadPosition}
                     className="p-1.5 rounded-lg hover:bg-orange-200/50 transition-colors"
                     title="데이터 새로고침"
                   >
@@ -799,7 +816,7 @@ export function StrategyCalc({ symbol, capital, n, targetRate, variableBuy, mark
                     <p className="text-sm font-bold text-purple-900">오늘의 매매 가이드</p>
                     <p className="text-xs text-purple-600 mt-0.5">V4.0 · {isReverseMode ? '리버스모드' : '일반모드 · 동적 1회매수금'}</p>
                   </div>
-                  <button onClick={loadPosition} className="p-1.5 rounded-lg hover:bg-purple-200/50 transition-colors">
+                  <button onClick={reloadPosition} className="p-1.5 rounded-lg hover:bg-purple-200/50 transition-colors">
                     <RefreshCw className={`h-3.5 w-3.5 text-purple-600 ${loadingPosition ? 'animate-spin' : ''}`} />
                   </button>
                 </div>

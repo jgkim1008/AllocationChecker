@@ -63,10 +63,11 @@ async function getTrackerPosition(userId: string, symbol: string) {
 
   if (remainingShares <= 0) return null;
 
+  const avgCost = buyShares > 0 ? buyInvested / buyShares : 0;
   return {
     shares: remainingShares,
-    invested: buyInvested,
-    avgCost: buyShares > 0 ? buyInvested / buyShares : 0,
+    invested: remainingShares * avgCost,
+    avgCost,
     capital,
   };
 }
@@ -114,6 +115,7 @@ export async function GET(request: NextRequest) {
     // 각 설정에 대해 주문 실행
     for (const setting of settings) {
       const { user_id, symbol, broker_type, broker_credential_id, strategy_version, total_capital } = setting;
+      const tradeMode = (setting as { trade_mode?: string }).trade_mode ?? 'real';
 
       try {
         // 1. 브로커 연결 확인 (credential_id 우선, fallback: broker_type)
@@ -130,10 +132,20 @@ export async function GET(request: NextRequest) {
           continue;
         }
 
-        // 2. 트래커 포지션 조회
-        const position = await getTrackerPosition(user_id, symbol);
+        // 2. 브로커 잔고·포지션 조회 (실제 모드 포지션 계산 + 주문 실행 시 재사용)
+        const [balanceResult, positionsResult] = await Promise.all([
+          clientResult.client.getBalance(),
+          clientResult.client.getPositions(),
+        ]);
+        const availableCash = balanceResult.success ? (balanceResult.data?.totalDeposit ?? 0) : 0;
+        const brokerPosition = (positionsResult.data ?? []).find(
+          p => p.symbol.toUpperCase() === symbol.toUpperCase()
+        );
 
-        // 3. 현재가 조회
+        // 3. 트래커 포지션 조회 (가상 모드 또는 실제 모드 fallback)
+        const trackerPosition = await getTrackerPosition(user_id, symbol);
+
+        // 4. 현재가 조회
         const quoteResult = await clientResult.client.getQuote(symbol);
         if (!quoteResult.success || !quoteResult.data) {
           results.push({
@@ -150,14 +162,24 @@ export async function GET(request: NextRequest) {
         const version = (strategy_version || 'v3.0').toLowerCase() as StrategyVersion;
         const divisions = version === 'v3.0' ? 20 : 40;
 
-        // 포지션이 없으면 신규 시작 (T=0)
-        const currentShares = position?.shares || 0;
-        const currentInvested = position?.invested || 0;
-        const capital = position?.capital || total_capital;
+        // capital은 항상 settings 기준 (트래커 레코드의 capital은 과거 값일 수 있음)
+        const capital = total_capital;
         const unitBuy = capital / divisions;
+
+        // 실제 모드: 브로커 포지션 기준 / 가상 모드: 트래커 기준
+        let currentShares: number;
+        let currentInvested: number;
+        if (tradeMode === 'real' && brokerPosition) {
+          currentShares = brokerPosition.quantity;
+          currentInvested = brokerPosition.quantity * brokerPosition.avgPrice;
+        } else {
+          currentShares = trackerPosition?.shares || 0;
+          currentInvested = trackerPosition?.invested || 0;
+        }
+
         const currentT = currentInvested > 0 ? Math.ceil((currentInvested / unitBuy) * 100) / 100 : 0;
 
-        // 4. 주문 계산
+        // 5. 주문 계산
         const config: LiveStrategyConfig = {
           version,
           ticker: symbol,
@@ -187,13 +209,13 @@ export async function GET(request: NextRequest) {
           continue;
         }
 
-        // 5. 오늘 이미 주문했는지 확인
+        // 6. 오늘 이미 주문했는지 확인
         const todayStart = new Date();
         todayStart.setHours(0, 0, 0, 0);
 
         const { data: todayOrders } = await serviceClient
           .from('pending_orders')
-          .select('side')
+          .select('side, status')
           .eq('user_id', user_id)
           .eq('symbol', symbol.toUpperCase())
           .in('status', ['submitted', 'partial', 'filled'])
@@ -201,6 +223,27 @@ export async function GET(request: NextRequest) {
 
         const todayBuyExists = (todayOrders ?? []).some(o => o.side === 'buy');
         const todaySellExists = (todayOrders ?? []).some(o => o.side === 'sell');
+
+        // 스마트 스킵: 오늘 매수 + 매도 모두 filled >= 예상 수면 LOC 주문 안 함
+        if ((setting as { smart_skip_loc?: boolean }).smart_skip_loc) {
+          const filledTodayBuys = (todayOrders ?? []).filter(o => o.side === 'buy' && o.status === 'filled').length;
+          const filledTodaySells = (todayOrders ?? []).filter(o => o.side === 'sell' && o.status === 'filled').length;
+          // 전반전: 2주문/일 (별지점+평단 절반씩), 후반전: 1주문/일
+          const expectedDailyBuys = currentT < divisions / 2 ? 2 : 1;
+          const expectedDailySells = executableSells.length; // 현재 포지션 기준 매도 주문 수
+          const buysFulfilled = filledTodayBuys >= expectedDailyBuys;
+          const sellsFulfilled = expectedDailySells === 0 || filledTodaySells >= expectedDailySells;
+          if (buysFulfilled && sellsFulfilled) {
+            results.push({
+              userId: user_id,
+              symbol,
+              success: true,
+              message: `Smart Skip: 매수 ${filledTodayBuys}/${expectedDailyBuys}건 · 매도 ${filledTodaySells}/${expectedDailySells}건 체결 — LOC 주문 생략`,
+              orders: { buy: 0, sell: 0 },
+            });
+            continue;
+          }
+        }
 
         // 중복 주문 필터링
         const ordersToExecute = [
@@ -219,27 +262,29 @@ export async function GET(request: NextRequest) {
           continue;
         }
 
-        // 6. 주문 실행
+        // 7. 주문 실행
         let successCount = 0;
         let failCount = 0;
         const orderResults: { orderId?: string; side: string; error?: string }[] = [];
 
-        // 잔고 및 포지션 사전 조회
-        const balanceResult = await clientResult.client.getBalance();
-        const positionsResult = await clientResult.client.getPositions();
-        const availableCash = balanceResult.success ? (balanceResult.data?.totalDeposit ?? 0) : 0;
+        // 매도 가능 수량 추적 (복수 매도 주문 합계가 보유 수량 초과 방지)
+        const sellableQtyMap = new Map<string, number>();
+        for (const pos of positionsResult.data ?? []) {
+          sellableQtyMap.set(pos.symbol.toUpperCase(), pos.quantity);
+        }
 
         for (const order of ordersToExecute) {
           let actualQty = order.quantity;
 
           if (order.side === 'sell') {
-            const pos = positionsResult.data?.find(p => p.symbol.toUpperCase() === order.symbol.toUpperCase());
-            if (!pos || pos.quantity <= 0) {
+            const remaining = sellableQtyMap.get(order.symbol.toUpperCase()) ?? 0;
+            if (remaining <= 0) {
               orderResults.push({ side: order.side, error: '보유 잔고 없음 - 매도 스킵' });
               continue;
             }
-            // 보유 수량보다 많으면 보유 수량으로 조정
-            actualQty = Math.min(order.quantity, pos.quantity);
+            // 남은 수량만큼만 매도
+            actualQty = Math.min(order.quantity, remaining);
+            sellableQtyMap.set(order.symbol.toUpperCase(), remaining - actualQty);
           }
 
           if (order.side === 'buy') {
@@ -311,6 +356,16 @@ export async function GET(request: NextRequest) {
 
     // 7. 텔레그램 알림 (사용자별로 발송)
     if (results.length > 0) {
+      // 오늘 DCA 해외 주문 조회 (22:30 cron이 제출한 것)
+      const todayUtcStart = new Date();
+      todayUtcStart.setUTCHours(0, 0, 0, 0);
+      const { data: dcaOverseasOrders } = await serviceClient
+        .from('pending_orders')
+        .select('user_id, symbol, side, order_quantity, order_price, status, order_type')
+        .eq('market', 'overseas')
+        .eq('strategy_version', 'dca')
+        .gte('order_time', todayUtcStart.toISOString());
+
       // 사용자별로 그룹화
       const resultsByUser = new Map<string, typeof results>();
       for (const r of results) {
@@ -339,6 +394,17 @@ export async function GET(request: NextRequest) {
           }
           if (r.errors && r.errors.length > 0) {
             alertText += `   ⚠️ ${r.errors.join(', ')}\n`;
+          }
+        }
+
+        // DCA 해외 주문 현황 섹션
+        const userDcaOrders = (dcaOverseasOrders ?? []).filter(o => o.user_id === userId);
+        if (userDcaOrders.length > 0) {
+          alertText += `\n📈 <b>DCA 해외 주문</b>\n`;
+          for (const o of userDcaOrders) {
+            const typeLabel = o.order_type === 'loc' ? 'LOC' : `$${Number(o.order_price).toFixed(2)}`;
+            const statusEmoji = o.status === 'filled' ? '✅' : o.status === 'submitted' ? '⏳' : '❌';
+            alertText += `${statusEmoji} <b>${o.symbol}</b> ${o.order_quantity}주 @ ${typeLabel}\n`;
           }
         }
 

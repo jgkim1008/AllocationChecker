@@ -9,6 +9,7 @@ import {
   ChevronUp, ChevronDown,
 } from 'lucide-react';
 import { PremiumGate } from '@/components/PremiumGate';
+import { IndexTable } from '@/components/strategies/IndexTable';
 import type { ForkingStock } from '@/app/api/strategies/forking/scan/route';
 import { getClientCache, setClientCache, clearClientCache } from '@/lib/client-cache';
 
@@ -351,6 +352,9 @@ export default function ForkingPage() {
             {loading ? '분석 중...' : '새로고침'}
           </button>
         </div>
+
+        {/* 지수 비교 테이블 */}
+        <IndexTable strategyPath="/strategies/forking" accent="cyan" />
 
         <PremiumGate featureName="월봉 포킹 전략">
 

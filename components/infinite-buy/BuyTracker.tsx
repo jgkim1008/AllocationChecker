@@ -13,6 +13,7 @@ interface BuyTrackerProps {
   activePrice?: number | null;
   currentCycle?: number;
   onCycleReset?: () => void;
+  onCycleChange?: (newCycle: number) => void;
   onCapitalChange?: (newCapital: number) => void;
 }
 
@@ -21,7 +22,7 @@ function fmtP(price: number, market: 'US' | 'KR' = 'US'): string {
   return `$${price.toFixed(2)}`;
 }
 
-export function BuyTracker({ symbol, capital, n, targetRate, market = 'US', activePrice: propActivePrice, currentCycle = 1, onCycleReset, onCapitalChange }: BuyTrackerProps) {
+export function BuyTracker({ symbol, capital, n, targetRate, market = 'US', activePrice: propActivePrice, currentCycle = 1, onCycleReset, onCycleChange, onCapitalChange }: BuyTrackerProps) {
   const {
     records, sellRecords, loading: recordsLoading,
     addRecord, updateRecord, deleteRecord, deleteAllRecords, updateAllCapital,
@@ -53,6 +54,54 @@ export function BuyTracker({ symbol, capital, n, targetRate, market = 'US', acti
   const [editingCapital, setEditingCapital] = useState(false);
   const [capitalEditValue, setCapitalEditValue] = useState('');
   const [savingCapital, setSavingCapital] = useState(false);
+
+  // 회차(currentCycle) 편집 state
+  const [editingCycle, setEditingCycle] = useState(false);
+  const [cycleEditValue, setCycleEditValue] = useState('');
+
+  // 진행 상태(divisionsUsed) 수동 오버라이드
+  // - 자동 계산값은 records.length지만, 사용자가 직접 회차 카운트를 조정하고 싶을 때 사용
+  // - 종목/회차별 localStorage 저장. null이면 records.length 그대로 사용
+  const [divisionsOverride, setDivisionsOverride] = useState<number | null>(null);
+  const [editingDivisions, setEditingDivisions] = useState(false);
+  const [divisionsEditValue, setDivisionsEditValue] = useState('');
+
+  // 자금 모드 (실제 / 가상) — 종목별 localStorage 저장
+  const [fundMode, setFundMode] = useState<'real' | 'virtual'>('virtual');
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !symbol) return;
+    const saved = localStorage.getItem(`inf-buy-mode-${symbol.toUpperCase()}`);
+    setFundMode(saved === 'real' ? 'real' : 'virtual');
+  }, [symbol]);
+
+  function handleFundModeChange(mode: 'real' | 'virtual') {
+    if (typeof window === 'undefined' || !symbol) return;
+    setFundMode(mode);
+    localStorage.setItem(`inf-buy-mode-${symbol.toUpperCase()}`, mode);
+  }
+
+  // symbol 또는 cycle 변경 시 override 다시 로드
+  useEffect(() => {
+    if (typeof window === 'undefined' || !symbol) {
+      setDivisionsOverride(null);
+      return;
+    }
+    const key = `inf-buy-divisions-${symbol.toUpperCase()}-${currentCycle}`;
+    const saved = localStorage.getItem(key);
+    setDivisionsOverride(saved !== null ? parseInt(saved, 10) : null);
+  }, [symbol, currentCycle]);
+
+  function saveDivisionsOverride(value: number | null) {
+    if (typeof window === 'undefined' || !symbol) return;
+    const key = `inf-buy-divisions-${symbol.toUpperCase()}-${currentCycle}`;
+    if (value === null) {
+      localStorage.removeItem(key);
+    } else {
+      localStorage.setItem(key, String(value));
+    }
+    setDivisionsOverride(value);
+  }
 
   // 편집 state
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -234,7 +283,8 @@ export function BuyTracker({ symbol, capital, n, targetRate, market = 'US', acti
   const totalShares = records.reduce((s, b) => s + b.shares, 0);
   const totalInvested = records.reduce((s, b) => s + b.amount, 0);
   const avgCost = totalShares > 0 ? totalInvested / totalShares : 0;
-  const divisionsUsed = records.length;
+  const autoDivisionsUsed = records.length;
+  const divisionsUsed = divisionsOverride !== null ? divisionsOverride : autoDivisionsUsed;
   const totalSoldShares = sellRecords.reduce((s, r) => s + r.shares, 0);
   const remainingShares = Math.max(0, totalShares - totalSoldShares);
   const isCycleComplete = records.length > 0 && remainingShares <= 0.001;
@@ -269,7 +319,62 @@ export function BuyTracker({ symbol, capital, n, targetRate, market = 'US', acti
       {/* 회차 헤더 */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span className="text-sm font-semibold text-gray-700">{currentCycle}회차</span>
+          {editingCycle ? (
+            <div className="flex items-center gap-1.5">
+              <input
+                type="number"
+                min={1}
+                value={cycleEditValue}
+                onChange={(e) => setCycleEditValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    const v = parseInt(cycleEditValue, 10);
+                    if (!isNaN(v) && v >= 1 && onCycleChange) {
+                      onCycleChange(v);
+                      setEditingCycle(false);
+                    }
+                  } else if (e.key === 'Escape') {
+                    setEditingCycle(false);
+                  }
+                }}
+                autoFocus
+                className="w-16 h-7 text-sm font-semibold text-gray-700 border border-gray-300 rounded px-2 focus:outline-none focus:ring-2 focus:ring-green-500"
+              />
+              <span className="text-sm font-semibold text-gray-700">회차</span>
+              <button
+                onClick={() => {
+                  const v = parseInt(cycleEditValue, 10);
+                  if (!isNaN(v) && v >= 1 && onCycleChange) {
+                    onCycleChange(v);
+                    setEditingCycle(false);
+                  }
+                }}
+                className="text-green-600 hover:text-green-700"
+                title="저장"
+              >
+                <Check className="h-4 w-4" />
+              </button>
+              <button onClick={() => setEditingCycle(false)} className="text-gray-400 hover:text-gray-600" title="취소">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          ) : (
+            <>
+              <span className="text-sm font-semibold text-gray-700">{currentCycle}회차</span>
+              {onCycleChange && (
+                <button
+                  onClick={() => {
+                    setCycleEditValue(String(currentCycle));
+                    setEditingCycle(true);
+                  }}
+                  className="text-gray-400 hover:text-gray-700"
+                  title="회차 직접 수정"
+                >
+                  <Pencil className="h-3 w-3" />
+                </button>
+              )}
+            </>
+          )}
           {isCycleComplete && (
             <span className="inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
               <Trophy className="h-3 w-3" /> 완료
@@ -325,10 +430,87 @@ export function BuyTracker({ symbol, capital, n, targetRate, market = 'US', acti
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         {/* Progress */}
         <div className="bg-white border border-gray-200 rounded-xl p-4 col-span-2 sm:col-span-1">
-          <p className="text-xs text-gray-500 mb-2">진행 상태</p>
-          <p className="text-lg font-bold text-gray-900 mb-2">
-            {divisionsUsed} <span className="text-sm font-normal text-gray-400">/ {n}회</span>
-          </p>
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs text-gray-500">진행 상태</p>
+            {!editingDivisions ? (
+              <div className="flex items-center gap-1">
+                {divisionsOverride !== null && (
+                  <button
+                    onClick={() => saveDivisionsOverride(null)}
+                    className="text-[10px] text-gray-400 hover:text-gray-700 px-1.5 py-0.5 rounded hover:bg-gray-100"
+                    title="자동(매수 기록 수)으로 복귀"
+                  >
+                    자동
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    setDivisionsEditValue(String(divisionsUsed));
+                    setEditingDivisions(true);
+                  }}
+                  className="text-gray-400 hover:text-gray-700"
+                  title="진행 회차 수동 조정"
+                >
+                  <Pencil className="h-3 w-3" />
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => {
+                    const v = parseInt(divisionsEditValue, 10);
+                    if (!isNaN(v) && v >= 0 && v <= 999) {
+                      saveDivisionsOverride(v);
+                      setEditingDivisions(false);
+                    }
+                  }}
+                  className="text-green-600 hover:text-green-700"
+                  title="저장"
+                >
+                  <Check className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  onClick={() => setEditingDivisions(false)}
+                  className="text-gray-400 hover:text-gray-600"
+                  title="취소"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            )}
+          </div>
+          {editingDivisions ? (
+            <div className="flex items-baseline gap-1 mb-2">
+              <input
+                type="number"
+                min={0}
+                max={999}
+                value={divisionsEditValue}
+                onChange={(e) => setDivisionsEditValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    const v = parseInt(divisionsEditValue, 10);
+                    if (!isNaN(v) && v >= 0 && v <= 999) {
+                      saveDivisionsOverride(v);
+                      setEditingDivisions(false);
+                    }
+                  } else if (e.key === 'Escape') {
+                    setEditingDivisions(false);
+                  }
+                }}
+                autoFocus
+                className="w-16 text-lg font-bold text-gray-900 border border-gray-300 rounded px-2 py-0.5 focus:outline-none focus:ring-2 focus:ring-green-500"
+              />
+              <span className="text-sm font-normal text-gray-400">/ {n}회</span>
+            </div>
+          ) : (
+            <p className="text-lg font-bold text-gray-900 mb-2">
+              {divisionsUsed} <span className="text-sm font-normal text-gray-400">/ {n}회</span>
+              {divisionsOverride !== null && (
+                <span className="ml-1.5 text-[10px] font-medium text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded">수동</span>
+              )}
+            </p>
+          )}
           <div className="w-full bg-gray-100 rounded-full h-2">
             <div
               className="bg-green-500 h-2 rounded-full transition-all"
@@ -339,9 +521,40 @@ export function BuyTracker({ symbol, capital, n, targetRate, market = 'US', acti
         </div>
 
         {/* 총 투자금 */}
-        <div className="bg-white border border-gray-200 rounded-xl p-4">
+        <div className={`bg-white border rounded-xl p-4 ${
+          fundMode === 'virtual' ? 'border-purple-200' : 'border-gray-200'
+        }`}>
           <div className="flex items-center justify-between mb-1">
-            <p className="text-xs text-gray-500">총 투자금</p>
+            <div className="flex items-center gap-1.5">
+              <p className="text-xs text-gray-500">총 투자금</p>
+              {/* 실제/가상 토글 */}
+              <span className="inline-flex rounded border border-gray-200 overflow-hidden text-[9px] font-bold">
+                <button
+                  type="button"
+                  onClick={() => handleFundModeChange('real')}
+                  className={`px-1.5 py-0.5 transition-colors ${
+                    fundMode === 'real'
+                      ? 'bg-green-600 text-white'
+                      : 'bg-white text-gray-400 hover:bg-gray-50'
+                  }`}
+                  title="실제 자금"
+                >
+                  실제
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleFundModeChange('virtual')}
+                  className={`px-1.5 py-0.5 transition-colors border-l border-gray-200 ${
+                    fundMode === 'virtual'
+                      ? 'bg-purple-600 text-white'
+                      : 'bg-white text-gray-400 hover:bg-gray-50'
+                  }`}
+                  title="가상자금"
+                >
+                  가상
+                </button>
+              </span>
+            </div>
             {!editingCapital ? (
               <button
                 onClick={() => {

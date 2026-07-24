@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { KOSPI200_STOCKS } from '@/lib/utils/kospi200-stocks';
-import { createClient } from '@/lib/supabase/server';
+import { createServiceClient } from '@/lib/supabase/server';
 
-const CACHE_DAYS = 15; // 캐시 유효 기간 (일)
+const CACHE_HOURS = 24;
+const CACHE_KEY = 'monthly_ma_scan';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300; // 종목 수 증가로 시간 연장 (약 350종목)
@@ -288,38 +289,35 @@ function analyzeStock(
 
 export async function GET(_req: NextRequest) {
   const { searchParams } = new URL(_req.url);
-  const forceRefresh = searchParams.get('refresh') === 'true';
+  const forceRefresh = ['1', 'true'].includes(searchParams.get('refresh') ?? '');
 
   try {
-    const supabase = await createClient();
+    const supabase = await createServiceClient();
 
-    // 1. 캐시 확인 (강제 새로고침이 아닌 경우)
     if (!forceRefresh) {
       const { data: cached } = await supabase
-        .from('monthly_ma_cache')
+        .from('strategy_cache')
         .select('*')
+        .eq('cache_key', CACHE_KEY)
         .order('created_at', { ascending: false })
         .limit(1)
         .single();
 
       if (cached) {
         const cacheAge = Date.now() - new Date(cached.created_at).getTime();
-        const cacheDaysMs = CACHE_DAYS * 24 * 60 * 60 * 1000;
-
-        if (cacheAge < cacheDaysMs) {
-          console.log(`[MonthlyMA] Using cached data (${Math.round(cacheAge / (1000 * 60 * 60))}h old)`);
+        if (cacheAge < CACHE_HOURS * 3600 * 1000) {
+          const data = (cached.data ?? []) as unknown[];
           return NextResponse.json({
-            stocks: cached.data,
-            count: cached.data.length,
+            stocks: data,
+            count: data.length,
             timestamp: cached.created_at,
             cached: true,
-            cacheAge: Math.round(cacheAge / (1000 * 60 * 60)), // hours
+            cacheAge: Math.round(cacheAge / 3600000),
           });
         }
       }
     }
 
-    // 2. 새로 스캔
     console.log(`[MonthlyMA] Starting fresh scan for ${TARGET_STOCKS.length} stocks...`);
     const results: MonthlyMAStock[] = [];
 
@@ -334,14 +332,12 @@ export async function GET(_req: NextRequest) {
       await new Promise(r => setTimeout(r, 150));
     }
 
-    // 3. 캐시 저장
     const { error: upsertError } = await supabase
-      .from('monthly_ma_cache')
-      .upsert({
-        id: 'latest',
-        data: results,
-        created_at: new Date().toISOString(),
-      });
+      .from('strategy_cache')
+      .upsert(
+        { cache_key: CACHE_KEY, data: results, created_at: new Date().toISOString() },
+        { onConflict: 'cache_key' }
+      );
 
     if (upsertError) {
       console.warn('[MonthlyMA] Cache save failed:', upsertError.message);

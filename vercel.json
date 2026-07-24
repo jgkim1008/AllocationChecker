@@ -33,10 +33,6 @@
     {
       "path": "/api/signal-trade/ma-ladder/cron",
       "schedule": "0 0 * * *"
-    },
-    {
-      "path": "/api/auto-trade/closing-alert",
-      "schedule": "35 6 * * 1-5"
     }
   ]
 }

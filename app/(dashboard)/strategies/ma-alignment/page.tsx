@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, RefreshCw, TrendingUp, Info, Target, Zap } from 'lucide-react';
-import { MAAlignmentTable } from '@/components/strategies/MAAlignmentTable';
+import { MAAlignmentTable } from '@/components/ma-alignment/MAAlignmentTable';
+import { IndexTable } from '@/components/strategies/IndexTable';
 import { PremiumGate } from '@/components/PremiumGate';
 import type { MAAlignmentStock } from '@/types/strategies';
 import { getClientCache, setClientCache, clearClientCache } from '@/lib/client-cache';
@@ -114,6 +115,9 @@ export default function MAAlignmentPage() {
             <p className="text-sm font-bold text-red-700">{error}</p>
           </div>
         )}
+
+        {/* 지수 비교 테이블 */}
+        <IndexTable strategyPath="/strategies/ma-alignment" accent="green" />
 
         {/* 결과 헤더 */}
         <div className="flex items-center justify-between px-2 mb-6">
