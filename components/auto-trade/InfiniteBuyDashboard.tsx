@@ -1295,6 +1295,7 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
           n={divisions}
           market={isOverseas ? 'US' : 'KR'}
           currentCycle={p.cycle ?? 1}
+          brokerOverride={useBrokerData ? { avgCost: effectiveAvgCost, shares: effectiveShares, invested: effectiveInvested } : null}
         />
       </div>
     );

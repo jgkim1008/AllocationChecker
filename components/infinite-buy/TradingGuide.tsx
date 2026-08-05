@@ -20,6 +20,12 @@ import {
 
 type Version = 'v2.2' | 'v3.0' | 'v4.0';
 
+interface BrokerOverride {
+  avgCost: number;
+  shares: number;
+  invested: number;
+}
+
 interface TradingGuideProps {
   symbol: string;
   version: Version;
@@ -27,6 +33,8 @@ interface TradingGuideProps {
   n: number;
   market?: 'US' | 'KR';
   currentCycle?: number;
+  /** 실제 모드 + 브로커 포지션 보유 시 전달 — 로컬 DB 기록 대신 계좌 평단가/수량 기준으로 가이드 계산 */
+  brokerOverride?: BrokerOverride | null;
 }
 
 interface PreviewOrder {
@@ -69,9 +77,9 @@ interface TodayOrder {
 }
 
 export function TradingGuide({
-  symbol, version, capital, n, market = 'US', currentCycle = 1,
+  symbol, version, capital, n, market = 'US', currentCycle = 1, brokerOverride = null,
 }: TradingGuideProps) {
-  const [position, setPosition] = useState<TrackerPosition | null>(null);
+  const [rawPosition, setPosition] = useState<TrackerPosition | null>(null);
   const [currentPrice, setCurrentPrice] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [todayOrders, setTodayOrders] = useState<TodayOrder[]>([]);
@@ -136,13 +144,24 @@ export function TradingGuide({
     return () => clearInterval(interval);
   }, [symbol, currentCycle, fetchTodayOrders]);
 
-  if (loading && !position) {
+  if (loading && !rawPosition && !brokerOverride) {
     return (
       <div className="bg-gray-50 border border-gray-200 rounded-xl p-6 text-center text-sm text-gray-500">
         가이드 데이터 로드 중...
       </div>
     );
   }
+
+  // 실제 모드 + 브로커 포지션 보유 시 계좌 평단가/수량을 우선 사용 (포트폴리오 헤더 스탯과 동일 소스로 일치시킴)
+  const position: TrackerPosition | null = brokerOverride
+    ? {
+        avgCost: brokerOverride.avgCost,
+        shares: brokerOverride.shares,
+        invested: brokerOverride.invested,
+        divisionsUsed: rawPosition?.divisionsUsed ?? 0,
+        capital,
+      }
+    : rawPosition;
 
   if (!position || !currentPrice) {
     return (
@@ -190,7 +209,10 @@ export function TradingGuide({
         <div className="p-4 space-y-4">
           <div className="grid grid-cols-3 gap-3 text-center">
             <div className="bg-white/60 rounded-lg p-2.5">
-              <p className="text-[10px] text-gray-500 mb-0.5">평균단가</p>
+              <p className="text-[10px] text-gray-500 mb-0.5 flex items-center justify-center gap-1">
+                평균단가
+                {brokerOverride && <span className="text-[8px] text-green-600 font-bold bg-green-50 px-1 rounded">계좌</span>}
+              </p>
               <p className="text-sm font-bold text-gray-900">{fmtP(position.avgCost, market)}</p>
             </div>
             <div className="bg-white/60 rounded-lg p-2.5">
@@ -300,7 +322,10 @@ export function TradingGuide({
         <div className="p-4 space-y-4">
           <div className="grid grid-cols-3 gap-3 text-center">
             <div className="bg-white/60 rounded-lg p-2.5">
-              <p className="text-[10px] text-gray-500 mb-0.5">평균단가</p>
+              <p className="text-[10px] text-gray-500 mb-0.5 flex items-center justify-center gap-1">
+                평균단가
+                {brokerOverride && <span className="text-[8px] text-green-600 font-bold bg-green-50 px-1 rounded">계좌</span>}
+              </p>
               <p className="text-sm font-bold text-gray-900">{fmtP(position.avgCost, market)}</p>
             </div>
             <div className="bg-white/60 rounded-lg p-2.5">
@@ -402,7 +427,10 @@ export function TradingGuide({
       <div className="p-4 space-y-4">
         <div className="grid grid-cols-3 gap-3 text-center">
           <div className="bg-white/60 rounded-lg p-2.5">
-            <p className="text-[10px] text-gray-500 mb-0.5">평균단가</p>
+            <p className="text-[10px] text-gray-500 mb-0.5 flex items-center justify-center gap-1">
+              평균단가
+              {brokerOverride && <span className="text-[8px] text-green-600 font-bold bg-green-50 px-1 rounded">계좌</span>}
+            </p>
             <p className="text-sm font-bold text-gray-900">{fmtP(position.avgCost, market)}</p>
           </div>
           <div className="bg-white/60 rounded-lg p-2.5">
