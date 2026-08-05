@@ -6,6 +6,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 무한매수법 트래커 + 차트 전략 분석 웹 서비스 (Next.js App Router + TypeScript)
 
+## ⚠️ 안전 수칙 (필수)
+
+**절대 임의로 실제 주문을 넣지 않는다.** 이 프로젝트는 실계좌 자동매매 시스템이다.
+
+- 브로커 주문 API 직접 호출(`/api/broker/orders`, KIS/Kiwoom 주문 함수 등), 매매 실행 크론(`/api/auto-trade/cron`, `/api/auto-trade/dca/cron/*`) 수동 트리거, 전량 청산 등 **실제 체결이 발생할 수 있는 동작은 사용자가 그 건에 대해 명시적으로 요청한 경우에만 수행한다.**
+- "고쳐줘", "확인해줘" 같은 일반적인 지시는 실제 주문 실행에 대한 승인으로 간주하지 않는다.
+- 코드 수정, 읽기 전용 조사, 계산 로직 검증, dry-run/미리보기 API(`/api/auto-trade/preview`) 사용은 별도 승인 없이 진행 가능하다.
+- 실거래 검증이 필요한 수정 건은 먼저 사용자에게 제안하고 승인을 받은 뒤에 진행한다.
+
+## Git 커밋 계정
+
+이 저장소에서 커밋할 때는 **반드시 `rlawnsrjs100@naver.com` 계정으로만 커밋한다** (글로벌 git 계정과 다름).
+
+- 저장소 로컬 git config에 고정되어 있음: `git config --local user.name "jungeon.kim"` / `git config --local user.email "rlawnsrjs100@naver.com"`
+- 새로 clone하거나 로컬 설정이 초기화된 경우 위 명령으로 다시 설정할 것 (글로벌 계정 `jungeon.kim@autowini.com`으로 커밋되지 않도록 주의)
+
 ## Stack
 
 - **Framework**: Next.js (App Router) + TypeScript
