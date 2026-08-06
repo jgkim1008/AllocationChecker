@@ -28,6 +28,7 @@ const STRATEGY_TIMEFRAME: Partial<Record<SignalStrategyType, TimeRange>> = {
   'forking':           '1M',
   'decline-box':       '1W',
   'etf-analyzer':      '1D',
+  'ict-swing':         '1D',
 };
 
 const baseIndicators: Omit<Indicators, 'customMAs'> = {
@@ -55,6 +56,7 @@ const STRATEGY_PRESETS: Partial<Record<SignalStrategyType, { indicators?: Partia
   'forking':           { addCustomMAs: [{ period: 12, color: '#06b6d4' }, { period: 24, color: '#f59e0b' }] },
   'decline-box':       { indicators: { ma20: true, ma60: true } },
   'etf-analyzer':      { indicators: { ma5: true, ma20: true, ma60: true, rsi: true } },
+  'ict-swing':         { indicators: { ma20: true, ma60: true } },
 };
 
 function buildInitialIndicators(strategyId: SignalStrategyType | undefined): Indicators {

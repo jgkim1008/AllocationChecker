@@ -9,6 +9,7 @@ import {
 import { analyzeInbumBijag, detectBijagChannel, priceAtLevel } from '@/lib/utils/inbum-bijag-calculator';
 import { analyzeElliottWave, type EWResult } from '@/lib/utils/elliott-wave-calculator';
 import { detectAllPatterns, type PatternResult } from '@/lib/utils/chart-pattern-calculator';
+import { detectCHoCH, detectFVGs } from '@/lib/utils/ict-calculator';
 import { Loader2, AlertCircle } from 'lucide-react';
 import { TimeRange, Indicators, CustomMA, DrawingMode } from '@/app/(dashboard)/advanced-chart/page';
 import { MACD, RSI, BollingerBands, SMA } from 'technicalindicators';
@@ -589,6 +590,27 @@ function computeStrategyMarkers(data: ChartData[], strategyId: string | undefine
           lastState = 'overbought';
         } else if (Math.abs(pct) < 1) {
           lastState = 'neutral';
+        }
+      }
+      break;
+    }
+    case 'ict-swing': {
+      // 일봉 기준 CHoCH(구조전환) + FVG CE(중심선) 되돌림 근사 마커
+      // (실제 신호는 주봉 방향까지 반영 — lib/utils/ict-calculator.ts의 analyzeICTSwing 참고)
+      const choch = detectCHoCH(data);
+      if (choch) {
+        const fvg = detectFVGs(data)
+          .filter(z => z.direction === choch.direction && z.idx >= choch.idx - 5 && z.idx <= choch.idx + 10)
+          .sort((a, b) => a.idx - b.idx)[0];
+        if (fvg) {
+          const tol = fvg.ce * 0.01;
+          for (let i = choch.idx; i < data.length; i++) {
+            const price = data[i].close;
+            const inZone = price >= fvg.bottom - tol && price <= fvg.top + tol;
+            if (!inZone) continue;
+            if (choch.direction === 'bullish') tryBuy(i, data[i].date, 'CHoCH+FVG CE');
+            else trySell(i, data[i].date, 'CHoCH+FVG CE');
+          }
         }
       }
       break;

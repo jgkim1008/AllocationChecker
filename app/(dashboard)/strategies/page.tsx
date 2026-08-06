@@ -1,11 +1,21 @@
 'use client';
 
 import Link from 'next/link';
-import { TrendingUp, TrendingDown, Infinity, ChevronRight, Activity, Zap, BookOpen, CalendarDays, BarChart2, CandlestickChart, GitMerge, Layers, PieChart } from 'lucide-react';
+import { TrendingUp, TrendingDown, Infinity, ChevronRight, Activity, Zap, BookOpen, CalendarDays, BarChart2, CandlestickChart, GitMerge, Layers, PieChart, Waypoints } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { PremiumGate } from '@/components/PremiumGate';
 
 const STRATEGIES = [
+  {
+    id: 'ict-swing',
+    title: 'ICT 구조전환·FVG',
+    description: '주봉으로 큰 방향을 잡고, 일봉에서 구조전환(CHoCH)이 확인되면 그 임펄스가 남긴 FVG(빈 공간) 중심선(CE) 되돌림에 진입합니다. 프리미엄/디스카운트 위치와 유동성 스윕은 가산점. S&P 500 + KOSPI 200 전종목 스캔.',
+    icon: Waypoints,
+    href: '/strategies/ict-swing',
+    color: 'bg-slate-50 text-slate-700',
+    tag: '신규',
+    tagColor: 'bg-slate-100 text-slate-700',
+  },
   {
     id: 'etf-analyzer',
     title: 'ETF 매수 분석기',

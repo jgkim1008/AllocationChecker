@@ -15,6 +15,7 @@ export type SignalStrategyType =
   | 'turtle-trading'         // 터틀 투자법 (돈키안 채널 돌파)
   | 'elliott-wave'           // 엘리어트 파동 (ZigZag 5파 임펄스)
   | 'etf-analyzer'           // ETF 매수 분석기 (수급+과열도)
+  | 'ict-swing'              // ICT 구조전환·FVG (주봉 방향 + 일봉 CHoCH/FVG)
   | 'infinite-buy'           // 무한매수법 (자동매매 비활성)
   // KIS Strategy Builder 전략
   | 'kis-golden-cross'       // 골든크로스 (MA5 > MA20 상향돌파)
@@ -266,6 +267,16 @@ export const SIGNAL_STRATEGIES: SignalStrategyInfo[] = [
     autoTradeEnabled: true,
   },
 
+  // ── ICT 전략 ──
+  {
+    id: 'ict-swing',
+    name: 'ICT 구조전환·FVG',
+    description: '주봉 구조 방향 확인 후, 그 방향과 일치하는 일봉 구조전환(CHoCH)이 만든 FVG 중심선(CE) 되돌림에 진입',
+    requiredHistory: 150,
+    category: 'weekly',
+    autoTradeEnabled: true,
+  },
+
   // ── 시스템 전략 (자동매매 비활성) ──
   {
     id: 'infinite-buy',
@@ -375,6 +386,7 @@ export const STRATEGY_ENTRY_CONDITIONS: Record<SignalStrategyType, string[]> = {
   'turtle-trading': ['s1Breakout', 's2Breakout', 'uptrend'],  // S1/S2 돌파 + 추세
   'elliott-wave':   ['isImpulseSignal', 'trendDirection'], // 파동2/4 완료 + 추세 방향
   'etf-analyzer':   ['supplyBuy', 'heatBuy'],               // 수급 또는 과열도 BUY (OR)
+  'ict-swing': ['isEntry'],  // 주봉방향 일치 + 일봉 CHoCH + FVG CE존 + 프리미엄/디스카운트 통과
   'infinite-buy': [],  // 별도 로직 (무한매수법 모듈 사용)
   // KIS Strategy Builder 전략
   'kis-golden-cross': ['isGoldenCross', 'isFreshCross'],   // MA5 > MA20 상향돌파

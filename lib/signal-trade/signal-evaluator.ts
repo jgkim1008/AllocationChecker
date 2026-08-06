@@ -24,6 +24,7 @@ import { calculateVolatility } from '@/lib/utils/kis-volatility-calculator';
 import { calculateMeanReversion } from '@/lib/utils/kis-mean-reversion-calculator';
 import { calculateTrendFilter } from '@/lib/utils/kis-trend-filter-calculator';
 import { analyzeETF } from '@/lib/utils/etf-analyzer-calculator';
+import { fetchWeeklyCandles as fetchIctWeekly, analyzeICTSwing, toAscendingCandles } from '@/lib/utils/ict-calculator';
 import { pickBenchmarkForEtf, fetchNaverEtfMeta } from '@/lib/api/naver-etf';
 import type { SignalStrategyType, SignalResult } from './types';
 import { SIGNAL_STRATEGIES } from './types';
@@ -461,6 +462,36 @@ export async function evaluateSignal(
       };
       break;
     }
+    case 'ict-swing': {
+      // ICT 구조전환·FVG: 주봉 방향 + 일봉 CHoCH/FVG (원본 1H+5M 가이드를 주봉+일봉으로 치환)
+      const weeklyCandles = await fetchIctWeekly(symbol, market);
+      if (!weeklyCandles || weeklyCandles.length < 15) {
+        return { isActive: false, syncRate: 0, criteria: { dataInsufficient: true } };
+      }
+      const dailyCandles = toAscendingCandles(history);
+      const ict = analyzeICTSwing(weeklyCandles, dailyCandles);
+      if (!ict) {
+        return { isActive: false, syncRate: 0, criteria: { dataInsufficient: true } };
+      }
+      const syncMap: Record<string, number> = {
+        STRONGEST_SIGNAL: 100,
+        STRONG_SIGNAL: 80,
+        MEDIUM_SIGNAL: 60,
+        WEAK_SIGNAL: 30,
+        NONE: 0,
+      };
+      result = {
+        syncRate: syncMap[ict.signal] ?? 0,
+        criteria: {
+          isEntry: ict.isEntry,
+          isTrendAligned: !!ict.direction,
+          isChochConfirmed: !!ict.dailyChoch,
+          isInZone: !!ict.entryZone,
+          isDiscountZone: ict.premiumDiscountOk,
+        },
+      };
+      break;
+    }
     default:
       return {
         isActive: false,
@@ -556,6 +587,10 @@ function checkEntryConditions(
     case 'etf-analyzer':
       // 수급 또는 과열도 하나라도 BUY (OR 조건)
       return criteria.supplyBuy === true || criteria.heatBuy === true;
+
+    case 'ict-swing':
+      // 주봉방향 일치 + 일봉 CHoCH + FVG CE존 진입 + 프리미엄/디스카운트 통과
+      return criteria.isEntry === true;
 
     case 'infinite-buy':
       // 무한매수법은 별도 모듈 사용
