@@ -10,11 +10,15 @@
     },
     "app/api/auto-trade/morning-alert/route.ts": {
       "memory": 1024,
-      "maxDuration": 60
+      "maxDuration": 300
     },
     "app/api/auto-trade/closing-alert/route.ts": {
       "memory": 1024,
       "maxDuration": 120
+    },
+    "app/api/auto-trade/dca/cron/preclose/route.ts": {
+      "memory": 1024,
+      "maxDuration": 300
     },
     "app/api/fibonacci/scan/route.ts": {
       "memory": 1024,

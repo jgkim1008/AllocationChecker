@@ -13,7 +13,7 @@ import { createServiceClient } from '@/lib/supabase/server';
 import { getBrokerClientByCredentialId, getBrokerClient } from '@/lib/broker/session';
 import type { MarketType } from '@/lib/broker/types';
 import { buildMarketCloseSection } from '@/lib/notifications/fibonacci-alert';
-import { buildTurtleSection, buildMarketIndicatorsSection } from '@/lib/notifications/market-sections';
+import { buildTurtleSection, buildMarketIndicatorsSection, warmTurtleCache } from '@/lib/notifications/market-sections';
 
 const CRON_SECRET = process.env.CRON_SECRET;
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -264,6 +264,10 @@ export async function GET(request: NextRequest) {
     }
 
     // 피보나치 + 터틀 + 시장 지표 — 사용자 무관하게 1회 조회 후 모든 메시지에 첨부
+    // 터틀 스캔 캐시(24h TTL)를 갱신해줄 크론이 따로 없어서, 여기서 먼저 워밍해둠
+    // (오래됐으면 실제로 재스캔, 아직 신선하면 즉시 반환 — 매일 도는 이 크론 안에서만 트리거됨)
+    if (TELEGRAM_BOT_TOKEN) await warmTurtleCache();
+
     const fibMarket = market === 'domestic' ? 'KR' : 'US';
     const [fibSection, turtleSection, marketSection] = TELEGRAM_BOT_TOKEN
       ? await Promise.all([

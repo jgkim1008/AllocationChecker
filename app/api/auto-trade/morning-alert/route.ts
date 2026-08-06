@@ -14,7 +14,7 @@ import type { StrategyVersion, MarketType } from '@/lib/infinite-buy/core/types'
 import { getQuotes as getYahooQuotes } from '@/lib/api/yahoo';
 import { getQuotes as getPolygonQuotes } from '@/lib/api/fmp';
 import { buildMorningIndicatorSection } from '@/lib/notifications/fibonacci-alert';
-import { buildTurtleSection, buildMarketIndicatorsSection, buildBriefingSummarySection } from '@/lib/notifications/market-sections';
+import { buildTurtleSection, buildMarketIndicatorsSection, buildBriefingSummarySection, warmTurtleCache } from '@/lib/notifications/market-sections';
 
 const CRON_SECRET = process.env.CRON_SECRET;
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -329,6 +329,9 @@ export async function GET(request: NextRequest) {
       day: 'numeric',
       weekday: 'short',
     });
+
+    // 터틀 스캔 캐시(24h TTL)를 갱신해줄 크론이 따로 없어서, 여기서 먼저 워밍해둠
+    if (TELEGRAM_BOT_TOKEN) await warmTurtleCache();
 
     // 지수 피보나치 + 월봉10이평 + 터틀(국내/해외) + 시장지표 + 브리핑 요약(유동성·워치리스트·이벤트)
     // — 사용자 무관하게 1회 조회 후 모든 메시지에 첨부

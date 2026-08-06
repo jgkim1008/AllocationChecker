@@ -4,6 +4,25 @@ import { getMarketIndicators } from '@/lib/api/market-indicators';
 import { getBriefingData } from '@/lib/macro/briefing';
 
 /**
+ * 터틀 전략 캐시 워밍 — buildTurtleSection() 호출 직전에 실행해서
+ * strategy_cache가 24h 넘게 오래됐으면 갱신되도록 함.
+ * 이 스캔을 자동으로 트리거하는 크론이 따로 없어서, 사람이 페이지를 열지 않으면
+ * 캐시가 무기한 오래될 수 있었음 (실제로 65일 넘게 방치된 적 있음).
+ * 실패해도 무시 — buildTurtleSection이 오래된 캐시로 폴백함.
+ */
+export async function warmTurtleCache(): Promise<void> {
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL;
+  if (!baseUrl) return;
+  try {
+    await fetch(`${baseUrl}/api/strategies/turtle-trading/scan`, {
+      signal: AbortSignal.timeout(120_000),
+    });
+  } catch {
+    // 무시 — 오래된 캐시로 폴백
+  }
+}
+
+/**
  * 터틀 전략 섹션 (strategy_cache에서 직접 조회, market 필터링)
  * DCA preclose / 아침 알림 등 텔레그램 통합 메시지에서 공용으로 사용
  */
