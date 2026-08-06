@@ -224,13 +224,16 @@ export async function GET(request: NextRequest) {
         const todayBuyExists = (todayOrders ?? []).some(o => o.side === 'buy');
         const todaySellExists = (todayOrders ?? []).some(o => o.side === 'sell');
 
+        // 매수전용: 매도 주문(LOC+지정가) 자동 제출 생략, 매수만 진행
+        const buyOnly = (setting as { buy_only?: boolean }).buy_only ?? false;
+
         // 스마트 스킵: 오늘 매수 + 매도 모두 filled >= 예상 수면 LOC 주문 안 함
         if ((setting as { smart_skip_loc?: boolean }).smart_skip_loc) {
           const filledTodayBuys = (todayOrders ?? []).filter(o => o.side === 'buy' && o.status === 'filled').length;
           const filledTodaySells = (todayOrders ?? []).filter(o => o.side === 'sell' && o.status === 'filled').length;
           // 전반전: 2주문/일 (별지점+평단 절반씩), 후반전: 1주문/일
           const expectedDailyBuys = currentT < divisions / 2 ? 2 : 1;
-          const expectedDailySells = executableSells.length; // 현재 포지션 기준 매도 주문 수
+          const expectedDailySells = buyOnly ? 0 : executableSells.length; // 매수전용이면 매도 기대치 없음
           const buysFulfilled = filledTodayBuys >= expectedDailyBuys;
           const sellsFulfilled = expectedDailySells === 0 || filledTodaySells >= expectedDailySells;
           if (buysFulfilled && sellsFulfilled) {
@@ -245,10 +248,10 @@ export async function GET(request: NextRequest) {
           }
         }
 
-        // 중복 주문 필터링
+        // 중복 주문 필터링 (매수전용이면 매도 주문 자체를 제외)
         const ordersToExecute = [
           ...(todayBuyExists ? [] : executableBuys),
-          ...(todaySellExists ? [] : executableSells),
+          ...(todaySellExists || buyOnly ? [] : executableSells),
         ];
 
         if (ordersToExecute.length === 0) {
@@ -335,7 +338,7 @@ export async function GET(request: NextRequest) {
           userId: user_id,
           symbol,
           success: failCount === 0,
-          message: `${successCount}건 성공, ${failCount}건 실패`,
+          message: `${successCount}건 성공, ${failCount}건 실패${buyOnly ? ' (매수전용)' : ''}`,
           orders: {
             buy: orderResults.filter(r => r.side === 'buy' && !r.error).length,
             sell: orderResults.filter(r => r.side === 'sell' && !r.error).length,

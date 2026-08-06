@@ -53,6 +53,7 @@ interface Portfolio {
   cycle?: number;
   divisionsUsed?: number;  // 자동 계산: 현재 회차의 매수 기록 수 (BuyTracker와 동일 소스)
   smart_skip_loc?: boolean;  // 스마트 스킵: 일일 체결 수 달성 시 LOC 주문 생략
+  buy_only?: boolean;  // 매수전용: 크론이 매도 주문을 생략하고 매수만 자동 제출
 }
 
 interface PendingOrder {
@@ -598,6 +599,36 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
     }
   };
 
+  // 매수전용 토글 (크론이 매도 주문을 생략하고 매수만 자동 제출)
+  const handleToggleBuyOnly = async (portfolio: Portfolio) => {
+    setActionLoading(`buyonly-${portfolio.symbol}`);
+    try {
+      const res = await fetch('/api/auto-trade/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          symbol: portfolio.symbol,
+          broker_type: portfolio.broker_type,
+          broker_credential_id: portfolio.broker_credential_id,
+          strategy_version: portfolio.strategy_version,
+          total_capital: portfolio.total_capital,
+          is_enabled: portfolio.is_enabled,
+          buy_only: !portfolio.buy_only,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        await loadPortfolios(true);
+      } else {
+        alert(data.error || '설정 변경 실패');
+      }
+    } catch {
+      alert('매수전용 토글 중 오류가 발생했습니다.');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   // Toggle pause/resume
   const handleTogglePause = async (portfolio: Portfolio) => {
     setActionLoading(`pause-${portfolio.symbol}`);
@@ -904,6 +935,25 @@ export function InfiniteBuyDashboard({ onNavigateToManual }: InfiniteBuyDashboar
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
               <span className="text-xs">{p.smart_skip_loc ? '✓ ' : ''}Smart Skip</span>
+            )}
+          </button>
+          {/* 매수전용 토글: 크론이 매도 주문을 생략하고 매수만 자동 제출 */}
+          <button
+            onClick={() => handleToggleBuyOnly(p)}
+            disabled={actionLoading === `buyonly-${p.symbol}`}
+            className={`flex items-center gap-1.5 px-3 py-2 text-sm border-2 rounded-lg transition-colors disabled:opacity-50 font-bold ${
+              p.buy_only
+                ? 'bg-red-500 text-white border-red-500 hover:bg-red-600'
+                : 'bg-white text-red-600 border-red-500 hover:bg-red-50'
+            }`}
+            title={p.buy_only
+              ? '활성: 매도 주문 자동 제출 안 함 (매수만 진행)'
+              : '비활성: 매수·매도 모두 자동 제출'}
+          >
+            {actionLoading === `buyonly-${p.symbol}` ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <span className="text-xs">{p.buy_only ? '✓ ' : ''}매수전용</span>
             )}
           </button>
           <button

@@ -64,6 +64,7 @@ export async function GET(request: NextRequest) {
     const { broker_type, broker_credential_id, strategy_version, total_capital } = settingRow;
     const tradeMode: string = (settingRow as { trade_mode?: string }).trade_mode ?? 'real';
     const smartSkipEnabled: boolean = !!(settingRow as { smart_skip_loc?: boolean }).smart_skip_loc;
+    const buyOnlyEnabled: boolean = !!(settingRow as { buy_only?: boolean }).buy_only;
 
     // 브로커 연결
     const clientResult = broker_credential_id
@@ -200,11 +201,13 @@ export async function GET(request: NextRequest) {
       }
 
       for (const order of allSells) {
-        let wouldSubmit = !todaySellExists && !order.isReference;
+        let wouldSubmit = !todaySellExists && !order.isReference && !buyOnlyEnabled;
         let skipReason = '';
         if (order.isReference || order.quantity <= 0) {
           wouldSubmit = false;
           skipReason = '수량 0 — 보유 주식 없음';
+        } else if (buyOnlyEnabled) {
+          skipReason = '매수전용 활성화 — 매도 주문 생략';
         } else if (todaySellExists) {
           skipReason = '오늘 이미 매도 주문 있음';
         } else {

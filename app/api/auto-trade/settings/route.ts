@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { symbol, broker_type, strategy_version, total_capital, is_enabled, broker_credential_id, smart_skip_loc, trade_mode } = body;
+    const { symbol, broker_type, strategy_version, total_capital, is_enabled, broker_credential_id, smart_skip_loc, trade_mode, buy_only } = body;
 
     if (!symbol || !broker_type || !strategy_version || !total_capital) {
       return NextResponse.json({ success: false, error: '필수 필드가 누락되었습니다.' }, { status: 400 });
@@ -81,6 +81,10 @@ export async function POST(request: NextRequest) {
     // trade_mode는 명시적으로 전달된 경우만 갱신 (기존 값 보존)
     if (trade_mode !== undefined) {
       settingData.trade_mode = trade_mode === 'real' ? 'real' : 'virtual';
+    }
+    // buy_only는 명시적으로 전달된 경우만 갱신 (기존 값 보존)
+    if (buy_only !== undefined) {
+      settingData.buy_only = !!buy_only;
     }
 
     let result;
