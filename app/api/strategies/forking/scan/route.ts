@@ -148,6 +148,7 @@ async function fetchMonthlyCandles(yahooSymbol: string): Promise<{ date: string;
     const url = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSymbol}?interval=1mo&range=3y`;
     const res = await fetch(url, {
       headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+      next: { revalidate: 3600 },
     });
     if (!res.ok) return null;
 

@@ -245,7 +245,7 @@ export async function getHourlyOHLCHistory(
   const url = `${QUERY_URL}/v8/finance/chart/${encodeURIComponent(ticker)}?range=90d&interval=60m&includePrePost=false`;
 
   try {
-    const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+    const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 300 } });
     if (!res.ok) return [];
 
     const data = await res.json();

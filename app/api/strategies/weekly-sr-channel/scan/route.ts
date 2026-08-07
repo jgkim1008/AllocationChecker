@@ -72,6 +72,7 @@ async function fetchWeeklyCandles(yahooSymbol: string): Promise<Candle[] | null>
     const url = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSymbol}?interval=1wk&range=2y`;
     const res = await fetch(url, {
       headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+      next: { revalidate: 3600 },
     });
     if (!res.ok) return null;
     const data = await res.json();
