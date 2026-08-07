@@ -53,6 +53,21 @@ cat << EOF | crontab -
 # 서머타임 끝나면 위 22:35를 주석처리하고 아래 주석 해제
 # 35 23 * * 1-5 curl -s -X GET "${APP_URL}/api/auto-trade/cron" -H "Authorization: Bearer ${CRON_SECRET}" > /dev/null 2>&1
 
+# ── 전략 스캔 캐시 워밍 (05:00~06:00 월~금, 5분 간격, 인증 불필요 — 각 scan 라우트가 24h 넘게 오래됐을 때만 재계산) ──
+0 5 * * 1-5 curl -s -X GET "${APP_URL}/api/strategies/ict-swing/scan" > /dev/null 2>&1
+5 5 * * 1-5 curl -s -X GET "${APP_URL}/api/strategies/inbum-bijag/scan" > /dev/null 2>&1
+10 5 * * 1-5 curl -s -X GET "${APP_URL}/api/strategies/decline-box/scan" > /dev/null 2>&1
+15 5 * * 1-5 curl -s -X GET "${APP_URL}/api/strategies/weekly-sr-channel/scan" > /dev/null 2>&1
+20 5 * * 1-5 curl -s -X GET "${APP_URL}/api/strategies/chart-pattern/scan" > /dev/null 2>&1
+25 5 * * 1-5 curl -s -X GET "${APP_URL}/api/strategies/dual-rsi/scan" > /dev/null 2>&1
+30 5 * * 1-5 curl -s -X GET "${APP_URL}/api/strategies/inverse-alignment/scan" > /dev/null 2>&1
+35 5 * * 1-5 curl -s -X GET "${APP_URL}/api/strategies/ma-alignment/scan" > /dev/null 2>&1
+40 5 * * 1-5 curl -s -X GET "${APP_URL}/api/strategies/rsi-divergence/scan" > /dev/null 2>&1
+45 5 * * 1-5 curl -s -X GET "${APP_URL}/api/strategies/elliott-wave/scan" > /dev/null 2>&1
+50 5 * * 1-5 curl -s -X GET "${APP_URL}/api/strategies/forking/scan" > /dev/null 2>&1
+55 5 * * 1-5 curl -s -X GET "${APP_URL}/api/strategies/monthly-ma/scan" > /dev/null 2>&1
+0 6 * * 1-5 curl -s -X GET "${APP_URL}/api/strategies/etf-analyzer/scan" > /dev/null 2>&1
+
 EOF
 
 echo "✅ Crontab 설정 완료!"
