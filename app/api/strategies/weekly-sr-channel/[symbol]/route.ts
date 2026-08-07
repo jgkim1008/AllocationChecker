@@ -13,7 +13,7 @@ export async function GET(
   const market = (searchParams.get('market') || 'US') as 'US' | 'KR';
   const name = searchParams.get('name') || symbol;
 
-  const yahooSymbol = market === 'KR' ? `${symbol}.KS` : symbol;
+  const yahooSymbol = market === 'KR' && !symbol.startsWith('^') && !/\.K[SQ]$/.test(symbol) ? `${symbol}.KS` : symbol;
 
   try {
     const candles = await fetchWeeklyCandles(yahooSymbol);

@@ -36,7 +36,7 @@ export async function fetchDeclineBoxWeekly(
   market: 'US' | 'KR'
 ): Promise<{ date: string; open: number; high: number; low: number; close: number }[] | null> {
   try {
-    const yahooSymbol = market === 'KR' && !/\.K[SQ]$/.test(symbol) ? `${symbol}.KS` : symbol;
+    const yahooSymbol = market === 'KR' && !symbol.startsWith('^') && !/\.K[SQ]$/.test(symbol) ? `${symbol}.KS` : symbol;
     const url = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSymbol}?interval=1wk&range=2y`;
     const res = await fetch(url, {
       headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },

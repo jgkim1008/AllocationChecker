@@ -187,7 +187,7 @@ export function computePremiumDiscountZone(candles: Candle[], lookback = 30): { 
 // ── 주봉 데이터 (inbum-bijag-calculator.ts와 동일 패턴) ──
 export async function fetchWeeklyCandles(symbol: string, market: 'US' | 'KR'): Promise<Candle[] | null> {
   try {
-    const yahooSymbol = market === 'KR' && !/\.K[SQ]$/.test(symbol) ? `${symbol}.KS` : symbol;
+    const yahooSymbol = market === 'KR' && !symbol.startsWith('^') && !/\.K[SQ]$/.test(symbol) ? `${symbol}.KS` : symbol;
     const url = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSymbol}?interval=1wk&range=2y`;
     const res = await fetch(url, {
       headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },

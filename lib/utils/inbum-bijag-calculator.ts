@@ -46,7 +46,7 @@ export const CHANNEL_LEVELS = [-1.5, -1, -0.5, 0, 0.5, 1, 1.5, 2, 2.5, 3];
 // ── Yahoo Finance 5년 주봉 fetch ────────────────────────────────
 export async function fetchWeeklyCandles(symbol: string, market: 'US' | 'KR'): Promise<Candle[] | null> {
   try {
-    const yahooSymbol = market === 'KR' ? `${symbol}.KS` : symbol;
+    const yahooSymbol = market === 'KR' && !symbol.startsWith('^') && !/\.K[SQ]$/.test(symbol) ? `${symbol}.KS` : symbol;
     const url = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSymbol}?interval=1wk&range=5y`;
     const res = await fetch(url, {
       headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
