@@ -7,3 +7,4 @@ export { PositionSync } from './PositionSync';
 export { TOTPSetupDialog } from './TOTPSetupDialog';
 export { TOTPVerifyDialog } from './TOTPVerifyDialog';
 export { MarketIndicatorsPanel } from './MarketIndicatorsPanel';
+export { TossOrbPanel } from './TossOrbPanel';
